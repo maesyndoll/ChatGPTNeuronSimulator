@@ -18,6 +18,13 @@ struct SpikeEvent {
     std::uint32_t neuron_id = 0;
 };
 
+struct VoltageSample {
+    std::uint64_t step = 0;
+    double time_ms = 0.0;
+    std::uint32_t neuron_id = 0;
+    float voltage_mv = 0.0f;
+};
+
 struct SpikeEventBatch {
     std::vector<SpikeEvent> events;
     std::uint64_t first_sequence = 0;
@@ -54,6 +61,10 @@ public:
     void run();
     void run_steps(std::uint32_t steps);
     SimulationMetrics collect_metrics();
+    // Read post-integration membrane voltage for selected neurons.
+    // Samples reflect threshold resets when a neuron spiked on this step.
+    std::vector<VoltageSample> collect_voltage_samples(
+        const std::vector<std::uint32_t>& neuron_ids);
     // Exact host-side fingerprint of current neuron parameters and state.
     std::uint64_t state_fingerprint();
     SpikeEventBatch collect_spike_events();
