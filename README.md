@@ -8,14 +8,19 @@ Blackwell (`sm_120` by default).
 - Central JSON parameter schema and generated C++ configuration definitions.
 - Parameter validation and explicit apply/reset/reinitialize lifecycle.
 - Izhikevich CUDA neuron model with deterministic initialization.
+- Seeded random sparse connectivity stored in source-oriented CSR form, with
+  delayed spike propagation through a GPU-resident current ring.
+- Bounded GPU spike-event capture with host-side collection.
 - `CudaSimulationRuntime` owns GPU allocations, execution stream, stepping,
-  reinitialization, and batch metric collection.
+  reinitialization, graph-batched execution, and metric collection.
+- Optional time-windowed experiment telemetry and selected-neuron voltage
+  sampling for diagnostic traces.
 - Move-only CUDA RAII wrappers provide exception-safe cleanup of partially
   allocated device state.
 
-The current simulation still models independent neurons. Sparse synapses,
-spike propagation, plasticity, checkpointing, telemetry streaming, and the Qt
-UI are future milestones.
+Plasticity, checkpointing, and the Qt UI remain future milestones. The current
+connectivity generator supports seeded random sparse networks; structured
+population-to-population connectivity is a planned extension.
 
 ## CPU-only configuration tests
 
@@ -70,6 +75,27 @@ To use a different log file:
 To run without writing a record, use `--no-log`. The log is local experiment
 data; review and back it up before cleaning the working tree. Keep raw results
 with their original configurations so later comparisons remain auditable.
+
+To record membrane-voltage traces for selected neurons, use the
+optional voltage-trace arguments:
+
+```bash
+./build-cuda/spiking_model --config experiments/isolated_neurons_baseline.json \
+  --voltage-trace experiments/logs/voltage_trace.csv \
+  --voltage-trace-neuron 0 --voltage-trace-neuron 1 \
+  --voltage-trace-interval 1
+```
+
+The CSV contains `step,time_ms,neuron_id,voltage_mv`. It includes the
+initialized state at step 0 and post-integration samples at each interval,
+including the final partial interval. Voltage is sampled after threshold
+handling, so a neuron that spikes on a sampled step is recorded at its reset
+voltage; correlate the step with the spike-event records to identify that
+reset. Smaller intervals provide finer temporal resolution but add host/device
+synchronization and readback overhead. The trace mode currently cannot be
+combined with `--telemetry-window-steps` or server mode. Repeat
+`--voltage-trace-neuron` to record multiple neuron IDs.
+
 
 Configuration files use the same `simulation` and `topology` groups as the
 IPC parameter API. They may contain partial updates; omitted values retain
