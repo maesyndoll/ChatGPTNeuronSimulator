@@ -21,7 +21,7 @@ template <typename T>
 class DeviceArray {
 public:
     explicit DeviceArray(std::size_t count) : count_(count) {
-        cuda_check(cudaMalloc(&data_, count * sizeof(T)), "cudaMalloc");
+        cuda_check(cudaMalloc(reinterpret_cast<void**>(&data_), count * sizeof(T)), "cudaMalloc");
     }
     ~DeviceArray() { if (data_) (void)cudaFree(data_); }
     DeviceArray(const DeviceArray&) = delete;
@@ -122,6 +122,18 @@ int main() {
         w = weights.download();
         check(near(w[0], 0.5f),
               "simultaneous GPU spikes caused a zero-lag weight change");
+
+        // Weight bounds are enforced on GPU, and inhibitory weights remain signed
+        // and untouched even when an inhibitory neuron emits a presynaptic event.
+        weights.upload({0.899f, 0.5f, -0.5f});
+        pre_traces.upload({10.0f, 0.0f, 0.0f});
+        post_traces.upload({0.0f, 0.0f, 0.0f});
+        step(1);
+        w = weights.download();
+        check(near(w[0], parameters.maximum_weight),
+              "GPU STDP failed to clamp potentiation to its maximum");
+        check(near(w[2], -0.5f),
+              "GPU STDP changed an inhibitory-source weight");
 
         std::cout << "All GPU STDP kernel tests passed.\n";
         return EXIT_SUCCESS;
