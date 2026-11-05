@@ -23,6 +23,7 @@ struct NeuronStateGPU {
     std::uint32_t* active_spike_sources = nullptr;
     std::uint32_t* active_spike_count = nullptr;
     unsigned long long* completed_steps = nullptr;
+    std::uint32_t* completed_step_blocks = nullptr;
 
     // Bounded event recorder. Each event stores a one-based step and neuron ID.
     std::uint64_t* spike_event_steps = nullptr;
