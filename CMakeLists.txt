@@ -43,6 +43,10 @@ if(BUILD_TESTING)
     target_include_directories(topology_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     add_dependencies(topology_tests check_parameter_schema)
     add_test(NAME topology_tests COMMAND topology_tests)
+
+    add_executable(stdp_tests tests/unit/stdp_tests.cpp)
+    target_include_directories(stdp_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    add_test(NAME stdp_tests COMMAND stdp_tests)
 endif()
 
 option(SPIKINGMODEL_ENABLE_QT_CLIENT "Build the optional Qt IPC client" OFF)
