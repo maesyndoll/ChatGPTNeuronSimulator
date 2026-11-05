@@ -380,6 +380,35 @@ int main() {
 
         std::cout << "GPU delay-ring reuse test passed\n";
 
+        // Exercise graph capture after a non-graph prefix, repeated graph
+        // replay, and a short non-graph tail. Event timestamps must remain
+        // one-based and continuous across the graph boundary.
+        ModelParameters graph_parameters;
+        graph_parameters.simulation = SimulationParameters::small_test();
+        graph_parameters.simulation.steps = 1;
+        CudaSimulationRuntime graph_runtime(graph_parameters);
+        graph_runtime.run_steps(99);
+        graph_runtime.run_steps(206);
+        const auto graph_metrics = graph_runtime.collect_metrics();
+        if (!graph_metrics.finite_state ||
+            graph_metrics.completed_steps != 305) {
+            std::cerr << "CUDA graph batch step-count test failed\\n";
+            return EXIT_FAILURE;
+        }
+        const auto graph_events = graph_runtime.collect_spike_events();
+        for (const auto& event : graph_events.events) {
+            if (event.step == 0 || event.step > 305) {
+                std::cerr << "CUDA graph spike-event step index failed\\n";
+                return EXIT_FAILURE;
+            }
+        }
+        if (graph_events.total_events < graph_events.events.size() ||
+            graph_events.dropped_events != 0) {
+            std::cerr << "CUDA graph spike-event collection failed\\n";
+            return EXIT_FAILURE;
+        }
+        std::cout << "CUDA graph replay and event-index tests passed\\n";
+
         ModelParameters parameters;
         parameters.simulation = SimulationParameters::small_test();
         parameters.simulation.steps = 2;
