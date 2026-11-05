@@ -34,6 +34,7 @@ SimulationBridge::SimulationBridge(QObject* parent)
         connected_ = false;
         connection_status_ = QStringLiteral("Disconnected");
         emit connectionChanged();
+        spike_events_update_timer_.stop();
         spike_events_.clear();
         spike_event_count_ = QStringLiteral("0");
         spike_events_dropped_ = QStringLiteral("0");
