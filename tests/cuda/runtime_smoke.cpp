@@ -27,13 +27,20 @@ int main() {
         spike_parameters.topology.p_ei = 1.0;
         spike_parameters.topology.p_ie = 1.0;
         spike_parameters.topology.p_ii = 0.0;
+
+        // Use sequential inhibitory timing only for the STDP tests.
+        ModelParameters learning_parameters = spike_parameters;
+        learning_parameters.simulation.inhibitory_current_min = 3.4f;
+        learning_parameters.simulation.inhibitory_current_max = 3.4f;
+
         CudaSimulationRuntime spike_runtime(spike_parameters);
         if (spike_runtime.plasticity_state_enabled()) {
             std::cerr << "Plasticity support must remain disabled by default\\n";
             return EXIT_FAILURE;
         }
         CudaSimulationRuntime learning_state_runtime(
-            spike_parameters, 0, true, true);
+            learning_parameters, 0, true, true);
+        CudaSimulationRuntime disabled_stdp_runtime(learning_parameters);
         if (!learning_state_runtime.plasticity_state_enabled()) {
             std::cerr << "Opt-in plasticity state allocation failed\\n";
             return EXIT_FAILURE;
@@ -41,11 +48,11 @@ int main() {
         const auto learning_initial_topology =
             learning_state_runtime.collect_connectivity();
         const auto disabled_initial_topology =
-            spike_runtime.collect_connectivity();
+            disabled_stdp_runtime.collect_connectivity();
 
         learning_state_runtime.run_steps(2);
         learning_state_runtime.run_steps(100); // Exercise STDP inside CUDA Graph capture/replay.
-        spike_runtime.run_steps(102);
+        disabled_stdp_runtime.run_steps(102);
 
         const auto learning_state_metrics =
             learning_state_runtime.collect_metrics();
@@ -58,7 +65,7 @@ int main() {
         const auto learning_final_topology =
             learning_state_runtime.collect_connectivity();
         const auto disabled_final_topology =
-            spike_runtime.collect_connectivity();
+            disabled_stdp_runtime.collect_connectivity();
         if (learning_initial_topology.weights.size() != 2 ||
             learning_final_topology.weights.size() != 2 ||
             disabled_initial_topology.weights != disabled_final_topology.weights) {
@@ -75,7 +82,8 @@ int main() {
 
         // Export must read the exact graph allocated on the GPU, preserving
         // source-oriented CSR offsets, targets, weights, and delays.
-        const auto exported_topology = spike_runtime.collect_connectivity();
+        const auto exported_topology =
+            disabled_stdp_runtime.collect_connectivity();
         if (exported_topology.excitatory_count != 1 ||
             exported_topology.inhibitory_count != 1 ||
             exported_topology.synapse_count() != 2 ||
