@@ -140,6 +140,7 @@ __global__ void stdp_depression_kernel(
     float* weights,
     const float* post_traces,
     std::uint32_t neuron_count,
+    std::uint32_t excitatory_count,
     float depression_rate,
     float minimum_weight,
     float maximum_weight
@@ -148,7 +149,7 @@ __global__ void stdp_depression_kernel(
     const std::uint32_t count = *active_count;
     if (queue_index >= count) return;
     const std::uint32_t source = active_sources[queue_index];
-    if (source >= neuron_count) return;
+    if (source >= excitatory_count || source >= neuron_count) return;
     for (std::uint32_t edge = row_offsets[source];
          edge < row_offsets[source + 1]; ++edge) {
         const std::uint32_t target = targets[edge];
@@ -400,7 +401,7 @@ void apply_stdp(
         stdp_depression_kernel<<<neuron_blocks, threads, 0, stream>>>(
             active_spike_sources, active_spike_count, outgoing_row_offsets,
             outgoing_targets, weights, postsynaptic_traces, neuron_count,
-            parameters.depression_rate, parameters.minimum_weight,
+            excitatory_count, parameters.depression_rate, parameters.minimum_weight,
             parameters.maximum_weight);
         SPIKING_CUDA_CHECK(cudaGetLastError());
     }
