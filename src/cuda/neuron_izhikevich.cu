@@ -79,7 +79,15 @@ __global__ void propagate_spikes_kernel(
 ) {
     // The count is produced by the preceding neuron kernel. Kernel launches
     // on the runtime stream are ordered, so the queue is complete here.
-    const std::uint32_t active_count = *state.active_spike_count;
+    __shared__ std::uint32_t active_count_shared;
+    __shared__ unsigned long long completed_shared;
+    if (threadIdx.x == 0) {
+        active_count_shared = *state.active_spike_count;
+        completed_shared = *state.completed_steps;
+    }
+    __syncthreads();
+    const std::uint32_t active_count = active_count_shared;
+    const unsigned long long completed = completed_shared;
 
     // A fixed worker grid avoids reading the queue count back to the CPU.
     // Each block handles one or more active sources; its threads cooperate
@@ -101,8 +109,6 @@ __global__ void propagate_spikes_kernel(
 
             // Preserve the established one-based delivery timing:
             // a spike at step s with delay d is consumed at step s + d.
-            const unsigned long long completed =
-                *state.completed_steps;
             const std::uint32_t slot = static_cast<std::uint32_t>(
                 (completed + static_cast<unsigned long long>(delay) - 1ULL) %
                 synapses.ring_slots);
@@ -127,6 +133,9 @@ __global__ void neuron_step_kernel(
 ) {
     const std::uint32_t id =
         blockIdx.x * blockDim.x + threadIdx.x;
+    __shared__ unsigned long long completed_shared;
+    if (threadIdx.x == 0) completed_shared = *s.completed_steps;
+    __syncthreads();
 
     if (id < count) {
 
@@ -140,7 +149,7 @@ __global__ void neuron_step_kernel(
     const float b = p.b[id];
     const float c = p.c[id];
     const float d = p.d[id];
-    const unsigned long long completed = *s.completed_steps;
+    const unsigned long long completed = completed_shared;
     const std::uint32_t ring_slot =
         static_cast<std::uint32_t>(completed % ring_slots);
     const std::size_t current_offset =
