@@ -9,6 +9,13 @@
 
 SimulationBridge::SimulationBridge(QObject* parent)
     : QObject(parent) {
+    // Keep high-rate spike traffic from forcing a full QML raster redraw for
+    // every IPC batch. The latest event data is retained; notifications are
+    // coalesced to at most 20 updates per second.
+    spike_events_update_timer_.setSingleShot(true);
+    spike_events_update_timer_.setInterval(50);
+    connect(&spike_events_update_timer_, &QTimer::timeout,
+            this, &SimulationBridge::spikeEventsChanged);
     connect(&client_, &SimulationClient::connected, this, [this]() {
         connected_ = true;
         connection_status_ = QStringLiteral("Connected");
@@ -402,7 +409,7 @@ void SimulationBridge::updateSpikeEvents(const QJsonObject& spikeEvents) {
     const QJsonArray events =
         spikeEvents.value(QStringLiteral("events")).toArray();
 
-    constexpr qsizetype kMaximumDashboardEvents = 50000;
+    constexpr qsizetype kMaximumDashboardEvents = 12000;
     for (const QJsonValue& value : events) {
         if (!value.isObject()) {
             continue;
@@ -434,7 +441,9 @@ void SimulationBridge::updateSpikeEvents(const QJsonObject& spikeEvents) {
         spike_events_.remove(0, excess);
     }
 
-    emit spikeEventsChanged();
+    if (!spike_events_update_timer_.isActive()) {
+        spike_events_update_timer_.start();
+    }
 }
 
 void SimulationBridge::updateConfiguration(
