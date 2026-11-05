@@ -75,8 +75,7 @@ __global__ void initialize_kernel(
 __global__ void propagate_spikes_kernel(
     NeuronStateGPU state,
     SynapseParametersGPU synapses,
-    std::uint32_t neuron_count,
-    std::uint64_t step_index
+    std::uint32_t neuron_count
 ) {
     // The count is produced by the preceding neuron kernel. Kernel launches
     // on the runtime stream are ordered, so the queue is complete here.
@@ -102,8 +101,10 @@ __global__ void propagate_spikes_kernel(
 
             // Preserve the established one-based delivery timing:
             // a spike at step s with delay d is consumed at step s + d.
+            const unsigned long long completed =
+                *state.completed_steps;
             const std::uint32_t slot = static_cast<std::uint32_t>(
-                (step_index + static_cast<std::uint64_t>(delay) - 1ULL) %
+                (completed + static_cast<unsigned long long>(delay) - 1ULL) %
                 synapses.ring_slots);
 
             const std::size_t offset =
@@ -122,8 +123,7 @@ __global__ void neuron_step_kernel(
     float dt,
     float threshold,
     float* synaptic_current,
-    std::uint32_t ring_slot,
-    std::uint64_t step_index
+    std::uint32_t ring_slots
 ) {
     const std::uint32_t id =
         blockIdx.x * blockDim.x + threadIdx.x;
@@ -140,6 +140,9 @@ __global__ void neuron_step_kernel(
     const float b = p.b[id];
     const float c = p.c[id];
     const float d = p.d[id];
+    const unsigned long long completed = *s.completed_steps;
+    const std::uint32_t ring_slot =
+        static_cast<std::uint32_t>(completed % ring_slots);
     const std::size_t current_offset =
         static_cast<std::size_t>(ring_slot) * count + id;
     const float current =
@@ -181,7 +184,7 @@ __global__ void neuron_step_kernel(
                 atomicAdd(s.spike_event_count, 1ULL);
             const std::uint32_t event_slot = static_cast<std::uint32_t>(
                 event_index % s.spike_event_capacity);
-            s.spike_event_steps[event_slot] = step_index;
+            s.spike_event_steps[event_slot] = completed + 1ULL;
             s.spike_event_neurons[event_slot] = id;
         }
 
@@ -195,6 +198,11 @@ __global__ void neuron_step_kernel(
 
     s.voltage[id] = v;
     s.recovery[id] = u;
+
+}
+
+__global__ void advance_completed_steps_kernel(unsigned long long* completed) {
+    if (blockIdx.x == 0 && threadIdx.x == 0) atomicAdd(completed, 1ULL);
 }
 
 void initialize_neurons(
@@ -238,7 +246,6 @@ void propagate_spikes(
     NeuronStateGPU state,
     SynapseParametersGPU synapses,
     std::uint32_t neuron_count,
-    std::uint64_t step_index,
     cudaStream_t stream
 ) {
     if (synapses.edge_count == 0) return;
@@ -256,7 +263,7 @@ void propagate_spikes(
             : maximum_worker_blocks;
 
     propagate_spikes_kernel<<<blocks, threads, 0, stream>>>(
-        state, synapses, neuron_count, step_index
+        state, synapses, neuron_count
     );
     SPIKING_CUDA_CHECK(cudaGetLastError());
 }
@@ -268,8 +275,7 @@ void simulate_neurons(
     float dt,
     float threshold,
     float* synaptic_current,
-    std::uint32_t ring_slot,
-    std::uint64_t step_index,
+    std::uint32_t ring_slots,
     cudaStream_t stream
 ) {
     constexpr int threads = 256;
@@ -277,8 +283,11 @@ void simulate_neurons(
 
     neuron_step_kernel<<<blocks, threads, 0, stream>>>(
         parameters, state, neuron_count, dt, threshold,
-        synaptic_current, ring_slot, step_index
+        synaptic_current, ring_slots
     );
+    SPIKING_CUDA_CHECK(cudaGetLastError());
+    advance_completed_steps_kernel<<<1, 1, 0, stream>>>(
+        state.completed_steps);
     SPIKING_CUDA_CHECK(cudaGetLastError());
 }
 
