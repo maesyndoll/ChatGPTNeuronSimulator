@@ -35,7 +35,7 @@ struct NeuronStateGPU {
 struct SynapseParametersGPU {
     const std::uint32_t* row_offsets = nullptr;
     const std::uint32_t* target_indices = nullptr;
-    const float* weights = nullptr;
+    float* weights = nullptr;
     const std::uint32_t* delays = nullptr;
     std::uint32_t edge_count = 0;
     float* pending_current = nullptr;
