@@ -42,3 +42,32 @@ step-boundary parameter updates, continued execution, and full reinitialization.
 The CPU-only tests do not verify CUDA compilation or GPU execution. See
 [`docs/RUNTIME_FOUNDATION.md`](docs/RUNTIME_FOUNDATION.md) for implementation
 notes and lifecycle semantics.
+
+
+## Reproducible experiment configurations
+
+The standalone executable can load a JSON parameter file without recompiling.
+The checked-in full-network control configuration fixes the neuron, topology,
+and delay seeds:
+
+```bash
+./build-cuda/spiking_model --config experiments/deterministic_control.json
+```
+
+Configuration files use the same `simulation` and `topology` groups as the
+IPC parameter API. They may contain partial updates; omitted values retain
+the normal defaults. The 64-bit topology and delay seeds are decimal strings
+to preserve their full integer precision.
+
+To create a new experiment, copy the example JSON and change only the
+parameters under investigation. Keep all other settings and seeds unchanged
+when comparing against the control. The current implementation uses the three
+explicit random seeds independently; `master_seed` is recorded as metadata
+and does not yet derive the other streams.
+
+Fixed seeds guarantee repeatable initialization and generated connectivity
+for the same build and configuration. They do not currently promise
+bit-for-bit identical CUDA simulation metrics across repeated runs; parallel
+floating-point accumulation can vary. The deterministic-control test suite
+will distinguish exact host-side reproducibility from GPU numerical
+repeatability.
