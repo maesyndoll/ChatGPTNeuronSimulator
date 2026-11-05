@@ -198,7 +198,8 @@ bool process_line(
     std::size_t& queued_bytes,
     bool& subscribed,
     std::uint64_t& last_telemetry_sequence,
-    bool& spike_events_subscribed
+    bool& spike_events_subscribed,
+    bool& spike_subscription_initialized
 ) {
     try {
         const Json request = Json::parse(line);
@@ -223,8 +224,10 @@ bool process_line(
                 subscribed = false;
             } else if (command == "subscribe_spike_events") {
                 spike_events_subscribed = true;
+                spike_subscription_initialized = false;
             } else if (command == "unsubscribe_spike_events") {
                 spike_events_subscribed = false;
+                spike_subscription_initialized = false;
             }
         }
 
@@ -256,6 +259,7 @@ void serve_client(int client_fd, SimulationController& controller) {
 
     bool subscribed = false;
     bool spike_events_subscribed = false;
+    bool spike_subscription_initialized = false;
     bool close_after_flush = false;
     std::uint64_t last_telemetry_sequence = 0;
     std::uint64_t last_spike_event_sequence = 0;
@@ -274,30 +278,56 @@ void serve_client(int client_fd, SimulationController& controller) {
         }
 
         if (spike_events_subscribed && !pending_spike_events.has_value()) {
-            // Retrieve larger contiguous chunks so the dashboard can keep
-            // up with high firing rates without repeatedly serializing tiny batches.
-            const auto snapshot =
-                controller.spike_events_snapshot(last_spike_event_sequence, 8192);
+            constexpr std::size_t kMaximumSpikeEventsPerUpdate = 8192;
+            const auto current =
+                controller.spike_events_snapshot(last_spike_event_sequence, 0);
             const bool generation_changed =
-                snapshot.simulation_generation != last_spike_event_generation;
-            if (generation_changed) {
-                last_spike_event_generation = snapshot.simulation_generation;
+                current.simulation_generation != last_spike_event_generation;
+            const bool initialize_stream =
+                !spike_subscription_initialized || generation_changed;
+
+            if (initialize_stream) {
+                last_spike_event_generation = current.simulation_generation;
                 last_spike_event_sequence = 0;
             }
 
-            const auto event_snapshot = generation_changed
-                ? controller.spike_events_snapshot(0)
-                : snapshot;
+            // The dashboard only renders a short rolling time window. Never
+            // replay an old backlog: begin with the newest bounded slice on
+            // subscription/reinitialization, and jump forward if production
+            // outruns the IPC consumer.
+            std::uint64_t first_sequence = std::max(
+                last_spike_event_sequence, current.first_sequence);
+            const std::uint64_t newest_slice_start =
+                current.total_events > kMaximumSpikeEventsPerUpdate
+                    ? current.total_events - kMaximumSpikeEventsPerUpdate
+                    : 0;
+            const bool consumer_is_behind =
+                current.total_events > first_sequence &&
+                current.total_events - first_sequence >
+                    kMaximumSpikeEventsPerUpdate;
 
-            if (!event_snapshot.events.empty() || generation_changed ||
+            if (initialize_stream || consumer_is_behind) {
+                first_sequence = std::max(first_sequence, newest_slice_start);
+            }
+
+            const auto event_snapshot = controller.spike_events_snapshot(
+                first_sequence, kMaximumSpikeEventsPerUpdate);
+
+            if (initialize_stream || !event_snapshot.events.empty() ||
                 event_snapshot.dropped_events != last_spike_dropped_events) {
                 pending_spike_events =
                     spike_events_event_json(event_snapshot).dump() + "\n";
                 if (!event_snapshot.events.empty()) {
                     last_spike_event_sequence =
                         event_snapshot.events.back().sequence + 1;
+                } else {
+                    last_spike_event_sequence = event_snapshot.total_events;
                 }
                 last_spike_dropped_events = event_snapshot.dropped_events;
+            }
+
+            if (initialize_stream) {
+                spike_subscription_initialized = true;
             }
         }
 
@@ -415,7 +445,8 @@ void serve_client(int client_fd, SimulationController& controller) {
                 if (!process_line(
                         line, controller, responses,
                         queued_response_bytes, subscribed,
-                        last_telemetry_sequence, spike_events_subscribed)) {
+                        last_telemetry_sequence, spike_events_subscribed,
+                        spike_subscription_initialized)) {
                     // A client that stops reading must not be able to
                     // accumulate an unbounded response backlog.
                     return;
