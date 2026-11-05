@@ -222,6 +222,7 @@ def main():
                     "subscribe"
                 )
                 assert subscription["subscribed"] is True
+                assert subscription["telemetry"]["completed_steps"] == "0"
 
                 stepped = send_request(
                     client, reader, "step", {"steps": 1}, "step"
