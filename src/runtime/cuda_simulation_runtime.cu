@@ -322,6 +322,46 @@ SimulationMetrics CudaSimulationRuntime::collect_metrics() {
 }
 
 
+std::uint64_t CudaSimulationRuntime::state_fingerprint() {
+    if (!device_state_) throw std::logic_error("CUDA simulation is not initialized");
+    device_state_->stream.synchronize();
+
+    const auto count = static_cast<std::size_t>(device_state_->neuron_count);
+    std::vector<float> a(count), b(count), c(count), d(count);
+    std::vector<float> current(count), voltage(count), recovery(count);
+    const auto copy = [count](float* destination, const DeviceBuffer<float>& source) {
+        SPIKING_CUDA_CHECK(cudaMemcpy(
+            destination, source.get(), count * sizeof(float),
+            cudaMemcpyDeviceToHost));
+    };
+    copy(a.data(), device_state_->a);
+    copy(b.data(), device_state_->b);
+    copy(c.data(), device_state_->c);
+    copy(d.data(), device_state_->d);
+    copy(current.data(), device_state_->current);
+    copy(voltage.data(), device_state_->voltage);
+    copy(recovery.data(), device_state_->recovery);
+
+    // FNV-1a over the exact float bit patterns, in a stable field order.
+    std::uint64_t hash = 14695981039346656037ULL;
+    const auto add = [&hash](const std::vector<float>& values) {
+        const auto* bytes = reinterpret_cast<const unsigned char*>(values.data());
+        const std::size_t size = values.size() * sizeof(float);
+        for (std::size_t i = 0; i < size; ++i) {
+            hash ^= bytes[i];
+            hash *= 1099511628211ULL;
+        }
+    };
+    add(a);
+    add(b);
+    add(c);
+    add(d);
+    add(current);
+    add(voltage);
+    add(recovery);
+    return hash;
+}
+
 std::uint32_t CudaSimulationRuntime::spike_event_collection_batch_interval(
     std::uint32_t batch_size) const noexcept {
     if (batch_size == 0 || !device_state_ || device_state_->neuron_count == 0)
