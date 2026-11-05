@@ -267,6 +267,22 @@ SimulationMetrics CudaSimulationRuntime::collect_metrics() {
 }
 
 
+std::uint32_t CudaSimulationRuntime::spike_event_collection_batch_interval(
+    std::uint32_t batch_size) const noexcept {
+    if (batch_size == 0 || !device_state_ || device_state_->neuron_count == 0)
+        return 1;
+
+    // In the absolute worst case every neuron spikes on every integration
+    // step. Keep at least half of the ring free and cap the delay at eight
+    // batches so live visualization remains responsive.
+    std::uint64_t safe_batches = kSpikeEventCapacity / 2U;
+    safe_batches /= static_cast<std::uint64_t>(device_state_->neuron_count);
+    safe_batches /= static_cast<std::uint64_t>(batch_size);
+    safe_batches = std::max<std::uint64_t>(1U,
+        std::min<std::uint64_t>(safe_batches, 8U));
+    return static_cast<std::uint32_t>(safe_batches);
+}
+
 SpikeEventBatch CudaSimulationRuntime::collect_spike_events() {
     if (!device_state_)
         throw std::logic_error("CUDA simulation is not initialized");
