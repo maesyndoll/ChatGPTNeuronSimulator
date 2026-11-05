@@ -8,9 +8,11 @@ SimulationController::SimulationController(
     ModelParameters defaults,
     int device,
     std::uint32_t batch_size,
-    std::uint64_t telemetry_interval_steps)
+    std::uint64_t telemetry_interval_steps,
+    bool collect_spike_events)
     : batch_size_(batch_size),
-      telemetry_interval_steps_(telemetry_interval_steps) {
+      telemetry_interval_steps_(telemetry_interval_steps),
+      collect_spike_events_(collect_spike_events) {
     if (batch_size_ == 0) {
         throw std::invalid_argument(
             "Simulation controller batch_size must be positive");
@@ -28,7 +30,8 @@ SimulationController::SimulationController(
         this,
         std::move(defaults),
         device,
-        std::move(initialized));
+        std::move(initialized),
+        collect_spike_events_);
 
     try {
         ready.get();
@@ -79,8 +82,10 @@ void SimulationController::pause() {
 
         // Publish the final state at the pause boundary.
         const auto metrics = runtime.collect_metrics();
-        const auto events = runtime.collect_spike_events();
-        publish_spike_events(events, runtime.simulation_generation());
+        if (collect_spike_events_) {
+            const auto events = runtime.collect_spike_events();
+            publish_spike_events(events, runtime.simulation_generation());
+        }
         publish_metrics(metrics);
     });
 }
@@ -89,8 +94,10 @@ void SimulationController::step(std::uint32_t steps) {
     submit([this, steps](CudaSimulationRuntime& runtime) {
         runtime.run_steps(steps);
         const auto metrics = runtime.collect_metrics();
-        const auto events = runtime.collect_spike_events();
-        publish_spike_events(events, runtime.simulation_generation());
+        if (collect_spike_events_) {
+            const auto events = runtime.collect_spike_events();
+            publish_spike_events(events, runtime.simulation_generation());
+        }
         publish_metrics(metrics);
 
         std::lock_guard<std::mutex> lock(mutex_);
@@ -257,15 +264,18 @@ void SimulationController::publish_metrics(const SimulationMetrics& metrics) {
 void SimulationController::worker_main(
     ModelParameters defaults,
     int device,
-    std::promise<void> initialized) {
+    std::promise<void> initialized,
+    bool collect_spike_events) {
     std::unique_ptr<CudaSimulationRuntime> runtime;
 
     try {
         runtime = std::make_unique<CudaSimulationRuntime>(
-            std::move(defaults), device);
+            std::move(defaults), device, collect_spike_events);
         const auto initial_metrics = runtime->collect_metrics();
-        const auto initial_events = runtime->collect_spike_events();
-        publish_spike_events(initial_events, runtime->simulation_generation());
+        if (collect_spike_events) {
+            const auto initial_events = runtime->collect_spike_events();
+            publish_spike_events(initial_events, runtime->simulation_generation());
+        }
         publish_metrics(initial_metrics);
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -279,8 +289,9 @@ void SimulationController::worker_main(
 
     std::uint64_t next_telemetry_step = telemetry_interval_steps_;
     std::uint64_t observed_generation = runtime->simulation_generation();
-    std::uint32_t event_collection_interval =
-        runtime->spike_event_collection_batch_interval(batch_size_);
+    std::uint32_t event_collection_interval = collect_spike_events
+        ? runtime->spike_event_collection_batch_interval(batch_size_)
+        : 0U;
     std::uint32_t batches_since_event_collection = 0;
 
     for (;;) {
@@ -319,8 +330,9 @@ void SimulationController::worker_main(
                     observed_completed_steps_ = completed;
                 }
                 next_telemetry_step = completed + telemetry_interval_steps_;
-                event_collection_interval =
-                    runtime->spike_event_collection_batch_interval(batch_size_);
+                event_collection_interval = collect_spike_events
+                    ? runtime->spike_event_collection_batch_interval(batch_size_)
+                    : 0U;
                 batches_since_event_collection = 0;
                 condition_.notify_all();
             }
@@ -349,8 +361,9 @@ void SimulationController::worker_main(
             // Avoid forcing a GPU/CPU synchronization after every small
             // simulation batch. The interval is bounded from the worst-case
             // spike production rate and leaves half of the GPU ring unused.
-            ++batches_since_event_collection;
-            if (batches_since_event_collection >= event_collection_interval) {
+            if (collect_spike_events) ++batches_since_event_collection;
+            if (collect_spike_events &&
+                batches_since_event_collection >= event_collection_interval) {
                 const auto events = runtime->collect_spike_events();
                 publish_spike_events(events, runtime->simulation_generation());
                 batches_since_event_collection = 0;
