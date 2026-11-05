@@ -1,5 +1,6 @@
 #include "topology/topology_generator.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -134,6 +135,36 @@ int main() {
     check(no_self_connections, "generator excludes self-connections");
     check(rows_sorted, "targets are strictly sorted within each CSR row");
 
+    // Reverse CSR must cover every forward edge exactly once and retain the
+    // original edge index so learning updates can modify the canonical weight.
+    const auto incoming = build_incoming_csr_index(first);
+    check(incoming.row_offsets.size() == first.neuron_count() + 1,
+          "incoming CSR has one row per target plus sentinel");
+    check(incoming.source_indices.size() == first.synapse_count() &&
+          incoming.edge_indices.size() == first.synapse_count(),
+          "incoming CSR contains one source and edge index per synapse");
+    bool incoming_matches_forward = true;
+    std::vector<bool> seen_edges(first.synapse_count(), false);
+    for (std::uint32_t target = 0; target < first.neuron_count(); ++target) {
+        for (std::uint32_t entry = incoming.row_offsets[target];
+             entry < incoming.row_offsets[target + 1]; ++entry) {
+            const auto source = incoming.source_indices[entry];
+            const auto edge = incoming.edge_indices[entry];
+            if (edge >= first.synapse_count() || seen_edges[edge] ||
+                first.target_indices[edge] != target ||
+                edge < first.row_offsets[source] ||
+                edge >= first.row_offsets[source + 1]) {
+                incoming_matches_forward = false;
+                continue;
+            }
+            seen_edges[edge] = true;
+        }
+    }
+    check(incoming_matches_forward &&
+          std::all_of(seen_edges.begin(), seen_edges.end(),
+                      [](bool seen) { return seen; }),
+          "incoming CSR maps every edge back to its exact forward CSR entry");
+
     // Zero probabilities must produce a valid graph with no edges.
     auto zero = sparse_topology();
     zero.p_ee = zero.p_ei = zero.p_ie = zero.p_ii = 0.0;
@@ -141,6 +172,11 @@ int main() {
     check(empty.synapse_count() == 0, "zero probabilities produce no edges");
     check(empty.delays.empty(), "empty graph has no delay entries");
     check(empty.row_offsets.back() == 0, "empty graph has valid CSR offsets");
+    const auto empty_incoming = build_incoming_csr_index(empty);
+    check(empty_incoming.row_offsets.size() == simulation.neuron_count() + 1 &&
+          empty_incoming.source_indices.empty() &&
+          empty_incoming.edge_indices.empty(),
+          "empty graph produces a valid empty incoming CSR index");
 
     // Uniform delays must be integers within inclusive configured bounds.
     auto uniform = sparse_topology();
