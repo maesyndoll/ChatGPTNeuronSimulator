@@ -212,6 +212,10 @@ bool SimulationBridge::finiteState() const {
     return telemetry_.value(QStringLiteral("finite_state")).toBool(false);
 }
 
+QVariantList SimulationBridge::telemetryHistory() const {
+    return telemetry_history_;
+}
+
 QVariantMap SimulationBridge::requestedParameters() const {
     return configuration_.value(QStringLiteral("requested"))
         .toObject().toVariantMap();
@@ -372,6 +376,34 @@ void SimulationBridge::setErrorMessage(const QString& message) {
 
 void SimulationBridge::updateTelemetry(const QJsonObject& telemetry) {
     telemetry_ = telemetry;
+
+    bool step_ok = false;
+    const quint64 completed = telemetry.value(QStringLiteral("completed_steps"))
+        .toString().toULongLong(&step_ok);
+    if (step_ok) {
+        if (has_history_step_ && completed < last_history_step_) {
+            telemetry_history_.clear();
+        }
+        if (telemetry_history_.isEmpty() || completed != last_history_step_) {
+            QVariantMap sample;
+            sample.insert(QStringLiteral("completed_steps"),
+                          QString::number(completed));
+            sample.insert(QStringLiteral("mean_voltage_mv"),
+                          telemetry.value(QStringLiteral("mean_voltage_mv")).toDouble());
+            sample.insert(QStringLiteral("excitatory_rate_hz"),
+                          telemetry.value(QStringLiteral("excitatory_rate_hz")).toDouble());
+            sample.insert(QStringLiteral("inhibitory_rate_hz"),
+                          telemetry.value(QStringLiteral("inhibitory_rate_hz")).toDouble());
+            telemetry_history_.append(sample);
+            constexpr qsizetype kMaximumTelemetrySamples = 120;
+            if (telemetry_history_.size() > kMaximumTelemetrySamples) {
+                telemetry_history_.remove(
+                    0, telemetry_history_.size() - kMaximumTelemetrySamples);
+            }
+        }
+        last_history_step_ = completed;
+        has_history_step_ = true;
+    }
 
     if (telemetry.contains(QStringLiteral("status"))) {
         const QString nextStatus =
