@@ -14,6 +14,19 @@ namespace spiking {
 namespace {
 // 4,194,304 records × 12 bytes = 48 MiB of bounded GPU event storage.
 constexpr std::uint32_t kSpikeEventCapacity = 4U * 1024U * 1024U;
+constexpr std::uint32_t kCudaGraphBatchSteps = 100U;
+}
+
+CudaSimulationRuntime::DeviceState::~DeviceState() {
+    if (stream.get() != nullptr) (void)cudaStreamSynchronize(stream.get());
+    if (step_graph_exec != nullptr) {
+        (void)cudaGraphExecDestroy(step_graph_exec);
+        step_graph_exec = nullptr;
+    }
+    if (step_graph != nullptr) {
+        (void)cudaGraphDestroy(step_graph);
+        step_graph = nullptr;
+    }
 }
 
 CudaSimulationRuntime::DeviceState::DeviceState(
@@ -23,6 +36,7 @@ CudaSimulationRuntime::DeviceState::DeviceState(
       voltage(count), recovery(count), spike_counts(count),
       spike_flags(count),
       active_spike_sources(count), active_spike_count(1),
+      completed_steps_device(1),
       row_offsets(topology.row_offsets.size()),
       target_indices(topology.target_indices.size()),
       weights(topology.weights.size()),
@@ -75,7 +89,8 @@ NeuronStateGPU CudaSimulationRuntime::DeviceState::neuron_state() noexcept {
         capture_spike_events ? spike_event_steps.get() : nullptr,
         capture_spike_events ? spike_event_neurons.get() : nullptr,
         capture_spike_events ? spike_event_count.get() : nullptr,
-        capture_spike_events ? kSpikeEventCapacity : 0U
+        capture_spike_events ? kSpikeEventCapacity : 0U,
+        completed_steps_device.get()
     };
 }
 
@@ -134,6 +149,9 @@ CudaSimulationRuntime::build_device_state(
     SPIKING_CUDA_CHECK(cudaMemsetAsync(
         next->active_spike_count.get(), 0,
         sizeof(std::uint32_t), stream));
+    SPIKING_CUDA_CHECK(cudaMemsetAsync(
+        next->completed_steps_device.get(), 0,
+        sizeof(unsigned long long), stream));
     if (capture_spike_events) {
         SPIKING_CUDA_CHECK(cudaMemsetAsync(
             next->spike_event_count.get(), 0,
@@ -149,6 +167,30 @@ CudaSimulationRuntime::build_device_state(
         stream);
 
     next->stream.synchronize();
+
+    // Capture a reusable 100-step batch. Step-dependent values are read from
+    // the device counter, so replay advances ring slots and event timestamps.
+    const auto graph_state = next->neuron_state();
+    const SynapseParametersGPU graph_synapses{
+        next->row_offsets.get(), next->target_indices.get(),
+        next->weights.get(), next->delays.get(), next->edge_count,
+        next->synaptic_current.get(), next->ring_slots
+    };
+    SPIKING_CUDA_CHECK(cudaStreamBeginCapture(
+        stream, cudaStreamCaptureModeThreadLocal));
+    for (std::uint32_t i = 0; i < kCudaGraphBatchSteps; ++i) {
+        propagate_spikes(graph_state, graph_synapses, total, stream);
+        SPIKING_CUDA_CHECK(cudaMemsetAsync(
+            next->active_spike_count.get(), 0,
+            sizeof(std::uint32_t), stream));
+        simulate_neurons(
+            next->neuron_parameters(), graph_state, total,
+            p.dt, p.threshold, next->synaptic_current.get(),
+            next->ring_slots, stream);
+    }
+    SPIKING_CUDA_CHECK(cudaStreamEndCapture(stream, &next->step_graph));
+    SPIKING_CUDA_CHECK(cudaGraphInstantiate(
+        &next->step_graph_exec, next->step_graph, nullptr, nullptr, 0));
     return next;
 }
 
@@ -189,39 +231,32 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
     const auto params = device_state_->neuron_parameters();
     const auto state = device_state_->neuron_state();
     const auto count = static_cast<std::uint32_t>(device_state_->neuron_count);
+    const auto stream = device_state_->stream.get();
 
     const SynapseParametersGPU synapses{
-        device_state_->row_offsets.get(),
-        device_state_->target_indices.get(),
-        device_state_->weights.get(),
-        device_state_->delays.get(),
-        device_state_->edge_count,
-        device_state_->synaptic_current.get(),
+        device_state_->row_offsets.get(), device_state_->target_indices.get(),
+        device_state_->weights.get(), device_state_->delays.get(),
+        device_state_->edge_count, device_state_->synaptic_current.get(),
         device_state_->ring_slots
     };
 
+    while (steps >= kCudaGraphBatchSteps) {
+        SPIKING_CUDA_CHECK(cudaGraphLaunch(device_state_->step_graph_exec, stream));
+        steps -= kCudaGraphBatchSteps;
+        completed_steps_ += kCudaGraphBatchSteps;
+        elapsed_simulation_ms_ +=
+            static_cast<double>(kCudaGraphBatchSteps) * p.dt;
+    }
+
     for (std::uint32_t i = 0; i < steps; ++i) {
-        const std::uint32_t ring_slot = static_cast<std::uint32_t>(
-            completed_steps_ % device_state_->ring_slots);
-
-        // The flags still describe spikes from the preceding integration.
-        // Both kernels execute in-order on the same stream.
-        propagate_spikes(
-            state, synapses, count, completed_steps_,
-            device_state_->stream.get());
-
-        // Propagation has consumed the previous queue. Reset its count
-        // before integration appends this step's newly generated spikes.
+        propagate_spikes(state, synapses, count, stream);
         SPIKING_CUDA_CHECK(cudaMemsetAsync(
             device_state_->active_spike_count.get(), 0,
-            sizeof(std::uint32_t), device_state_->stream.get()));
-
+            sizeof(std::uint32_t), stream));
         simulate_neurons(
             params, state, count, p.dt, p.threshold,
-            device_state_->synaptic_current.get(), ring_slot,
-            completed_steps_ + 1ULL,
-            device_state_->stream.get());
-
+            device_state_->synaptic_current.get(),
+            device_state_->ring_slots, stream);
         ++completed_steps_;
         elapsed_simulation_ms_ += p.dt;
     }
