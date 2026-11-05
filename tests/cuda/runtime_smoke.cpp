@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <vector>
 
 int main() {
     using namespace spiking;
@@ -42,6 +43,35 @@ int main() {
                       << spike_metrics.last_step_inhibitory_spikes << '\n';
             return EXIT_FAILURE;
         }
+
+        // Selected-neuron voltage sampling reports the completed step and
+        // post-reset voltage for neurons that spiked during that step.
+        const auto voltage_samples =
+            spike_runtime.collect_voltage_samples({1U, 0U});
+        if (voltage_samples.size() != 2 ||
+            voltage_samples[0].step != 1 ||
+            voltage_samples[1].step != 1 ||
+            voltage_samples[0].time_ms != 0.001 ||
+            voltage_samples[1].time_ms != 0.001 ||
+            voltage_samples[0].neuron_id != 1 ||
+            voltage_samples[1].neuron_id != 0 ||
+            std::abs(voltage_samples[0].voltage_mv + 65.0f) > 1.0e-6f ||
+            std::abs(voltage_samples[1].voltage_mv + 65.0f) > 1.0e-6f) {
+            std::cerr << "Selected-neuron voltage sampling test failed\\n";
+            return EXIT_FAILURE;
+        }
+
+        bool rejected_invalid_voltage_id = false;
+        try {
+            (void)spike_runtime.collect_voltage_samples({2U});
+        } catch (const std::out_of_range&) {
+            rejected_invalid_voltage_id = true;
+        }
+        if (!rejected_invalid_voltage_id) {
+            std::cerr << "Voltage sampling accepted an invalid neuron ID\\n";
+            return EXIT_FAILURE;
+        }
+        std::cout << "Selected-neuron voltage sampling test passed\\n";
 
         // GPU spike-event recorder test: both neurons spike on step 1.
         const auto captured_events = spike_runtime.collect_spike_events();
