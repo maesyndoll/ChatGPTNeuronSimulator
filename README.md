@@ -23,10 +23,18 @@ Blackwell (`sm_120` by default).
 - Move-only CUDA RAII wrappers provide exception-safe cleanup of partially
   allocated device state.
 
-STDP weight updates, checkpointing, and the Qt UI remain future milestones.
-The plasticity-state allocation is currently an opt-in runtime constructor
-capability for development/tests; it is not exposed as a user configuration
-parameter and does not alter propagation or simulation results. The current
+Pair-based excitatory STDP is implemented as an opt-in CUDA runtime feature.
+The runtime maintains GPU-resident pre/post traces and applies trace decay,
+presynaptic depression, postsynaptic potentiation, and trace increments at
+each event boundary before spike propagation. The learning kernels run in
+the same CUDA stream and are included in captured CUDA Graph batches; there
+are no per-step host readbacks. Inhibitory-source weights remain fixed.
+Learning is disabled by default and can be enabled through the runtime
+constructor for development and tests; STDP parameters are currently supplied
+through that constructor rather than the JSON/IPC configuration API.
+CPU-reference and GPU-kernel tests cover pair ordering, simultaneous events,
+and inhibitory-weight preservation. Checkpointing and the Qt UI remain future
+milestones. The current
 connectivity generator supports seeded random sparse networks; structured
 population-to-population connectivity is a planned extension.
 
