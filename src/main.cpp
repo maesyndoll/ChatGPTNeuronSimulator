@@ -7,6 +7,7 @@
 #include <cuda_runtime.h>
 
 #include <chrono>
+#include <cstdint>
 #include <ctime>
 #include <exception>
 #include <filesystem>
@@ -17,6 +18,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <unistd.h>
 
@@ -30,6 +32,19 @@ struct CommandLineOptions {
     std::string socket_path;
     std::string config_path;
     std::string log_path = "experiments/logs/experiment_log.jsonl";
+    std::uint32_t telemetry_window_steps = 0;
+};
+
+struct WindowTelemetry {
+    std::uint64_t start_step = 0;
+    std::uint64_t end_step = 0;
+    double start_time_ms = 0.0;
+    double end_time_ms = 0.0;
+    std::uint64_t excitatory_spikes = 0;
+    std::uint64_t inhibitory_spikes = 0;
+    double excitatory_rate_hz = 0.0;
+    double inhibitory_rate_hz = 0.0;
+    double mean_voltage_snapshot_mv = 0.0;
 };
 
 CommandLineOptions parse_arguments(int argc, char** argv) {
@@ -51,6 +66,15 @@ CommandLineOptions parse_arguments(int argc, char** argv) {
                 throw std::invalid_argument("--log requires a JSONL file path");
             options.log_path = argv[i];
             options.log_results = true;
+        } else if (arg == "--telemetry-window-steps") {
+            if (++i >= argc)
+                throw std::invalid_argument("--telemetry-window-steps requires an integer");
+            std::size_t consumed = 0;
+            const auto value = std::stoul(argv[i], &consumed);
+            if (consumed != std::string(argv[i]).size() || value == 0 ||
+                value > std::numeric_limits<std::uint32_t>::max())
+                throw std::invalid_argument("--telemetry-window-steps must be a positive 32-bit integer");
+            options.telemetry_window_steps = static_cast<std::uint32_t>(value);
         } else if (arg == "--no-log") {
             options.log_results = false;
         } else if (arg == "--socket") {
@@ -66,7 +90,7 @@ CommandLineOptions parse_arguments(int argc, char** argv) {
                 throw std::invalid_argument("--device must be a non-negative integer");
         } else if (arg == "--help" || arg == "-h") {
             std::cout
-                << "Usage: spiking_model [--config FILE] [--small] [--device N] [--log FILE] [--no-log]\n"
+                << "Usage: spiking_model [--config FILE] [--small] [--device N] [--log FILE] [--no-log] [--telemetry-window-steps N]\n"
                 << "       spiking_model --server [--socket PATH] [--config FILE] [--small] [--device N]\n";
             std::exit(0);
         } else {
@@ -101,7 +125,8 @@ void append_experiment_record(
     const cudaDeviceProp& gpu,
     int device_id,
     double elapsed_seconds,
-    const std::string& config_path
+    const std::string& config_path,
+    const std::vector<WindowTelemetry>& telemetry
 ) {
     namespace fs = std::filesystem;
     const fs::path log_path(path);
@@ -133,6 +158,25 @@ void append_experiment_record(
             {"wall_time_seconds", elapsed_seconds}
         }}
     };
+
+    if (!telemetry.empty()) {
+        record["results"]["time_resolved_telemetry"] = nlohmann::json::array();
+        for (std::size_t i = 0; i < telemetry.size(); ++i) {
+            const auto& window = telemetry[i];
+            record["results"]["time_resolved_telemetry"].push_back({
+                {"window_index", i},
+                {"start_step", window.start_step},
+                {"end_step", window.end_step},
+                {"start_time_ms", window.start_time_ms},
+                {"end_time_ms", window.end_time_ms},
+                {"excitatory_spikes", window.excitatory_spikes},
+                {"inhibitory_spikes", window.inhibitory_spikes},
+                {"excitatory_mean_firing_rate_hz", window.excitatory_rate_hz},
+                {"inhibitory_mean_firing_rate_hz", window.inhibitory_rate_hz},
+                {"mean_membrane_voltage_snapshot_mv", window.mean_voltage_snapshot_mv}
+            });
+        }
+    }
 
     std::ofstream output(path, std::ios::out | std::ios::app);
     if (!output)
@@ -189,7 +233,52 @@ int main(int argc, char** argv) {
                   << "Delay seed: " << parameters.topology.delay_seed << '\n';
 
         const auto start = std::chrono::steady_clock::now();
-        runtime.run();
+        std::vector<WindowTelemetry> telemetry;
+
+        if (options.telemetry_window_steps == 0) {
+            runtime.run();
+        } else {
+            std::uint64_t previous_excitatory_spikes = 0;
+            std::uint64_t previous_inhibitory_spikes = 0;
+            const std::uint64_t total_steps = simulation.steps;
+            std::uint64_t completed_window_steps = 0;
+
+            while (completed_window_steps < total_steps) {
+                const auto remaining = total_steps - completed_window_steps;
+                const auto window_steps = static_cast<std::uint32_t>(
+                    std::min<std::uint64_t>(remaining, options.telemetry_window_steps));
+
+                runtime.run_steps(window_steps);
+                const auto window_metrics = runtime.collect_metrics();
+
+                const double window_duration_seconds =
+                    static_cast<double>(window_steps) * simulation.dt / 1000.0;
+                WindowTelemetry window;
+                window.start_step = completed_window_steps;
+                window.end_step = completed_window_steps + window_steps;
+                window.start_time_ms =
+                    static_cast<double>(window.start_step) * simulation.dt;
+                window.end_time_ms =
+                    static_cast<double>(window.end_step) * simulation.dt;
+                window.excitatory_spikes =
+                    window_metrics.excitatory_spikes - previous_excitatory_spikes;
+                window.inhibitory_spikes =
+                    window_metrics.inhibitory_spikes - previous_inhibitory_spikes;
+                window.excitatory_rate_hz = window.excitatory_spikes /
+                    (static_cast<double>(simulation.excitatory_count) *
+                     window_duration_seconds);
+                window.inhibitory_rate_hz = window.inhibitory_spikes /
+                    (static_cast<double>(simulation.inhibitory_count) *
+                     window_duration_seconds);
+                window.mean_voltage_snapshot_mv = window_metrics.mean_voltage_mv;
+                telemetry.push_back(window);
+
+                previous_excitatory_spikes = window_metrics.excitatory_spikes;
+                previous_inhibitory_spikes = window_metrics.inhibitory_spikes;
+                completed_window_steps += window_steps;
+            }
+        }
+
         const auto metrics = runtime.collect_metrics();
         const double elapsed_seconds = std::chrono::duration<double>(
             std::chrono::steady_clock::now() - start).count();
@@ -205,9 +294,23 @@ int main(int argc, char** argv) {
                   << "Numerical state: " << (metrics.finite_state ? "VALID" : "INVALID") << '\n'
                   << "Wall time: " << elapsed_seconds << " s\n";
 
+        if (!telemetry.empty()) {
+            std::cout << "Telemetry windows: " << telemetry.size() << '\n';
+            for (std::size_t i = 0; i < telemetry.size(); ++i) {
+                const auto& window = telemetry[i];
+                std::cout << "  Window " << (i + 1)
+                          << " [" << window.start_time_ms << ", "
+                          << window.end_time_ms << ") ms: E "
+                          << window.excitatory_rate_hz << " Hz, I "
+                          << window.inhibitory_rate_hz << " Hz, voltage snapshot "
+                          << window.mean_voltage_snapshot_mv << " mV\n";
+            }
+        }
+
         if (options.log_results) {
             append_experiment_record(options.log_path, parameters, metrics, properties,
-                                     runtime.device_id(), elapsed_seconds, options.config_path);
+                                     runtime.device_id(), elapsed_seconds, options.config_path,
+                                     telemetry);
             std::cout << "Experiment log: " << options.log_path << '\n';
         }
         return metrics.finite_state ? 0 : 2;
