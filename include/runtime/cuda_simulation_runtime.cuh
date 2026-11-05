@@ -88,7 +88,7 @@ public:
     }
     std::uint64_t completed_steps() const noexcept { return completed_steps_; }
     int device_id() const noexcept { return device_id_; }
-    bool plasticity_state_enabled() const noexcept; 
+    bool plasticity_state_enabled() const noexcept;
 
 private:
     struct DeviceState {
