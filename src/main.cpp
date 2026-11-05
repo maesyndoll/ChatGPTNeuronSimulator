@@ -37,6 +37,7 @@ struct CommandLineOptions {
     std::string log_path = "experiments/logs/experiment_log.jsonl";
     std::uint32_t telemetry_window_steps = 0;
     std::string voltage_trace_path;
+    std::string connectivity_export_path;
     std::vector<std::uint32_t> voltage_trace_neurons;
     std::uint32_t voltage_trace_interval_steps = 1;
 };
@@ -81,6 +82,10 @@ CommandLineOptions parse_arguments(int argc, char** argv) {
                 value > std::numeric_limits<std::uint32_t>::max())
                 throw std::invalid_argument("--telemetry-window-steps must be a positive 32-bit integer");
             options.telemetry_window_steps = static_cast<std::uint32_t>(value);
+        } else if (arg == "--connectivity-export") {
+            if (++i >= argc)
+                throw std::invalid_argument("--connectivity-export requires a CSV file path");
+            options.connectivity_export_path = argv[i];
         } else if (arg == "--voltage-trace") {
             if (++i >= argc)
                 throw std::invalid_argument("--voltage-trace requires a CSV file path");
@@ -118,7 +123,7 @@ CommandLineOptions parse_arguments(int argc, char** argv) {
                 throw std::invalid_argument("--device must be a non-negative integer");
         } else if (arg == "--help" || arg == "-h") {
             std::cout
-                << "Usage: spiking_model [--config FILE] [--small] [--device N] [--log FILE] [--no-log] [--telemetry-window-steps N] [--voltage-trace FILE --voltage-trace-neuron ID ...] [--voltage-trace-interval N]\n"
+                << "Usage: spiking_model [--config FILE] [--small] [--device N] [--log FILE] [--no-log] [--connectivity-export FILE] [--telemetry-window-steps N] [--voltage-trace FILE --voltage-trace-neuron ID ...] [--voltage-trace-interval N]\n"
                 << "       spiking_model --server [--socket PATH] [--config FILE] [--small] [--device N]\n";
             std::exit(0);
         } else {
@@ -134,6 +139,8 @@ CommandLineOptions parse_arguments(int argc, char** argv) {
         throw std::invalid_argument("--voltage-trace requires at least one --voltage-trace-neuron");
     if (!options.voltage_trace_path.empty() && options.telemetry_window_steps != 0)
         throw std::invalid_argument("--voltage-trace and --telemetry-window-steps cannot be combined yet");
+    if (options.server && !options.connectivity_export_path.empty())
+        throw std::invalid_argument("--connectivity-export is not available in server mode");
     if (options.server && !options.voltage_trace_path.empty())
         throw std::invalid_argument("--voltage-trace is not available in server mode");
 
@@ -142,6 +149,38 @@ CommandLineOptions parse_arguments(int argc, char** argv) {
     if (options.server && options.log_results)
         options.log_results = false;
     return options;
+}
+
+void write_connectivity_csv(
+    const std::string& path,
+    const spiking::CSRTopology& topology) {
+    namespace fs = std::filesystem;
+    const fs::path output_path(path);
+    if (!output_path.parent_path().empty())
+        fs::create_directories(output_path.parent_path());
+
+    std::ofstream output(path, std::ios::out | std::ios::trunc);
+    if (!output)
+        throw std::runtime_error("cannot open connectivity CSV: " + path);
+
+    output << "source_neuron,target_neuron,source_population,target_population,weight,delay_steps\n";
+    for (std::uint32_t source = 0; source < topology.neuron_count(); ++source) {
+        const char* source_population =
+            source < topology.excitatory_count ? "excitatory" : "inhibitory";
+        for (std::uint32_t edge = topology.row_offsets[source];
+             edge < topology.row_offsets[source + 1]; ++edge) {
+            const auto target = topology.target_indices[edge];
+            const char* target_population =
+                target < topology.excitatory_count ? "excitatory" : "inhibitory";
+            output << source << ',' << target << ','
+                   << source_population << ',' << target_population << ','
+                   << std::setprecision(9) << topology.weights[edge] << ','
+                   << topology.delays[edge] << '\n';
+        }
+    }
+    output.flush();
+    if (!output)
+        throw std::runtime_error("failed writing connectivity CSV: " + path);
 }
 
 void write_voltage_samples(
@@ -297,6 +336,13 @@ int main(int argc, char** argv) {
         std::cout << "Neuron seed: " << simulation.random_seed << '\n'
                   << "Topology seed: " << parameters.topology.topology_seed << '\n'
                   << "Delay seed: " << parameters.topology.delay_seed << '\n';
+
+        if (!options.connectivity_export_path.empty()) {
+            const auto topology = runtime.collect_connectivity();
+            write_connectivity_csv(options.connectivity_export_path, topology);
+            std::cout << "Connectivity export: " << options.connectivity_export_path
+                      << " (" << topology.synapse_count() << " synapses)\n";
+        }
 
         const auto start = std::chrono::steady_clock::now();
         std::vector<WindowTelemetry> telemetry;
