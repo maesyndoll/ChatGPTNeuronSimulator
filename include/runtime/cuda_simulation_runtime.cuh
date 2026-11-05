@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <memory>
 #include <vector>
+#include <cuda_runtime_api.h>
 
 namespace spiking {
 
@@ -83,6 +84,11 @@ private:
         // GPU-resident queue containing the neurons that spiked last step.
         DeviceBuffer<std::uint32_t> active_spike_sources;
         DeviceBuffer<std::uint32_t> active_spike_count;
+        DeviceBuffer<unsigned long long> completed_steps_device;
+        cudaGraph_t step_graph = nullptr;
+        cudaGraphExec_t step_graph_exec = nullptr;
+
+        ~DeviceState();
 
         // Fixed-capacity GPU ring for recent spike events (12 bytes/event).
         DeviceBuffer<std::uint64_t> spike_event_steps;
