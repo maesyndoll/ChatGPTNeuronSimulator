@@ -279,6 +279,9 @@ void SimulationController::worker_main(
 
     std::uint64_t next_telemetry_step = telemetry_interval_steps_;
     std::uint64_t observed_generation = runtime->simulation_generation();
+    std::uint32_t event_collection_interval =
+        runtime->spike_event_collection_batch_interval(batch_size_);
+    std::uint32_t batches_since_event_collection = 0;
 
     for (;;) {
         std::function<void(CudaSimulationRuntime&)> command;
@@ -316,6 +319,9 @@ void SimulationController::worker_main(
                     observed_completed_steps_ = completed;
                 }
                 next_telemetry_step = completed + telemetry_interval_steps_;
+                event_collection_interval =
+                    runtime->spike_event_collection_batch_interval(batch_size_);
+                batches_since_event_collection = 0;
                 condition_.notify_all();
             }
             continue;
@@ -340,10 +346,15 @@ void SimulationController::worker_main(
             }
             condition_.notify_all();
 
-            // Drain the GPU event ring after every batch so that a busy
-            // simulation cannot overwrite events while waiting for telemetry.
-            const auto events = runtime->collect_spike_events();
-            publish_spike_events(events, runtime->simulation_generation());
+            // Avoid forcing a GPU/CPU synchronization after every small
+            // simulation batch. The interval is bounded from the worst-case
+            // spike production rate and leaves half of the GPU ring unused.
+            ++batches_since_event_collection;
+            if (batches_since_event_collection >= event_collection_interval) {
+                const auto events = runtime->collect_spike_events();
+                publish_spike_events(events, runtime->simulation_generation());
+                batches_since_event_collection = 0;
+            }
 
             // Keep telemetry collection at its existing lower frequency.
             if (completed >= next_telemetry_step) {
