@@ -167,6 +167,20 @@ if(SPIKINGMODEL_ENABLE_CUDA)
     add_dependencies(spiking_model check_parameter_schema)
 
     if(BUILD_TESTING)
+        add_executable(stdp_cuda_tests
+            tests/cuda/stdp_cuda_tests.cpp
+            src/cuda/neuron_izhikevich.cu
+        )
+        target_include_directories(stdp_cuda_tests PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+        target_link_libraries(stdp_cuda_tests PRIVATE CUDA::cudart)
+        set_target_properties(stdp_cuda_tests PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON
+            CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+        )
+        add_test(NAME stdp_cuda_tests COMMAND stdp_cuda_tests)
+
         add_executable(cuda_runtime_smoke
             tests/cuda/runtime_smoke.cpp
             src/cuda/neuron_izhikevich.cu
