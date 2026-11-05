@@ -39,7 +39,8 @@ struct SimulationMetrics {
 class CudaSimulationRuntime {
 public:
     explicit CudaSimulationRuntime(ModelParameters defaults = ModelParameters{},
-                                   int device = 0);
+                                   int device = 0,
+                                   bool capture_spike_events = true);
     ~CudaSimulationRuntime() = default;
 
     CudaSimulationRuntime(const CudaSimulationRuntime&) = delete;
@@ -71,7 +72,8 @@ public:
 
 private:
     struct DeviceState {
-        DeviceState(std::size_t count, const CSRTopology& topology);
+        DeviceState(std::size_t count, const CSRTopology& topology,
+                    bool capture_spike_events);
         CudaStream stream;
         DeviceBuffer<float> a, b, c, d, current;
         DeviceBuffer<float> voltage, recovery;
@@ -98,12 +100,14 @@ private:
         std::size_t neuron_count;
         std::uint32_t edge_count;
         std::uint32_t ring_slots;
+        bool capture_spike_events;
 
         NeuronParametersGPU neuron_parameters() noexcept;
         NeuronStateGPU neuron_state() noexcept;
     };
 
-    std::unique_ptr<DeviceState> build_device_state(const ModelParameters& parameters);
+    std::unique_ptr<DeviceState> build_device_state(const ModelParameters& parameters,
+                       bool capture_spike_events);
 
     ParameterManager parameter_manager_;
     ModelParameters active_parameters_;
@@ -112,6 +116,7 @@ private:
     std::uint64_t spike_event_read_cursor_ = 0;
     double elapsed_simulation_ms_ = 0.0;
     int device_id_ = 0;
+    bool capture_spike_events_ = true;
 };
 
 } // namespace spiking
