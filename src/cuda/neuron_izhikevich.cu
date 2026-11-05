@@ -128,7 +128,7 @@ __global__ void neuron_step_kernel(
     const std::uint32_t id =
         blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (id >= count) return;
+    if (id < count) {
 
     // This buffer represents spikes from this timestep only.
     s.spike_flags[id] = 0;
@@ -198,11 +198,20 @@ __global__ void neuron_step_kernel(
 
     s.voltage[id] = v;
     s.recovery[id] = u;
+    }
 
-}
-
-__global__ void advance_completed_steps_kernel(unsigned long long* completed) {
-    if (blockIdx.x == 0 && threadIdx.x == 0) atomicAdd(completed, 1ULL);
+    // All threads in this block have finished their neuron before the block
+    // contributes to the grid completion count. The last block advances the
+    // global step exactly once, without launching a separate kernel.
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        const std::uint32_t finished_blocks =
+            atomicAdd(s.completed_step_blocks, 1U);
+        if (finished_blocks + 1U == gridDim.x) {
+            atomicAdd(s.completed_steps, 1ULL);
+            atomicExch(s.completed_step_blocks, 0U);
+        }
+    }
 }
 
 void initialize_neurons(
@@ -286,9 +295,7 @@ void simulate_neurons(
         synaptic_current, ring_slots
     );
     SPIKING_CUDA_CHECK(cudaGetLastError());
-    advance_completed_steps_kernel<<<1, 1, 0, stream>>>(
-        state.completed_steps);
-    SPIKING_CUDA_CHECK(cudaGetLastError());
+
 }
 
 }
