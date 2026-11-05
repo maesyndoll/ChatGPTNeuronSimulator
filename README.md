@@ -27,7 +27,7 @@ ctest --test-dir build-cpu --output-on-failure
 
 ## CUDA build and smoke test
 
-On the RTX 5070 Ti with a compatible CUDA Toolkit and driver:
+On an NVIDIA GPU with a compatible CUDA Toolkit and driver:
 
 ```bash
 cmake -S . -B build-cuda -DSPIKINGMODEL_ENABLE_CUDA=ON \
@@ -37,22 +37,39 @@ ctest --test-dir build-cuda --output-on-failure
 ./build-cuda/spiking_model --small
 ```
 
-The CUDA CTest includes `cuda_runtime_smoke`, which exercises initialization,
-step-boundary parameter updates, continued execution, and full reinitialization.
-The CPU-only tests do not verify CUDA compilation or GPU execution. See
-[`docs/RUNTIME_FOUNDATION.md`](docs/RUNTIME_FOUNDATION.md) for implementation
-notes and lifecycle semantics.
+## Experiment configurations and automatic results log
 
-
-## Reproducible experiment configurations
-
-The standalone executable can load a JSON parameter file without recompiling.
+The standalone executable loads JSON parameter files without recompiling.
 The checked-in full-network control configuration fixes the neuron, topology,
 and delay seeds:
 
 ```bash
 ./build-cuda/spiking_model --config experiments/deterministic_control.json
 ```
+
+Every completed standalone run is appended as one JSON object per line to:
+
+```text
+experiments/logs/experiment_log.jsonl
+```
+
+The log is append-only: running another experiment does not overwrite earlier
+records. Each record includes a UTC timestamp, application version, source
+configuration path, complete effective parameter configuration, random seeds,
+GPU model and compute capability, completed steps, spike counts, firing rates,
+mean membrane voltage, numerical validity, and simulation wall time. The
+parent directory is created automatically.
+
+To use a different log file:
+
+```bash
+./build-cuda/spiking_model --config experiments/deterministic_control.json \
+  --log experiments/logs/control_repeats.jsonl
+```
+
+To run without writing a record, use `--no-log`. The log is local experiment
+data; review and back it up before cleaning the working tree. Keep raw results
+with their original configurations so later comparisons remain auditable.
 
 Configuration files use the same `simulation` and `topology` groups as the
 IPC parameter API. They may contain partial updates; omitted values retain
@@ -68,9 +85,8 @@ and does not yet derive the other streams.
 Fixed seeds guarantee repeatable initialization and generated connectivity
 for the same build and configuration. They do not currently promise
 bit-for-bit identical CUDA simulation metrics across repeated runs; parallel
-floating-point accumulation can vary. The CUDA `determinism_smoke` test compares two full-size runs: topology
-arrays are compared exactly by `topology_tests`, the initial neuron parameter
-and state arrays are compared through an exact state fingerprint, and final
-spike counts/mean voltage are compared with tight tolerances. This allows the
-test to detect random-stream regressions without incorrectly requiring
-bit-for-bit identical parallel CUDA accumulation.
+floating-point accumulation can vary. The CUDA `determinism_smoke` test
+compares two full-size runs: topology arrays are compared exactly by
+`topology_tests`, the initial neuron parameter and state arrays are compared
+through an exact state fingerprint, and final spike counts/mean voltage are
+compared with tight tolerances.
