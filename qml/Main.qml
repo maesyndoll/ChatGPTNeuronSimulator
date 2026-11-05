@@ -25,6 +25,10 @@ ApplicationWindow {
     Connections {
         target: simulation
 
+        function onTelemetryChanged() {
+            telemetryTrendChart.requestPaint()
+        }
+
         function onConfigurationChanged() {
             if (window.parameterDraftInitialized)
                 return
@@ -591,6 +595,129 @@ ApplicationWindow {
             color: "#f0f4fa"
             font.pixelSize: 19
             font.bold: true
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            radius: 12
+            color: "#192433"
+            border.color: "#2b3a4d"
+            implicitHeight: telemetryChartColumn.implicitHeight + 28
+
+            ColumnLayout {
+                id: telemetryChartColumn
+                anchors.fill: parent
+                anchors.margins: 14
+                spacing: 8
+
+                Label {
+                    text: "Telemetry trends · last 120 samples"
+                    color: "#dce6f2"
+                    font.pixelSize: 14
+                    font.bold: true
+                }
+
+                Canvas {
+                    id: telemetryTrendChart
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 218
+                    contextType: "2d"
+
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        ctx.clearRect(0, 0, width, height)
+
+                        var history = simulation.telemetryHistory
+                        var series = [
+                            { key: "mean_voltage_mv", label: "Mean voltage (mV)", color: "#63b3ed" },
+                            { key: "excitatory_rate_hz", label: "Excitatory rate (Hz)", color: "#70d6a5" },
+                            { key: "inhibitory_rate_hz", label: "Inhibitory rate (Hz)", color: "#e6b66b" }
+                        ]
+
+                        var left = 126
+                        var right = width - 12
+                        var plotWidth = Math.max(1, right - left)
+                        var laneHeight = 68
+
+                        for (var s = 0; s < series.length; ++s) {
+                            var top = s * 72 + 3
+                            var bottom = top + laneHeight - 12
+                            var values = []
+                            var minValue = Number.POSITIVE_INFINITY
+                            var maxValue = Number.NEGATIVE_INFINITY
+
+                            for (var j = 0; j < history.length; ++j) {
+                                var value = Number(history[j][series[s].key])
+                                values.push(value)
+                                minValue = Math.min(minValue, value)
+                                maxValue = Math.max(maxValue, value)
+                            }
+
+                            ctx.strokeStyle = "#34465c"
+                            ctx.lineWidth = 1
+                            ctx.beginPath()
+                            ctx.moveTo(left, bottom)
+                            ctx.lineTo(right, bottom)
+                            ctx.stroke()
+
+                            ctx.fillStyle = series[s].color
+                            ctx.font = "11px sans-serif"
+                            ctx.fillText(series[s].label, 4, top + 24)
+
+                            if (values.length === 0)
+                                continue
+
+                            var span = maxValue - minValue
+                            if (!isFinite(span) || span < 0.000001) {
+                                var pad = Math.max(1, Math.abs(maxValue) * 0.05)
+                                minValue -= pad
+                                maxValue += pad
+                                span = maxValue - minValue
+                            }
+
+                            ctx.strokeStyle = series[s].color
+                            ctx.lineWidth = 2
+                            ctx.beginPath()
+
+                            for (var k = 0; k < values.length; ++k) {
+                                var x = left + (values.length === 1 ? plotWidth / 2 :
+                                    (k / (values.length - 1)) * plotWidth)
+                                var y = bottom - ((values[k] - minValue) / span) *
+                                    (laneHeight - 25)
+                                if (k === 0)
+                                    ctx.moveTo(x, y)
+                                else
+                                    ctx.lineTo(x, y)
+                            }
+                            ctx.stroke()
+
+                            if (values.length === 1) {
+                                var onlyX = left + plotWidth / 2
+                                var onlyY = bottom - ((values[0] - minValue) / span) *
+                                    (laneHeight - 25)
+                                ctx.fillStyle = series[s].color
+                                ctx.beginPath()
+                                ctx.arc(onlyX, onlyY, 3, 0, Math.PI * 2)
+                                ctx.fill()
+                            }
+                        }
+
+                        if (history.length === 0) {
+                            ctx.fillStyle = "#91a2b8"
+                            ctx.font = "12px sans-serif"
+                            ctx.fillText("Waiting for telemetry samples…", left + 8, 112)
+                        } else {
+                            ctx.fillStyle = "#71839a"
+                            ctx.font = "10px sans-serif"
+                            ctx.fillText("Step " + history[0].completed_steps, left, height - 2)
+                            ctx.textAlign = "right"
+                            ctx.fillText("Step " +
+                                history[history.length - 1].completed_steps, right, height - 2)
+                            ctx.textAlign = "left"
+                        }
+                    }
+                }
+            }
         }
 
         GridLayout {
