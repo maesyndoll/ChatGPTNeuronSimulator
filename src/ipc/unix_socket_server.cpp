@@ -4,6 +4,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+
 #include <cerrno>
 #include <csignal>
 #include <cstddef>
