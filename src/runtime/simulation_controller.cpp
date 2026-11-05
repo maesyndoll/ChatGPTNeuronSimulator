@@ -124,8 +124,10 @@ void SimulationController::reinitialize_simulation() {
     submit([this](CudaSimulationRuntime& runtime) {
         runtime.reinitialize_simulation();
         const auto metrics = runtime.collect_metrics();
-        const auto events = runtime.collect_spike_events();
-        publish_spike_events(events, runtime.simulation_generation());
+        if (collect_spike_events_) {
+            const auto events = runtime.collect_spike_events();
+            publish_spike_events(events, runtime.simulation_generation());
+        }
         publish_metrics(metrics);
 
         std::lock_guard<std::mutex> lock(mutex_);
