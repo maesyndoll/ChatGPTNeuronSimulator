@@ -100,6 +100,30 @@ combined with `--telemetry-window-steps` or server mode. Repeat
 `--voltage-trace-neuron` to record multiple neuron IDs.
 
 
+To export the exact connectivity graph allocated on the GPU, use
+`--connectivity-export`:
+
+```bash
+./build-cuda/spiking_model --config experiments/deterministic_control.json \\
+  --connectivity-export experiments/logs/connectivity.csv
+```
+
+The export is copied from the runtime's active GPU-resident CSR arrays after
+synchronizing the simulation stream; it does not regenerate the graph. The CSV
+contains one row per directed synapse with these columns:
+
+- `source_neuron`, `target_neuron`: zero-based neuron IDs;
+- `source_population`, `target_population`: `excitatory` or `inhibitory`;
+- `weight`: signed synaptic weight (excitatory sources are positive,
+  inhibitory sources negative);
+- `delay_steps`: integer propagation delay in simulation steps.
+
+Rows are emitted in source-neuron CSR order. The export is performed before
+simulation begins and does not alter the graph or simulation state. The output
+file is replaced if it already exists; choose a new path when retaining
+multiple experiment exports. This option is for standalone mode, not server
+mode.
+
 Configuration files use the same `simulation` and `topology` groups as the
 IPC parameter API. They may contain partial updates; omitted values retain
 the normal defaults. The 64-bit topology and delay seeds are decimal strings
