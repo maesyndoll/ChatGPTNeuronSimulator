@@ -122,6 +122,86 @@ __global__ void propagate_spikes_kernel(
     }
 }
 
+__global__ void decay_stdp_traces_kernel(
+    float* pre_traces, float* post_traces, std::uint32_t count,
+    float pre_decay, float post_decay
+) {
+    const std::uint32_t id = blockIdx.x * blockDim.x + threadIdx.x;
+    if (id >= count) return;
+    pre_traces[id] *= pre_decay;
+    post_traces[id] *= post_decay;
+}
+
+__global__ void stdp_depression_kernel(
+    const std::uint32_t* active_sources,
+    const std::uint32_t* active_count,
+    const std::uint32_t* row_offsets,
+    const std::uint32_t* targets,
+    float* weights,
+    const float* post_traces,
+    std::uint32_t neuron_count,
+    float depression_rate,
+    float minimum_weight,
+    float maximum_weight
+) {
+    const std::uint32_t queue_index = blockIdx.x * blockDim.x + threadIdx.x;
+    const std::uint32_t count = *active_count;
+    if (queue_index >= count) return;
+    const std::uint32_t source = active_sources[queue_index];
+    if (source >= neuron_count) return;
+    for (std::uint32_t edge = row_offsets[source];
+         edge < row_offsets[source + 1]; ++edge) {
+        const std::uint32_t target = targets[edge];
+        float weight = weights[edge] - depression_rate * post_traces[target];
+        weights[edge] = fminf(maximum_weight, fmaxf(minimum_weight, weight));
+    }
+}
+
+__global__ void stdp_potentiation_kernel(
+    const std::uint32_t* active_sources,
+    const std::uint32_t* active_count,
+    const std::uint32_t* incoming_row_offsets,
+    const std::uint32_t* incoming_sources,
+    const std::uint32_t* incoming_edge_indices,
+    float* weights,
+    const float* pre_traces,
+    std::uint32_t neuron_count,
+    std::uint32_t excitatory_count,
+    float potentiation_rate,
+    float minimum_weight,
+    float maximum_weight
+) {
+    const std::uint32_t queue_index = blockIdx.x * blockDim.x + threadIdx.x;
+    const std::uint32_t count = *active_count;
+    if (queue_index >= count) return;
+    const std::uint32_t target = active_sources[queue_index];
+    if (target >= neuron_count) return;
+    for (std::uint32_t incoming = incoming_row_offsets[target];
+         incoming < incoming_row_offsets[target + 1]; ++incoming) {
+        const std::uint32_t source = incoming_sources[incoming];
+        if (source >= excitatory_count) continue;
+        const std::uint32_t edge = incoming_edge_indices[incoming];
+        float weight = weights[edge] + potentiation_rate * pre_traces[source];
+        weights[edge] = fminf(maximum_weight, fmaxf(minimum_weight, weight));
+    }
+}
+
+__global__ void increment_stdp_traces_kernel(
+    const std::uint32_t* active_sources,
+    const std::uint32_t* active_count,
+    float* pre_traces,
+    float* post_traces,
+    std::uint32_t neuron_count
+) {
+    const std::uint32_t queue_index = blockIdx.x * blockDim.x + threadIdx.x;
+    const std::uint32_t count = *active_count;
+    if (queue_index >= count) return;
+    const std::uint32_t neuron = active_sources[queue_index];
+    if (neuron >= neuron_count) return;
+    pre_traces[neuron] += 1.0f;
+    post_traces[neuron] += 1.0f;
+}
+
 __global__ void neuron_step_kernel(
     NeuronParametersGPU p,
     NeuronStateGPU s,
@@ -283,6 +363,60 @@ void propagate_spikes(
     propagate_spikes_kernel<<<blocks, threads, 0, stream>>>(
         state, synapses, neuron_count
     );
+    SPIKING_CUDA_CHECK(cudaGetLastError());
+}
+
+void apply_stdp(
+    const std::uint32_t* active_spike_sources,
+    const std::uint32_t* active_spike_count,
+    const std::uint32_t* outgoing_row_offsets,
+    const std::uint32_t* outgoing_targets,
+    float* weights,
+    const std::uint32_t* incoming_row_offsets,
+    const std::uint32_t* incoming_sources,
+    const std::uint32_t* incoming_edge_indices,
+    float* presynaptic_traces,
+    float* postsynaptic_traces,
+    std::uint32_t neuron_count,
+    std::uint32_t excitatory_count,
+    float dt_ms,
+    StdpParametersGPU parameters,
+    cudaStream_t stream
+) {
+    if (neuron_count == 0 || active_spike_sources == nullptr ||
+        active_spike_count == nullptr || outgoing_row_offsets == nullptr ||
+        incoming_row_offsets == nullptr || presynaptic_traces == nullptr ||
+        postsynaptic_traces == nullptr || excitatory_count > neuron_count ||
+        !(dt_ms > 0.0f))
+        throw std::invalid_argument("Invalid GPU STDP state");
+    constexpr int threads = 256;
+    const int neuron_blocks = static_cast<int>((neuron_count + threads - 1) / threads);
+    decay_stdp_traces_kernel<<<neuron_blocks, threads, 0, stream>>>(
+        presynaptic_traces, postsynaptic_traces, neuron_count,
+        parameters.presynaptic_decay, parameters.postsynaptic_decay);
+    SPIKING_CUDA_CHECK(cudaGetLastError());
+
+    if (weights != nullptr && outgoing_targets != nullptr) {
+        stdp_depression_kernel<<<neuron_blocks, threads, 0, stream>>>(
+            active_spike_sources, active_spike_count, outgoing_row_offsets,
+            outgoing_targets, weights, postsynaptic_traces, neuron_count,
+            parameters.depression_rate, parameters.minimum_weight,
+            parameters.maximum_weight);
+        SPIKING_CUDA_CHECK(cudaGetLastError());
+    }
+    if (weights != nullptr && incoming_sources != nullptr &&
+        incoming_edge_indices != nullptr) {
+        stdp_potentiation_kernel<<<neuron_blocks, threads, 0, stream>>>(
+            active_spike_sources, active_spike_count, incoming_row_offsets,
+            incoming_sources, incoming_edge_indices, weights,
+            presynaptic_traces, neuron_count, excitatory_count,
+            parameters.potentiation_rate, parameters.minimum_weight,
+            parameters.maximum_weight);
+        SPIKING_CUDA_CHECK(cudaGetLastError());
+    }
+    increment_stdp_traces_kernel<<<neuron_blocks, threads, 0, stream>>>(
+        active_spike_sources, active_spike_count, presynaptic_traces,
+        postsynaptic_traces, neuron_count);
     SPIKING_CUDA_CHECK(cudaGetLastError());
 }
 
