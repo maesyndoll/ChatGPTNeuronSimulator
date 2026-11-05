@@ -28,6 +28,24 @@ int main() {
         spike_parameters.topology.p_ie = 1.0;
         spike_parameters.topology.p_ii = 0.0;
         CudaSimulationRuntime spike_runtime(spike_parameters);
+        if (spike_runtime.plasticity_state_enabled()) {
+            std::cerr << "Plasticity support must remain disabled by default\\n";
+            return EXIT_FAILURE;
+        }
+        CudaSimulationRuntime learning_state_runtime(
+            spike_parameters, 0, true, true);
+        if (!learning_state_runtime.plasticity_state_enabled()) {
+            std::cerr << "Opt-in plasticity state allocation failed\\n";
+            return EXIT_FAILURE;
+        }
+        learning_state_runtime.run_steps(2);
+        const auto learning_state_metrics =
+            learning_state_runtime.collect_metrics();
+        if (!learning_state_metrics.finite_state ||
+            learning_state_metrics.completed_steps != 2) {
+            std::cerr << "Opt-in plasticity state changed simulation validity\\n";
+            return EXIT_FAILURE;
+        }
 
         // Export must read the exact graph allocated on the GPU, preserving
         // source-oriented CSR offsets, targets, weights, and delays.
