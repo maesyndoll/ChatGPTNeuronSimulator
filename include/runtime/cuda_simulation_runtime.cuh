@@ -5,6 +5,7 @@
 #include "cuda/device_buffer.cuh"
 #include "cuda/neuron_izhikevich.cuh"
 #include "topology/csr_topology.h"
+#include "plasticity/stdp.h"
 
 #include <cstdint>
 #include <memory>
@@ -51,7 +52,8 @@ public:
     explicit CudaSimulationRuntime(ModelParameters defaults = ModelParameters{},
                                    int device = 0,
                                    bool capture_spike_events = true,
-                                   bool enable_plasticity_state = false);
+                                   bool enable_plasticity_state = false,
+                                   StdpParameters stdp_parameters = {});
     ~CudaSimulationRuntime() = default;
 
     CudaSimulationRuntime(const CudaSimulationRuntime&) = delete;
@@ -153,6 +155,7 @@ private:
     int device_id_ = 0;
     bool capture_spike_events_ = true;
     bool enable_plasticity_state_ = false;
+    StdpParameters stdp_parameters_{};
 };
 
 } // namespace spiking
