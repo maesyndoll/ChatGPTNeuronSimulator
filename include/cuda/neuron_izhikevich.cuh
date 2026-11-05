@@ -32,6 +32,15 @@ struct NeuronStateGPU {
     std::uint32_t spike_event_capacity = 0;
 };
 
+struct StdpParametersGPU {
+    float potentiation_rate = 0.005f;
+    float depression_rate = 0.00525f;
+    float presynaptic_decay = 1.0f;
+    float postsynaptic_decay = 1.0f;
+    float minimum_weight = 0.001f;
+    float maximum_weight = 1.0f;
+};
+
 struct SynapseParametersGPU {
     const std::uint32_t* row_offsets = nullptr;
     const std::uint32_t* target_indices = nullptr;
@@ -61,6 +70,24 @@ void propagate_spikes(
     NeuronStateGPU state,
     SynapseParametersGPU synapses,
     std::uint32_t neuron_count,
+    cudaStream_t stream = nullptr
+);
+
+void apply_stdp(
+    const std::uint32_t* active_spike_sources,
+    const std::uint32_t* active_spike_count,
+    const std::uint32_t* outgoing_row_offsets,
+    const std::uint32_t* outgoing_targets,
+    float* weights,
+    const std::uint32_t* incoming_row_offsets,
+    const std::uint32_t* incoming_sources,
+    const std::uint32_t* incoming_edge_indices,
+    float* presynaptic_traces,
+    float* postsynaptic_traces,
+    std::uint32_t neuron_count,
+    std::uint32_t excitatory_count,
+    float dt_ms,
+    StdpParametersGPU parameters,
     cudaStream_t stream = nullptr
 );
 
