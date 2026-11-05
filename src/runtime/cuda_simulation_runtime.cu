@@ -218,9 +218,11 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
 
 SimulationMetrics CudaSimulationRuntime::collect_metrics() {
     if (!device_state_) throw std::logic_error("CUDA simulation is not initialized");
-    // The first synchronous device-to-host copy below is the completion
-    // barrier for all work queued on this runtime stream. An explicit stream
-    // synchronize immediately before it would wait for the same work twice.
+    // This runtime uses a non-blocking CUDA stream. The synchronous copies
+    // below use the default stream and do not provide an ordering dependency
+    // with this runtime's work, so explicitly finish queued simulation work
+    // before reading device state.
+    device_state_->stream.synchronize();
     const auto count = static_cast<std::uint32_t>(device_state_->neuron_count);
     std::vector<float> voltage(count);
     std::vector<float> recovery(count);
@@ -288,9 +290,10 @@ SpikeEventBatch CudaSimulationRuntime::collect_spike_events() {
     if (!device_state_)
         throw std::logic_error("CUDA simulation is not initialized");
 
-    // The first synchronous device-to-host copy below waits for all queued
-    // stream work before the event ring is read. Avoid a separate synchronize
-    // call here; the worker thread exclusively owns this runtime.
+    // The runtime stream is non-blocking, so default-stream copies below
+    // are not a completion barrier for its queued kernels. Synchronize once
+    // per event batch before reading the event counter and ring.
+    device_state_->stream.synchronize();
     unsigned long long device_total = 0;
     SPIKING_CUDA_CHECK(cudaMemcpy(
         &device_total, device_state_->spike_event_count.get(),
