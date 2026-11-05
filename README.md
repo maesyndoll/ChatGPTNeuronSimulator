@@ -10,6 +10,11 @@ Blackwell (`sm_120` by default).
 - Izhikevich CUDA neuron model with deterministic initialization.
 - Seeded random sparse connectivity stored in source-oriented CSR form, with
   delayed spike propagation through a GPU-resident current ring.
+- Optional STDP foundation: deterministic incoming-CSR index maps each target's
+  incoming synapses back to canonical outgoing-CSR edge indices; GPU weights
+  are writable and opt-in GPU pre/post trace buffers are allocated and zeroed.
+  This is infrastructure only: no learning rule or weight updates are active,
+  and the default runtime allocates none of the additional learning state.
 - Bounded GPU spike-event capture with host-side collection.
 - `CudaSimulationRuntime` owns GPU allocations, execution stream, stepping,
   reinitialization, graph-batched execution, and metric collection.
@@ -18,7 +23,10 @@ Blackwell (`sm_120` by default).
 - Move-only CUDA RAII wrappers provide exception-safe cleanup of partially
   allocated device state.
 
-Plasticity, checkpointing, and the Qt UI remain future milestones. The current
+STDP weight updates, checkpointing, and the Qt UI remain future milestones.
+The plasticity-state allocation is currently an opt-in runtime constructor
+capability for development/tests; it is not exposed as a user configuration
+parameter and does not alter propagation or simulation results. The current
 connectivity generator supports seeded random sparse networks; structured
 population-to-population connectivity is a planned extension.
 
