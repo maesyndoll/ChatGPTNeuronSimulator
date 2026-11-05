@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SpikingModel parameter schema",
+  "schema_version": 1,
+  "description": "Authoritative defaults and UI/validation metadata for simulation and topology parameters.",
+  "groups": [
+    {
+      "name": "simulation",
+      "cpp_struct": "SimulationParameters",
+      "fields": [
+        {"name":"excitatory_count","cpp_type":"std::uint32_t","type":"integer","default":81920,"min":1,"max":1000000,"unit":"neurons","mutability":"reinitialize","description":"Number of excitatory neurons."},
+        {"name":"inhibitory_count","cpp_type":"std::uint32_t","type":"integer","default":10240,"min":1,"max":250000,"unit":"neurons","mutability":"reinitialize","description":"Number of inhibitory neurons."},
+        {"name":"steps","cpp_type":"std::uint32_t","type":"integer","default":1000,"min":1,"max":100000000,"unit":"steps","mutability":"step_boundary","description":"Number of simulation steps in the next run."},
+        {"name":"dt","cpp_type":"float","type":"number","default":0.5,"min":0.001,"max":5.0,"unit":"ms","mutability":"step_boundary","description":"Simulation timestep."},
+        {"name":"threshold","cpp_type":"float","type":"number","default":30.0,"min":-100.0,"max":100.0,"unit":"mV","mutability":"step_boundary","description":"Izhikevich spike threshold."},
+        {"name":"random_seed","cpp_type":"std::uint32_t","type":"integer","default":12345,"min":0,"max":4294967295,"unit":"seed","mutability":"reinitialize","description":"Seed used for deterministic initialization."},
+        {"name":"excitatory_current_min","cpp_type":"float","type":"number","default":8.0,"min":-1000.0,"max":1000.0,"unit":"pA (model units)","mutability":"reinitialize","description":"Minimum initial excitatory current."},
+        {"name":"excitatory_current_max","cpp_type":"float","type":"number","default":12.0,"min":-1000.0,"max":1000.0,"unit":"pA (model units)","mutability":"reinitialize","description":"Maximum initial excitatory current."},
+        {"name":"inhibitory_current_min","cpp_type":"float","type":"number","default":8.0,"min":-1000.0,"max":1000.0,"unit":"pA (model units)","mutability":"reinitialize","description":"Minimum initial inhibitory current."},
+        {"name":"inhibitory_current_max","cpp_type":"float","type":"number","default":12.0,"min":-1000.0,"max":1000.0,"unit":"pA (model units)","mutability":"reinitialize","description":"Maximum initial inhibitory current."},
+        {"name":"initial_voltage_min","cpp_type":"float","type":"number","default":-67.0,"min":-120.0,"max":50.0,"unit":"mV","mutability":"reinitialize","description":"Minimum initial membrane voltage."},
+        {"name":"initial_voltage_max","cpp_type":"float","type":"number","default":-63.0,"min":-120.0,"max":50.0,"unit":"mV","mutability":"reinitialize","description":"Maximum initial membrane voltage."}
+      ]
+    },
+    {
+      "name": "topology",
+      "cpp_struct": "TopologyParameters",
+      "fields": [
+        {"name":"p_ee","cpp_type":"double","type":"number","default":0.001,"min":0.0,"max":1.0,"unit":"probability","mutability":"reinitialize","description":"Excitatory-to-excitatory connection probability."},
+        {"name":"p_ei","cpp_type":"double","type":"number","default":0.005,"min":0.0,"max":1.0,"unit":"probability","mutability":"reinitialize","description":"Excitatory-to-inhibitory connection probability."},
+        {"name":"p_ie","cpp_type":"double","type":"number","default":0.005,"min":0.0,"max":1.0,"unit":"probability","mutability":"reinitialize","description":"Inhibitory-to-excitatory connection probability."},
+        {"name":"p_ii","cpp_type":"double","type":"number","default":0.005,"min":0.0,"max":1.0,"unit":"probability","mutability":"reinitialize","description":"Inhibitory-to-inhibitory connection probability."},
+        {"name":"master_seed","cpp_type":"std::uint64_t","type":"integer","default":12345,"min":0,"max":18446744073709551615,"unit":"seed","mutability":"reinitialize","description":"Master seed for experiment-derived streams."},
+        {"name":"topology_seed","cpp_type":"std::uint64_t","type":"integer","default":6075162723858990937,"min":0,"max":18446744073709551615,"unit":"seed","mutability":"reinitialize","description":"Independent topology-generation seed."},
+        {"name":"delay_seed","cpp_type":"std::uint64_t","type":"integer","default":4919422011527349573,"min":0,"max":18446744073709551615,"unit":"seed","mutability":"reinitialize","description":"Independent delay-generation seed."},
+        {"name":"delay_distribution","cpp_type":"DelayDistribution","type":"enum","default":"FibonacciWeighted","choices":["Uniform","FibonacciWeighted"],"unit":"","mutability":"reinitialize","description":"Delay distribution used when building the network."},
+        {"name":"minimum_delay","cpp_type":"std::uint32_t","type":"integer","default":1,"min":1,"max":100000,"unit":"steps","mutability":"reinitialize","description":"Minimum synaptic delay."},
+        {"name":"maximum_delay","cpp_type":"std::uint32_t","type":"integer","default":55,"min":1,"max":100000,"unit":"steps","mutability":"reinitialize","description":"Maximum synaptic delay."},
+        {"name":"fibonacci_delays","cpp_type":"std::vector<std::uint32_t>","type":"integer_array","default":[1,2,3,5,8,13,21,34,55],"unit":"steps","mutability":"reinitialize","description":"Candidate Fibonacci delay values."},
+        {"name":"fibonacci_weights","cpp_type":"std::vector<double>","type":"number_array","default":[0.20,0.18,0.15,0.13,0.11,0.09,0.06,0.05,0.03],"unit":"normalized weight","mutability":"reinitialize","description":"Sampling weights corresponding to Fibonacci delays."},
+        {"name":"memory_budget_bytes","cpp_type":"std::uint64_t","type":"integer","default":536870912,"min":1048576,"max":17179869184,"unit":"bytes","mutability":"reinitialize","description":"Upper bound for topology storage allocation."}
+      ]
+    }
+  ]
+}

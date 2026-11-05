@@ -1,0 +1,40 @@
+build/
+cmake-build-*/
+*.o
+*.a
+*.so
+*.out
+*.log
+.cache/
+
+build-cpu/
+
+# CUDA and CMake build output
+build-cuda/
+build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+
+# Python and editor files
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+
+# Credentials and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Profiling output
+*.nsys-rep
+*.sqlite
+
+# Temporary patch and backup files
+*.orig
+*.rej
+*.before_*
