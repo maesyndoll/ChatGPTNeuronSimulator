@@ -72,6 +72,9 @@ CudaSimulationRuntime::DeviceState::DeviceState(
             presynaptic_traces.get(), 0, count * sizeof(float), stream));
         SPIKING_CUDA_CHECK(cudaMemsetAsync(
             postsynaptic_traces.get(), 0, count * sizeof(float), stream));
+        // The incoming index is a constructor-local host object. Complete its
+        // uploads before its vectors are destroyed; this sync is opt-in only.
+        SPIKING_CUDA_CHECK(cudaStreamSynchronize(stream));
     }
     if (capture_spike_events) {
         spike_event_steps.allocate(kSpikeEventCapacity);
