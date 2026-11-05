@@ -36,6 +36,9 @@ struct CommandLineOptions {
     std::string config_path;
     std::string log_path = "experiments/logs/experiment_log.jsonl";
     std::uint32_t telemetry_window_steps = 0;
+    std::string voltage_trace_path;
+    std::vector<std::uint32_t> voltage_trace_neurons;
+    std::uint32_t voltage_trace_interval_steps = 1;
 };
 
 struct WindowTelemetry {
@@ -78,6 +81,28 @@ CommandLineOptions parse_arguments(int argc, char** argv) {
                 value > std::numeric_limits<std::uint32_t>::max())
                 throw std::invalid_argument("--telemetry-window-steps must be a positive 32-bit integer");
             options.telemetry_window_steps = static_cast<std::uint32_t>(value);
+        } else if (arg == "--voltage-trace") {
+            if (++i >= argc)
+                throw std::invalid_argument("--voltage-trace requires a CSV file path");
+            options.voltage_trace_path = argv[i];
+        } else if (arg == "--voltage-trace-neuron") {
+            if (++i >= argc)
+                throw std::invalid_argument("--voltage-trace-neuron requires a neuron ID");
+            std::size_t consumed = 0;
+            const auto value = std::stoul(argv[i], &consumed);
+            if (consumed != std::string(argv[i]).size() ||
+                value > std::numeric_limits<std::uint32_t>::max())
+                throw std::invalid_argument("--voltage-trace-neuron must be a non-negative 32-bit integer");
+            options.voltage_trace_neurons.push_back(static_cast<std::uint32_t>(value));
+        } else if (arg == "--voltage-trace-interval") {
+            if (++i >= argc)
+                throw std::invalid_argument("--voltage-trace-interval requires an integer");
+            std::size_t consumed = 0;
+            const auto value = std::stoul(argv[i], &consumed);
+            if (consumed != std::string(argv[i]).size() || value == 0 ||
+                value > std::numeric_limits<std::uint32_t>::max())
+                throw std::invalid_argument("--voltage-trace-interval must be a positive 32-bit integer");
+            options.voltage_trace_interval_steps = static_cast<std::uint32_t>(value);
         } else if (arg == "--no-log") {
             options.log_results = false;
         } else if (arg == "--socket") {
@@ -93,7 +118,7 @@ CommandLineOptions parse_arguments(int argc, char** argv) {
                 throw std::invalid_argument("--device must be a non-negative integer");
         } else if (arg == "--help" || arg == "-h") {
             std::cout
-                << "Usage: spiking_model [--config FILE] [--small] [--device N] [--log FILE] [--no-log] [--telemetry-window-steps N]\n"
+                << "Usage: spiking_model [--config FILE] [--small] [--device N] [--log FILE] [--no-log] [--telemetry-window-steps N] [--voltage-trace FILE --voltage-trace-neuron ID ...] [--voltage-trace-interval N]\n"
                 << "       spiking_model --server [--socket PATH] [--config FILE] [--small] [--device N]\n";
             std::exit(0);
         } else {
@@ -101,11 +126,35 @@ CommandLineOptions parse_arguments(int argc, char** argv) {
         }
     }
 
+    if (options.voltage_trace_path.empty() &&
+        !options.voltage_trace_neurons.empty())
+        throw std::invalid_argument("--voltage-trace-neuron requires --voltage-trace");
+    if (!options.voltage_trace_path.empty() &&
+        options.voltage_trace_neurons.empty())
+        throw std::invalid_argument("--voltage-trace requires at least one --voltage-trace-neuron");
+    if (!options.voltage_trace_path.empty() && options.telemetry_window_steps != 0)
+        throw std::invalid_argument("--voltage-trace and --telemetry-window-steps cannot be combined yet");
+    if (options.server && !options.voltage_trace_path.empty())
+        throw std::invalid_argument("--voltage-trace is not available in server mode");
+
     if (!options.server && !options.socket_path.empty())
         throw std::invalid_argument("--socket requires --server");
     if (options.server && options.log_results)
         options.log_results = false;
     return options;
+}
+
+void write_voltage_samples(
+    std::ostream& output,
+    const std::vector<spiking::VoltageSample>& samples) {
+    for (const auto& sample : samples) {
+        output << sample.step << ','
+               << std::setprecision(12) << sample.time_ms << ','
+               << sample.neuron_id << ','
+               << std::setprecision(9) << sample.voltage_mv << '\n';
+    }
+    if (!output)
+        throw std::runtime_error("failed writing voltage trace CSV");
 }
 
 std::string utc_timestamp() {
@@ -216,6 +265,18 @@ int main(int argc, char** argv) {
             return ipc::run_unix_socket_server(controller, options.socket_path);
         }
 
+        if (!options.voltage_trace_path.empty()) {
+            const auto neuron_count = parameters.simulation.neuron_count();
+            auto ids = options.voltage_trace_neurons;
+            std::sort(ids.begin(), ids.end());
+            if (std::adjacent_find(ids.begin(), ids.end()) != ids.end())
+                throw std::invalid_argument("--voltage-trace-neuron IDs must be unique");
+            for (const auto id : ids) {
+                if (id >= neuron_count)
+                    throw std::out_of_range("--voltage-trace-neuron ID exceeds the configured neuron count");
+            }
+        }
+
         CudaSimulationRuntime runtime(parameters, options.device);
         cudaDeviceProp properties{};
         SPIKING_CUDA_CHECK(cudaGetDeviceProperties(&properties, runtime.device_id()));
@@ -238,7 +299,39 @@ int main(int argc, char** argv) {
         const auto start = std::chrono::steady_clock::now();
         std::vector<WindowTelemetry> telemetry;
 
-        if (options.telemetry_window_steps == 0) {
+        if (!options.voltage_trace_path.empty()) {
+            namespace fs = std::filesystem;
+            const fs::path trace_path(options.voltage_trace_path);
+            if (!trace_path.parent_path().empty())
+                fs::create_directories(trace_path.parent_path());
+            std::ofstream trace(trace_path, std::ios::out | std::ios::trunc);
+            if (!trace)
+                throw std::runtime_error("cannot open voltage trace CSV: " + options.voltage_trace_path);
+            trace << "step,time_ms,neuron_id,voltage_mv\n";
+            write_voltage_samples(trace,
+                runtime.collect_voltage_samples(options.voltage_trace_neurons));
+
+            std::uint64_t completed = 0;
+            const std::uint64_t total = simulation.steps;
+            while (completed < total) {
+                const auto chunk = static_cast<std::uint32_t>(
+                    std::min<std::uint64_t>(
+                        total - completed, options.voltage_trace_interval_steps));
+                runtime.run_steps(chunk);
+                write_voltage_samples(trace,
+                    runtime.collect_voltage_samples(options.voltage_trace_neurons));
+                completed += chunk;
+            }
+            trace.flush();
+            if (!trace)
+                throw std::runtime_error("failed flushing voltage trace CSV");
+            std::cout << "Voltage trace: " << options.voltage_trace_path
+                      << " (neurons ";
+            for (std::size_t i = 0; i < options.voltage_trace_neurons.size(); ++i)
+                std::cout << (i == 0 ? "" : ",") << options.voltage_trace_neurons[i];
+            std::cout << ", interval " << options.voltage_trace_interval_steps
+                      << " steps)\n";
+        } else if (options.telemetry_window_steps == 0) {
             runtime.run();
         } else {
             std::uint64_t previous_excitatory_spikes = 0;
