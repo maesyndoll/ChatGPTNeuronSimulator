@@ -27,7 +27,8 @@ SimulationBridge::SimulationBridge(QObject* parent)
         client_.sendRequest(QStringLiteral("subscribe_telemetry"));
         client_.sendRequest(QStringLiteral("subscribe_spike_events"));
         refreshConfiguration();
-        refreshSpikeEvents();
+        // The server's spike subscription starts with a recent bounded
+        // snapshot; do not separately request the oldest retained events.
     });
 
     connect(&client_, &SimulationClient::disconnected, this, [this]() {

@@ -898,7 +898,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     color: Number(simulation.spikeEventsDropped) > 0
                            ? "#e5bd78" : "#8de0ca"
-                    text: "Events dropped before retrieval: " +
+                    text: "Events evicted from bounded history: " +
                           simulation.spikeEventsDropped +
                           "    Generation: " +
                           simulation.spikeEventsGeneration
