@@ -313,6 +313,49 @@ std::vector<VoltageSample> CudaSimulationRuntime::collect_voltage_samples(
     return samples;
 }
 
+CSRTopology CudaSimulationRuntime::collect_connectivity() {
+    if (!device_state_)
+        throw std::logic_error("CUDA simulation is not initialized");
+
+    // All graph arrays are immutable after initialization. Synchronize the
+    // owning stream before copying the exact device-resident graph to host.
+    device_state_->stream.synchronize();
+
+    CSRTopology topology;
+    topology.excitatory_count = active_parameters_.simulation.excitatory_count;
+    topology.inhibitory_count = active_parameters_.simulation.inhibitory_count;
+    topology.minimum_delay = active_parameters_.topology.minimum_delay;
+    topology.maximum_delay = active_parameters_.topology.maximum_delay;
+
+    topology.row_offsets.resize(device_state_->neuron_count + 1U);
+    topology.target_indices.resize(device_state_->edge_count);
+    topology.weights.resize(device_state_->edge_count);
+    topology.delays.resize(device_state_->edge_count);
+
+    SPIKING_CUDA_CHECK(cudaMemcpy(
+        topology.row_offsets.data(), device_state_->row_offsets.get(),
+        topology.row_offsets.size() * sizeof(std::uint32_t),
+        cudaMemcpyDeviceToHost));
+
+    if (device_state_->edge_count != 0) {
+        SPIKING_CUDA_CHECK(cudaMemcpy(
+            topology.target_indices.data(), device_state_->target_indices.get(),
+            topology.target_indices.size() * sizeof(std::uint32_t),
+            cudaMemcpyDeviceToHost));
+        SPIKING_CUDA_CHECK(cudaMemcpy(
+            topology.weights.data(), device_state_->weights.get(),
+            topology.weights.size() * sizeof(float),
+            cudaMemcpyDeviceToHost));
+        SPIKING_CUDA_CHECK(cudaMemcpy(
+            topology.delays.data(), device_state_->delays.get(),
+            topology.delays.size() * sizeof(std::uint32_t),
+            cudaMemcpyDeviceToHost));
+    }
+
+    topology.validate();
+    return topology;
+}
+
 SimulationMetrics CudaSimulationRuntime::collect_metrics() {
     if (!device_state_) throw std::logic_error("CUDA simulation is not initialized");
     // This runtime uses a non-blocking CUDA stream. The synchronous copies
