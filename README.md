@@ -68,6 +68,9 @@ and does not yet derive the other streams.
 Fixed seeds guarantee repeatable initialization and generated connectivity
 for the same build and configuration. They do not currently promise
 bit-for-bit identical CUDA simulation metrics across repeated runs; parallel
-floating-point accumulation can vary. The deterministic-control test suite
-will distinguish exact host-side reproducibility from GPU numerical
-repeatability.
+floating-point accumulation can vary. The CUDA `determinism_smoke` test compares two full-size runs: topology
+arrays are compared exactly by `topology_tests`, the initial neuron parameter
+and state arrays are compared through an exact state fingerprint, and final
+spike counts/mean voltage are compared with tight tolerances. This allows the
+test to detect random-stream regressions without incorrectly requiring
+bit-for-bit identical parallel CUDA accumulation.
