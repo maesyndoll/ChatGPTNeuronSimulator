@@ -39,11 +39,12 @@ int main() {
             return EXIT_FAILURE;
         }
         learning_state_runtime.run_steps(2);
+        learning_state_runtime.run_steps(100); // Exercise STDP inside CUDA Graph capture/replay.
         const auto learning_state_metrics =
             learning_state_runtime.collect_metrics();
         if (!learning_state_metrics.finite_state ||
-            learning_state_metrics.completed_steps != 2) {
-            std::cerr << "Opt-in plasticity state changed simulation validity\\n";
+            learning_state_metrics.completed_steps != 102) {
+            std::cerr << "Opt-in GPU STDP changed simulation validity\\n";
             return EXIT_FAILURE;
         }
 
