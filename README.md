@@ -14,7 +14,7 @@ Blackwell (`sm_120` by default).
 - `CudaSimulationRuntime` owns GPU allocations, execution stream, stepping,
   reinitialization, graph-batched execution, and metric collection.
 - Optional time-windowed experiment telemetry and selected-neuron voltage
-  sampling for diagnostic traces.
+  and recovery-state sampling for diagnostic traces.
 - Move-only CUDA RAII wrappers provide exception-safe cleanup of partially
   allocated device state.
 
@@ -86,7 +86,10 @@ optional voltage-trace arguments:
   --voltage-trace-interval 1
 ```
 
-The CSV contains `step,time_ms,neuron_id,voltage_mv,spiked_this_step`; the final column is 1 when that neuron spiked during the sampled step. It includes the
+The CSV contains `step,time_ms,neuron_id,voltage_mv,recovery,spiked_this_step`;
+the final column is 1 when that neuron spiked during the sampled step. The
+`recovery` column records the Izhikevich recovery variable (u), after
+integration and any spike-triggered increment (d). It includes the
 initialized state at step 0 and post-integration samples at each interval,
 including the final partial interval. Voltage is sampled after threshold
 handling, so a neuron that spikes on a sampled step is recorded at its reset
