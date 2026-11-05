@@ -85,6 +85,7 @@ private:
         DeviceBuffer<std::uint32_t> active_spike_sources;
         DeviceBuffer<std::uint32_t> active_spike_count;
         DeviceBuffer<unsigned long long> completed_steps_device;
+        DeviceBuffer<std::uint32_t> completed_step_blocks;
         cudaGraph_t step_graph = nullptr;
         cudaGraphExec_t step_graph_exec = nullptr;
 
