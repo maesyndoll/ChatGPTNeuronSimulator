@@ -54,6 +54,11 @@ public:
     SimulationMetrics collect_metrics();
     SpikeEventBatch collect_spike_events();
 
+    // Conservative upper bound on batches that can run before the fixed GPU
+    // event ring could fill, with additional headroom for bursty firing.
+    std::uint32_t spike_event_collection_batch_interval(
+        std::uint32_t batch_size) const noexcept;
+
     ModelParameters active_parameters() const;
     ModelParameters requested_parameters() const;
     bool has_pending_reinitialization() const;
