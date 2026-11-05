@@ -23,14 +23,14 @@ CudaSimulationRuntime::DeviceState::DeviceState(
       voltage(count), recovery(count), spike_counts(count),
       spike_flags(count),
       active_spike_sources(count), active_spike_count(1),
-      capture_spike_events(capture_events),
       row_offsets(topology.row_offsets.size()),
       target_indices(topology.target_indices.size()),
       weights(topology.weights.size()),
       delays(topology.delays.size()),
       neuron_count(count),
       edge_count(static_cast<std::uint32_t>(topology.weights.size())),
-      ring_slots(topology.maximum_delay + 1U) {
+      ring_slots(topology.maximum_delay + 1U),
+      capture_spike_events(capture_events) {
     if (capture_spike_events) {
         spike_event_steps.allocate(kSpikeEventCapacity);
         spike_event_neurons.allocate(kSpikeEventCapacity);
