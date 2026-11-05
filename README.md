@@ -90,9 +90,9 @@ The CSV contains `step,time_ms,neuron_id,voltage_mv,spiked_this_step`; the final
 initialized state at step 0 and post-integration samples at each interval,
 including the final partial interval. Voltage is sampled after threshold
 handling, so a neuron that spikes on a sampled step is recorded at its reset
-voltage; correlate the step with the spike-event records to identify that
-reset. Smaller intervals provide finer temporal resolution but add host/device
-synchronization and readback overhead. The trace mode currently cannot be
+voltage; `spiked_this_step` marks that reset directly. Smaller intervals
+provide finer temporal resolution but add host/device synchronization and
+readback overhead. The trace mode currently cannot be
 combined with `--telemetry-window-steps` or server mode. Repeat
 `--voltage-trace-neuron` to record multiple neuron IDs.
 
