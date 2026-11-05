@@ -32,9 +32,11 @@ int main() {
             initial_voltage_samples[0].time_ms != 0.0 ||
             std::abs(initial_voltage_samples[0].voltage_mv + 65.0f) > 1.0e-6f ||
             std::abs(initial_voltage_samples[1].voltage_mv + 65.0f) > 1.0e-6f ||
+            std::abs(initial_voltage_samples[0].recovery + 13.0f) > 1.0e-6f ||
+            std::abs(initial_voltage_samples[1].recovery + 13.0f) > 1.0e-6f ||
             initial_voltage_samples[0].spiked_this_step ||
             initial_voltage_samples[1].spiked_this_step) {
-            std::cerr << "Initial voltage sampling test failed\n";
+            std::cerr << "Initial neuron-state sampling test failed\n";
             return EXIT_FAILURE;
         }
         spike_runtime.run();
@@ -71,9 +73,11 @@ int main() {
             voltage_samples[1].neuron_id != 0 ||
             std::abs(voltage_samples[0].voltage_mv + 65.0f) > 1.0e-6f ||
             std::abs(voltage_samples[1].voltage_mv + 65.0f) > 1.0e-6f ||
+            std::abs(voltage_samples[0].recovery + 11.0f) > 1.0e-4f ||
+            std::abs(voltage_samples[1].recovery + 5.0f) > 1.0e-4f ||
             !voltage_samples[0].spiked_this_step ||
             !voltage_samples[1].spiked_this_step) {
-            std::cerr << "Selected-neuron voltage sampling test failed\n";
+            std::cerr << "Selected-neuron voltage/recovery sampling test failed\n";
             return EXIT_FAILURE;
         }
 
@@ -87,7 +91,7 @@ int main() {
             std::cerr << "Voltage sampling accepted an invalid neuron ID\n";
             return EXIT_FAILURE;
         }
-        std::cout << "Selected-neuron voltage sampling test passed\n";
+        std::cout << "Selected-neuron voltage/recovery sampling test passed\n";
 
         // GPU spike-event recorder test: both neurons spike on step 1.
         const auto captured_events = spike_runtime.collect_spike_events();
