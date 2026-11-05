@@ -54,6 +54,8 @@ public:
     void run();
     void run_steps(std::uint32_t steps);
     SimulationMetrics collect_metrics();
+    // Exact host-side fingerprint of current neuron parameters and state.
+    std::uint64_t state_fingerprint();
     SpikeEventBatch collect_spike_events();
 
     // Conservative upper bound on batches that can run before the fixed GPU
