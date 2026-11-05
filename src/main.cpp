@@ -6,6 +6,8 @@
 
 #include <cuda_runtime.h>
 
+#include <algorithm>
+
 #include <chrono>
 #include <cstdint>
 #include <ctime>
@@ -13,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <sstream>
