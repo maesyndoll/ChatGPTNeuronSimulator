@@ -31,7 +31,7 @@ CudaSimulationRuntime::DeviceState::~DeviceState() {
 
 CudaSimulationRuntime::DeviceState::DeviceState(
     std::size_t count, const CSRTopology& topology,
-    bool capture_events)
+    bool capture_events, bool enable_learning_state)
     : a(count), b(count), c(count), d(count), current(count),
       voltage(count), recovery(count), spike_counts(count),
       spike_flags(count),
@@ -44,7 +44,35 @@ CudaSimulationRuntime::DeviceState::DeviceState(
       neuron_count(count),
       edge_count(static_cast<std::uint32_t>(topology.weights.size())),
       ring_slots(topology.maximum_delay + 1U),
-      capture_spike_events(capture_events) {
+      capture_spike_events(capture_events),
+      plasticity_state_enabled(enable_learning_state) {
+    if (plasticity_state_enabled) {
+        const auto incoming = build_incoming_csr_index(topology);
+        incoming_row_offsets.allocate(incoming.row_offsets.size());
+        incoming_sources.allocate(incoming.source_indices.size());
+        incoming_edge_indices.allocate(incoming.edge_indices.size());
+        presynaptic_traces.allocate(count);
+        postsynaptic_traces.allocate(count);
+        const auto stream = this->stream.get();
+        SPIKING_CUDA_CHECK(cudaMemcpyAsync(
+            incoming_row_offsets.get(), incoming.row_offsets.data(),
+            incoming.row_offsets.size() * sizeof(std::uint32_t),
+            cudaMemcpyHostToDevice, stream));
+        if (!incoming.source_indices.empty()) {
+            SPIKING_CUDA_CHECK(cudaMemcpyAsync(
+                incoming_sources.get(), incoming.source_indices.data(),
+                incoming.source_indices.size() * sizeof(std::uint32_t),
+                cudaMemcpyHostToDevice, stream));
+            SPIKING_CUDA_CHECK(cudaMemcpyAsync(
+                incoming_edge_indices.get(), incoming.edge_indices.data(),
+                incoming.edge_indices.size() * sizeof(std::uint32_t),
+                cudaMemcpyHostToDevice, stream));
+        }
+        SPIKING_CUDA_CHECK(cudaMemsetAsync(
+            presynaptic_traces.get(), 0, count * sizeof(float), stream));
+        SPIKING_CUDA_CHECK(cudaMemsetAsync(
+            postsynaptic_traces.get(), 0, count * sizeof(float), stream));
+    }
     if (capture_spike_events) {
         spike_event_steps.allocate(kSpikeEventCapacity);
         spike_event_neurons.allocate(kSpikeEventCapacity);
@@ -96,18 +124,22 @@ NeuronStateGPU CudaSimulationRuntime::DeviceState::neuron_state() noexcept {
 }
 
 CudaSimulationRuntime::CudaSimulationRuntime(
-    ModelParameters defaults, int device, bool capture_spike_events)
+    ModelParameters defaults, int device, bool capture_spike_events,
+    bool enable_plasticity_state)
     : parameter_manager_(std::move(defaults)),
       active_parameters_(parameter_manager_.active_parameters()),
       device_id_(device),
-      capture_spike_events_(capture_spike_events) {
+      capture_spike_events_(capture_spike_events),
+      enable_plasticity_state_(enable_plasticity_state) {
     SPIKING_CUDA_CHECK(cudaSetDevice(device_id_));
-    device_state_ = build_device_state(active_parameters_, capture_spike_events_);
+    device_state_ = build_device_state(active_parameters_, capture_spike_events_,
+                                       enable_plasticity_state_);
 }
 
 std::unique_ptr<CudaSimulationRuntime::DeviceState>
 CudaSimulationRuntime::build_device_state(
-    const ModelParameters& parameters, bool capture_spike_events) {
+    const ModelParameters& parameters, bool capture_spike_events,
+    bool enable_plasticity_state) {
     const auto& p = parameters.simulation;
     const std::uint32_t total = p.neuron_count();
     if (total == 0) throw std::invalid_argument("Cannot initialize an empty network");
@@ -120,7 +152,8 @@ CudaSimulationRuntime::build_device_state(
         throw std::length_error("Topology has too many synapses for the CUDA runtime");
     }
 
-    auto next = std::make_unique<DeviceState>(total, topology, capture_spike_events);
+    auto next = std::make_unique<DeviceState>(
+        total, topology, capture_spike_events, enable_plasticity_state);
 
     const auto stream = next->stream.get();
     if (!topology.row_offsets.empty()) {
@@ -193,7 +226,8 @@ void CudaSimulationRuntime::reinitialize_simulation() {
     // active configuration. If allocation or initialization fails, the old
     // simulation and the manager's active snapshot remain intact.
     const auto requested = parameter_manager_.requested_parameters();
-    auto replacement = build_device_state(requested, capture_spike_events_);
+    auto replacement = build_device_state(
+        requested, capture_spike_events_, enable_plasticity_state_);
     const auto committed = parameter_manager_.reinitialize_simulation();
     device_state_.swap(replacement);
     active_parameters_ = committed;
@@ -545,6 +579,10 @@ ModelParameters CudaSimulationRuntime::active_parameters() const {
 
 ModelParameters CudaSimulationRuntime::requested_parameters() const {
     return parameter_manager_.requested_parameters();
+}
+
+bool CudaSimulationRuntime::plasticity_state_enabled() const noexcept {
+    return device_state_ != nullptr && device_state_->plasticity_state_enabled;
 }
 
 bool CudaSimulationRuntime::has_pending_reinitialization() const {
