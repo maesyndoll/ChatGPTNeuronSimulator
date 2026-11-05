@@ -287,18 +287,17 @@ std::vector<VoltageSample> CudaSimulationRuntime::collect_voltage_samples(
     // synchronous device-to-host read, just as collect_metrics() does.
     device_state_->stream.synchronize();
 
-    std::vector<float> voltage(count);
-    SPIKING_CUDA_CHECK(cudaMemcpy(
-        voltage.data(), device_state_->voltage.get(),
-        count * sizeof(float), cudaMemcpyDeviceToHost));
-
     const double time_ms = elapsed_simulation_ms_;
     for (const auto neuron_id : neuron_ids) {
+        float voltage = 0.0f;
+        SPIKING_CUDA_CHECK(cudaMemcpy(
+            &voltage, device_state_->voltage.get() + neuron_id,
+            sizeof(float), cudaMemcpyDeviceToHost));
         samples.push_back({
             completed_steps_,
             time_ms,
             neuron_id,
-            voltage[neuron_id]
+            voltage
         });
     }
     return samples;
