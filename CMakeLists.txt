@@ -179,6 +179,24 @@ if(SPIKINGMODEL_ENABLE_CUDA)
         add_test(NAME cuda_runtime_smoke COMMAND cuda_runtime_smoke)
         add_dependencies(cuda_runtime_smoke check_parameter_schema)
 
+        add_executable(determinism_smoke
+            tests/cuda/determinism_smoke.cpp
+            src/cuda/neuron_izhikevich.cu
+            src/runtime/cuda_simulation_runtime.cu
+            src/topology/topology_generator.cpp
+        )
+        target_include_directories(determinism_smoke PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+        target_link_libraries(determinism_smoke PRIVATE CUDA::cudart)
+        set_target_properties(determinism_smoke PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON
+            CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+        )
+        add_test(NAME determinism_smoke COMMAND determinism_smoke)
+        set_tests_properties(determinism_smoke PROPERTIES TIMEOUT 120)
+        add_dependencies(determinism_smoke check_parameter_schema)
+
         add_executable(controller_smoke
             tests/cuda/controller_smoke.cpp
             src/cuda/neuron_izhikevich.cu
