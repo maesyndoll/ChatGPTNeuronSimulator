@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <stdexcept>
 #include <vector>
 
 int main() {
@@ -23,6 +24,19 @@ int main() {
         spike_parameters.simulation.inhibitory_current_max = 4.0f;
 
         CudaSimulationRuntime spike_runtime(spike_parameters);
+        const auto initial_voltage_samples =
+            spike_runtime.collect_voltage_samples({0U, 1U});
+        if (initial_voltage_samples.size() != 2 ||
+            initial_voltage_samples[0].step != 0 ||
+            initial_voltage_samples[1].step != 0 ||
+            initial_voltage_samples[0].time_ms != 0.0 ||
+            std::abs(initial_voltage_samples[0].voltage_mv + 65.0f) > 1.0e-6f ||
+            std::abs(initial_voltage_samples[1].voltage_mv + 65.0f) > 1.0e-6f ||
+            initial_voltage_samples[0].spiked_this_step ||
+            initial_voltage_samples[1].spiked_this_step) {
+            std::cerr << "Initial voltage sampling test failed\n";
+            return EXIT_FAILURE;
+        }
         spike_runtime.run();
         const auto spike_metrics = spike_runtime.collect_metrics();
 
@@ -56,7 +70,9 @@ int main() {
             voltage_samples[0].neuron_id != 1 ||
             voltage_samples[1].neuron_id != 0 ||
             std::abs(voltage_samples[0].voltage_mv + 65.0f) > 1.0e-6f ||
-            std::abs(voltage_samples[1].voltage_mv + 65.0f) > 1.0e-6f) {
+            std::abs(voltage_samples[1].voltage_mv + 65.0f) > 1.0e-6f ||
+            !voltage_samples[0].spiked_this_step ||
+            !voltage_samples[1].spiked_this_step) {
             std::cerr << "Selected-neuron voltage sampling test failed\n";
             return EXIT_FAILURE;
         }
