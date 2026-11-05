@@ -23,6 +23,7 @@ struct VoltageSample {
     double time_ms = 0.0;
     std::uint32_t neuron_id = 0;
     float voltage_mv = 0.0f;
+    float recovery = 0.0f;
     bool spiked_this_step = false;
 };
 
@@ -62,8 +63,8 @@ public:
     void run();
     void run_steps(std::uint32_t steps);
     SimulationMetrics collect_metrics();
-    // Read post-integration membrane voltage for selected neurons.
-    // Samples reflect threshold resets when a neuron spiked on this step.
+    // Read post-integration voltage and recovery state for selected neurons.
+    // Samples reflect threshold resets and the recovery increment when spiking.
     std::vector<VoltageSample> collect_voltage_samples(
         const std::vector<std::uint32_t>& neuron_ids);
     // Exact host-side fingerprint of current neuron parameters and state.
