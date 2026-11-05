@@ -290,9 +290,13 @@ std::vector<VoltageSample> CudaSimulationRuntime::collect_voltage_samples(
     const double time_ms = elapsed_simulation_ms_;
     for (const auto neuron_id : neuron_ids) {
         float voltage = 0.0f;
+        float recovery = 0.0f;
         std::uint8_t spike_flag = 0;
         SPIKING_CUDA_CHECK(cudaMemcpy(
             &voltage, device_state_->voltage.get() + neuron_id,
+            sizeof(float), cudaMemcpyDeviceToHost));
+        SPIKING_CUDA_CHECK(cudaMemcpy(
+            &recovery, device_state_->recovery.get() + neuron_id,
             sizeof(float), cudaMemcpyDeviceToHost));
         SPIKING_CUDA_CHECK(cudaMemcpy(
             &spike_flag, device_state_->spike_flags.get() + neuron_id,
@@ -302,6 +306,7 @@ std::vector<VoltageSample> CudaSimulationRuntime::collect_voltage_samples(
             time_ms,
             neuron_id,
             voltage,
+            recovery,
             spike_flag != 0
         });
     }
