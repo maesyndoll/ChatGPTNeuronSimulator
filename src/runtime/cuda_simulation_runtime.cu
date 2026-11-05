@@ -17,13 +17,13 @@ constexpr std::uint32_t kSpikeEventCapacity = 4U * 1024U * 1024U;
 }
 
 CudaSimulationRuntime::DeviceState::DeviceState(
-    std::size_t count, const CSRTopology& topology)
+    std::size_t count, const CSRTopology& topology,
+    bool capture_events)
     : a(count), b(count), c(count), d(count), current(count),
       voltage(count), recovery(count), spike_counts(count),
       spike_flags(count),
       active_spike_sources(count), active_spike_count(1),
-      spike_event_steps(kSpikeEventCapacity),
-      spike_event_neurons(kSpikeEventCapacity), spike_event_count(1),
+      capture_spike_events(capture_events),
       row_offsets(topology.row_offsets.size()),
       target_indices(topology.target_indices.size()),
       weights(topology.weights.size()),
@@ -31,6 +31,12 @@ CudaSimulationRuntime::DeviceState::DeviceState(
       neuron_count(count),
       edge_count(static_cast<std::uint32_t>(topology.weights.size())),
       ring_slots(topology.maximum_delay + 1U) {
+    if (capture_spike_events) {
+        spike_event_steps.allocate(kSpikeEventCapacity);
+        spike_event_neurons.allocate(kSpikeEventCapacity);
+        spike_event_count.allocate(1);
+    }
+
     if (ring_slots == 0)
         throw std::length_error("Synaptic delay ring slot count overflow");
 
@@ -66,23 +72,26 @@ NeuronStateGPU CudaSimulationRuntime::DeviceState::neuron_state() noexcept {
         spike_flags.get(),
         active_spike_sources.get(),
         active_spike_count.get(),
-        spike_event_steps.get(),
-        spike_event_neurons.get(),
-        spike_event_count.get(),
-        kSpikeEventCapacity
+        capture_spike_events ? spike_event_steps.get() : nullptr,
+        capture_spike_events ? spike_event_neurons.get() : nullptr,
+        capture_spike_events ? spike_event_count.get() : nullptr,
+        capture_spike_events ? kSpikeEventCapacity : 0U
     };
 }
 
-CudaSimulationRuntime::CudaSimulationRuntime(ModelParameters defaults, int device)
+CudaSimulationRuntime::CudaSimulationRuntime(
+    ModelParameters defaults, int device, bool capture_spike_events)
     : parameter_manager_(std::move(defaults)),
       active_parameters_(parameter_manager_.active_parameters()),
-      device_id_(device) {
+      device_id_(device),
+      capture_spike_events_(capture_spike_events) {
     SPIKING_CUDA_CHECK(cudaSetDevice(device_id_));
-    device_state_ = build_device_state(active_parameters_);
+    device_state_ = build_device_state(active_parameters_, capture_spike_events_);
 }
 
 std::unique_ptr<CudaSimulationRuntime::DeviceState>
-CudaSimulationRuntime::build_device_state(const ModelParameters& parameters) {
+CudaSimulationRuntime::build_device_state(
+    const ModelParameters& parameters, bool capture_spike_events) {
     const auto& p = parameters.simulation;
     const std::uint32_t total = p.neuron_count();
     if (total == 0) throw std::invalid_argument("Cannot initialize an empty network");
@@ -95,7 +104,7 @@ CudaSimulationRuntime::build_device_state(const ModelParameters& parameters) {
         throw std::length_error("Topology has too many synapses for the CUDA runtime");
     }
 
-    auto next = std::make_unique<DeviceState>(total, topology);
+    auto next = std::make_unique<DeviceState>(total, topology, capture_spike_events);
 
     const auto stream = next->stream.get();
     if (!topology.row_offsets.empty()) {
@@ -125,9 +134,11 @@ CudaSimulationRuntime::build_device_state(const ModelParameters& parameters) {
     SPIKING_CUDA_CHECK(cudaMemsetAsync(
         next->active_spike_count.get(), 0,
         sizeof(std::uint32_t), stream));
-    SPIKING_CUDA_CHECK(cudaMemsetAsync(
-        next->spike_event_count.get(), 0,
-        sizeof(unsigned long long), stream));
+    if (capture_spike_events) {
+        SPIKING_CUDA_CHECK(cudaMemsetAsync(
+            next->spike_event_count.get(), 0,
+            sizeof(unsigned long long), stream));
+    }
 
     initialize_neurons(
         next->neuron_parameters(), next->neuron_state(),
@@ -159,7 +170,7 @@ void CudaSimulationRuntime::reinitialize_simulation() {
     // active configuration. If allocation or initialization fails, the old
     // simulation and the manager's active snapshot remain intact.
     const auto requested = parameter_manager_.requested_parameters();
-    auto replacement = build_device_state(requested);
+    auto replacement = build_device_state(requested, capture_spike_events_);
     const auto committed = parameter_manager_.reinitialize_simulation();
     device_state_.swap(replacement);
     active_parameters_ = committed;
@@ -289,6 +300,7 @@ std::uint32_t CudaSimulationRuntime::spike_event_collection_batch_interval(
 SpikeEventBatch CudaSimulationRuntime::collect_spike_events() {
     if (!device_state_)
         throw std::logic_error("CUDA simulation is not initialized");
+    if (!capture_spike_events_) return {};
 
     // The runtime stream is non-blocking, so default-stream copies below
     // are not a completion barrier for its queued kernels. Synchronize once
