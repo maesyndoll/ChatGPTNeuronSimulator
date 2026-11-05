@@ -38,13 +38,38 @@ int main() {
             std::cerr << "Opt-in plasticity state allocation failed\\n";
             return EXIT_FAILURE;
         }
+        const auto learning_initial_topology =
+            learning_state_runtime.collect_connectivity();
+        const auto disabled_initial_topology =
+            spike_runtime.collect_connectivity();
+
         learning_state_runtime.run_steps(2);
         learning_state_runtime.run_steps(100); // Exercise STDP inside CUDA Graph capture/replay.
+        spike_runtime.run_steps(102);
+
         const auto learning_state_metrics =
             learning_state_runtime.collect_metrics();
         if (!learning_state_metrics.finite_state ||
             learning_state_metrics.completed_steps != 102) {
             std::cerr << "Opt-in GPU STDP changed simulation validity\\n";
+            return EXIT_FAILURE;
+        }
+
+        const auto learning_final_topology =
+            learning_state_runtime.collect_connectivity();
+        const auto disabled_final_topology =
+            spike_runtime.collect_connectivity();
+        if (learning_initial_topology.weights.size() != 2 ||
+            learning_final_topology.weights.size() != 2 ||
+            disabled_initial_topology.weights != disabled_final_topology.weights) {
+            std::cerr << "Default-off STDP modified weights or test topology changed\\n";
+            return EXIT_FAILURE;
+        }
+        if (learning_final_topology.weights[0] ==
+                learning_initial_topology.weights[0] ||
+            learning_final_topology.weights[1] !=
+                learning_initial_topology.weights[1]) {
+            std::cerr << "Runtime STDP did not modify only the excitatory-source weight\\n";
             return EXIT_FAILURE;
         }
 
