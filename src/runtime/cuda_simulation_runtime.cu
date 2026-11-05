@@ -41,11 +41,11 @@ CudaSimulationRuntime::DeviceState::DeviceState(
       target_indices(topology.target_indices.size()),
       weights(topology.weights.size()),
       delays(topology.delays.size()),
+      plasticity_state_enabled(enable_learning_state),
       neuron_count(count),
       edge_count(static_cast<std::uint32_t>(topology.weights.size())),
       ring_slots(topology.maximum_delay + 1U),
-      capture_spike_events(capture_events),
-      plasticity_state_enabled(enable_learning_state) {
+      capture_spike_events(capture_events) {
     if (plasticity_state_enabled) {
         const auto incoming = build_incoming_csr_index(topology);
         incoming_row_offsets.allocate(incoming.row_offsets.size());
