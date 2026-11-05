@@ -23,7 +23,34 @@ int main() {
         spike_parameters.simulation.inhibitory_current_min = 4.0f;
         spike_parameters.simulation.inhibitory_current_max = 4.0f;
 
+        spike_parameters.topology.p_ee = 0.0;
+        spike_parameters.topology.p_ei = 1.0;
+        spike_parameters.topology.p_ie = 1.0;
+        spike_parameters.topology.p_ii = 0.0;
         CudaSimulationRuntime spike_runtime(spike_parameters);
+
+        // Export must read the exact graph allocated on the GPU, preserving
+        // source-oriented CSR offsets, targets, weights, and delays.
+        const auto exported_topology = spike_runtime.collect_connectivity();
+        if (exported_topology.excitatory_count != 1 ||
+            exported_topology.inhibitory_count != 1 ||
+            exported_topology.synapse_count() != 2 ||
+            exported_topology.row_offsets != std::vector<std::uint32_t>({0, 1, 2}) ||
+            exported_topology.target_indices != std::vector<std::uint32_t>({1, 0}) ||
+            exported_topology.weights.size() != 2 ||
+            exported_topology.delays.size() != 2) {
+            std::cerr << "GPU-resident CSR connectivity readback test failed\\n";
+            return EXIT_FAILURE;
+        }
+        try {
+            exported_topology.validate();
+        } catch (const std::exception& error) {
+            std::cerr << "Exported GPU connectivity failed validation: "
+                      << error.what() << '\\n';
+            return EXIT_FAILURE;
+        }
+        std::cout << "GPU-resident CSR connectivity readback test passed\\n";
+
         const auto initial_voltage_samples =
             spike_runtime.collect_voltage_samples({0U, 1U});
         if (initial_voltage_samples.size() != 2 ||
