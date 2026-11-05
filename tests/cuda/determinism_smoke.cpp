@@ -1,6 +1,7 @@
 #include "runtime/cuda_simulation_runtime.cuh"
 
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
@@ -35,10 +36,12 @@ int main() {
 
         const auto first_initial = first.collect_metrics();
         const auto second_initial = second.collect_metrics();
+        const auto first_state_hash = first.state_fingerprint();
+        const auto second_state_hash = second.state_fingerprint();
         if (!first_initial.finite_state || !second_initial.finite_state ||
             first_initial.completed_steps != 0 ||
             second_initial.completed_steps != 0 ||
-            first_initial.mean_voltage_mv != second_initial.mean_voltage_mv) {
+            first_state_hash != second_state_hash) {
             std::cerr << "Same-seed initial-state control check failed\n";
             return EXIT_FAILURE;
         }
