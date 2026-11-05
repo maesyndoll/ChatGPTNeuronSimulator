@@ -252,6 +252,27 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
     const auto state = device_state_->neuron_state();
     const auto count = static_cast<std::uint32_t>(device_state_->neuron_count);
     const auto stream = device_state_->stream.get();
+    if (!std::isfinite(stdp_parameters_.potentiation_rate) ||
+        stdp_parameters_.potentiation_rate < 0.0f ||
+        !std::isfinite(stdp_parameters_.depression_rate) ||
+        stdp_parameters_.depression_rate < 0.0f ||
+        !std::isfinite(stdp_parameters_.presynaptic_tau_ms) ||
+        stdp_parameters_.presynaptic_tau_ms <= 0.0f ||
+        !std::isfinite(stdp_parameters_.postsynaptic_tau_ms) ||
+        stdp_parameters_.postsynaptic_tau_ms <= 0.0f ||
+        !std::isfinite(stdp_parameters_.minimum_weight) ||
+        stdp_parameters_.minimum_weight <= 0.0f ||
+        !std::isfinite(stdp_parameters_.maximum_weight) ||
+        stdp_parameters_.maximum_weight < stdp_parameters_.minimum_weight)
+        throw std::invalid_argument("Invalid STDP parameters");
+    const StdpParametersGPU gpu_stdp{
+        stdp_parameters_.potentiation_rate,
+        stdp_parameters_.depression_rate,
+        std::exp(-p.dt / stdp_parameters_.presynaptic_tau_ms),
+        std::exp(-p.dt / stdp_parameters_.postsynaptic_tau_ms),
+        stdp_parameters_.minimum_weight,
+        stdp_parameters_.maximum_weight
+    };
 
     const SynapseParametersGPU synapses{
         device_state_->row_offsets.get(), device_state_->target_indices.get(),
@@ -271,7 +292,7 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
             device_state_->incoming_edge_indices.get(),
             device_state_->presynaptic_traces.get(),
             device_state_->postsynaptic_traces.get(),
-            count, p.excitatory_count, p.dt, stdp_parameters_, stream);
+            count, p.excitatory_count, p.dt, gpu_stdp, stream);
     };
 
     // Build the reusable graph only when a full batch is first requested.
@@ -293,7 +314,7 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
                     device_state_->incoming_edge_indices.get(),
                     device_state_->presynaptic_traces.get(),
                     device_state_->postsynaptic_traces.get(),
-                    count, p.excitatory_count, p.dt, stdp_parameters_, stream);
+                    count, p.excitatory_count, p.dt, gpu_stdp, stream);
             }
             propagate_spikes(graph_state, synapses, count, stream);
             SPIKING_CUDA_CHECK(cudaMemsetAsync(
