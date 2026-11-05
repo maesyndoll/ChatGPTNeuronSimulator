@@ -39,17 +39,17 @@ int main() {
             exported_topology.target_indices != std::vector<std::uint32_t>({1, 0}) ||
             exported_topology.weights.size() != 2 ||
             exported_topology.delays.size() != 2) {
-            std::cerr << "GPU-resident CSR connectivity readback test failed\\n";
+            std::cerr << "GPU-resident CSR connectivity readback test failed\n";
             return EXIT_FAILURE;
         }
         try {
             exported_topology.validate();
         } catch (const std::exception& error) {
             std::cerr << "Exported GPU connectivity failed validation: "
-                      << error.what() << '\\n';
+                      << error.what() << '\n';
             return EXIT_FAILURE;
         }
-        std::cout << "GPU-resident CSR connectivity readback test passed\\n";
+        std::cout << "GPU-resident CSR connectivity readback test passed\n";
 
         const auto initial_voltage_samples =
             spike_runtime.collect_voltage_samples({0U, 1U});
