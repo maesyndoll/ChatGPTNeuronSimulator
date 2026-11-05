@@ -274,8 +274,10 @@ void serve_client(int client_fd, SimulationController& controller) {
         }
 
         if (spike_events_subscribed && !pending_spike_events.has_value()) {
+            // Retrieve larger contiguous chunks so the dashboard can keep
+            // up with high firing rates without repeatedly serializing tiny batches.
             const auto snapshot =
-                controller.spike_events_snapshot(last_spike_event_sequence);
+                controller.spike_events_snapshot(last_spike_event_sequence, 8192);
             const bool generation_changed =
                 snapshot.simulation_generation != last_spike_event_generation;
             if (generation_changed) {
@@ -307,12 +309,14 @@ void serve_client(int client_fd, SimulationController& controller) {
                 responses.pop_front();
 
                 queued_response_bytes -= current_output.size();
+            } else if (pending_telemetry.has_value()) {
+                // Telemetry is latency-sensitive and must not be starved by a
+                // continuous stream of spike-event notifications.
+                current_output = std::move(*pending_telemetry);
+                pending_telemetry.reset();
             } else if (pending_spike_events.has_value()) {
                 current_output = std::move(*pending_spike_events);
                 pending_spike_events.reset();
-            } else if (pending_telemetry.has_value()) {
-                current_output = std::move(*pending_telemetry);
-                pending_telemetry.reset();
             }
 
             current_output_offset = 0;
