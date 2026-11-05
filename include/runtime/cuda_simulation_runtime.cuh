@@ -23,6 +23,7 @@ struct VoltageSample {
     double time_ms = 0.0;
     std::uint32_t neuron_id = 0;
     float voltage_mv = 0.0f;
+    bool spiked_this_step = false;
 };
 
 struct SpikeEventBatch {
