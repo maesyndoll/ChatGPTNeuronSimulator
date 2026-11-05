@@ -67,6 +67,8 @@ public:
     // Samples reflect threshold resets and the recovery increment when spiking.
     std::vector<VoltageSample> collect_voltage_samples(
         const std::vector<std::uint32_t>& neuron_ids);
+    // Copy the exact CSR graph currently resident on the GPU to host memory.
+    CSRTopology collect_connectivity();
     // Exact host-side fingerprint of current neuron parameters and state.
     std::uint64_t state_fingerprint();
     SpikeEventBatch collect_spike_events();
