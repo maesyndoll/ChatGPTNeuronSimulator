@@ -2,6 +2,7 @@
 
 #include "cuda/cuda_check.cuh"
 #include "topology/topology_generator.h"
+#include "plasticity/stdp.h"
 
 #include <algorithm>
 #include <cmath>
@@ -128,12 +129,13 @@ NeuronStateGPU CudaSimulationRuntime::DeviceState::neuron_state() noexcept {
 
 CudaSimulationRuntime::CudaSimulationRuntime(
     ModelParameters defaults, int device, bool capture_spike_events,
-    bool enable_plasticity_state)
+    bool enable_plasticity_state, StdpParameters stdp_parameters)
     : parameter_manager_(std::move(defaults)),
       active_parameters_(parameter_manager_.active_parameters()),
       device_id_(device),
       capture_spike_events_(capture_spike_events),
-      enable_plasticity_state_(enable_plasticity_state) {
+      enable_plasticity_state_(enable_plasticity_state),
+      stdp_parameters_(stdp_parameters) {
     SPIKING_CUDA_CHECK(cudaSetDevice(device_id_));
     device_state_ = build_device_state(active_parameters_, capture_spike_events_,
                                        enable_plasticity_state_);
@@ -258,6 +260,20 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
         device_state_->ring_slots
     };
 
+    const auto apply_learning = [&]() {
+        if (!device_state_->plasticity_state_enabled) return;
+        apply_stdp(
+            state.active_spike_sources, state.active_spike_count,
+            device_state_->row_offsets.get(), device_state_->target_indices.get(),
+            device_state_->weights.get(),
+            device_state_->incoming_row_offsets.get(),
+            device_state_->incoming_sources.get(),
+            device_state_->incoming_edge_indices.get(),
+            device_state_->presynaptic_traces.get(),
+            device_state_->postsynaptic_traces.get(),
+            count, p.excitatory_count, p.dt, stdp_parameters_, stream);
+    };
+
     // Build the reusable graph only when a full batch is first requested.
     // This avoids graph setup overhead for tests and interactive single-step use.
     if (steps >= kCudaGraphBatchSteps &&
@@ -267,6 +283,18 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
         SPIKING_CUDA_CHECK(cudaStreamBeginCapture(
             stream, cudaStreamCaptureModeThreadLocal));
         for (std::uint32_t i = 0; i < kCudaGraphBatchSteps; ++i) {
+            if (device_state_->plasticity_state_enabled) {
+                apply_stdp(
+                    graph_state.active_spike_sources, graph_state.active_spike_count,
+                    device_state_->row_offsets.get(), device_state_->target_indices.get(),
+                    device_state_->weights.get(),
+                    device_state_->incoming_row_offsets.get(),
+                    device_state_->incoming_sources.get(),
+                    device_state_->incoming_edge_indices.get(),
+                    device_state_->presynaptic_traces.get(),
+                    device_state_->postsynaptic_traces.get(),
+                    count, p.excitatory_count, p.dt, stdp_parameters_, stream);
+            }
             propagate_spikes(graph_state, synapses, count, stream);
             SPIKING_CUDA_CHECK(cudaMemsetAsync(
                 device_state_->active_spike_count.get(), 0,
@@ -292,6 +320,7 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
     }
 
     for (std::uint32_t i = 0; i < steps; ++i) {
+        apply_learning();
         propagate_spikes(state, synapses, count, stream);
         SPIKING_CUDA_CHECK(cudaMemsetAsync(
             device_state_->active_spike_count.get(), 0,
