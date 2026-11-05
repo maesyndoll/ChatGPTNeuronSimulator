@@ -86,7 +86,7 @@ optional voltage-trace arguments:
   --voltage-trace-interval 1
 ```
 
-The CSV contains `step,time_ms,neuron_id,voltage_mv`. It includes the
+The CSV contains `step,time_ms,neuron_id,voltage_mv,spiked_this_step`; the final column is 1 when that neuron spiked during the sampled step. It includes the
 initialized state at step 0 and post-integration samples at each interval,
 including the final partial interval. Voltage is sampled after threshold
 handling, so a neuron that spikes on a sampled step is recorded at its reset
