@@ -152,6 +152,7 @@ void write_voltage_samples(
                << std::setprecision(12) << sample.time_ms << ','
                << sample.neuron_id << ','
                << std::setprecision(9) << sample.voltage_mv << ','
+               << std::setprecision(9) << sample.recovery << ','
                << (sample.spiked_this_step ? 1 : 0) << '\n';
     }
     if (!output)
@@ -308,7 +309,7 @@ int main(int argc, char** argv) {
             std::ofstream trace(trace_path, std::ios::out | std::ios::trunc);
             if (!trace)
                 throw std::runtime_error("cannot open voltage trace CSV: " + options.voltage_trace_path);
-            trace << "step,time_ms,neuron_id,voltage_mv,spiked_this_step\n";
+            trace << "step,time_ms,neuron_id,voltage_mv,recovery,spiked_this_step\n";
             write_voltage_samples(trace,
                 runtime.collect_voltage_samples(options.voltage_trace_neurons));
 
