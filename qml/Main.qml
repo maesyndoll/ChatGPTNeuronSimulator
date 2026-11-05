@@ -21,9 +21,6 @@ ApplicationWindow {
 
     property bool parameterDraftInitialized: false
 
-    // Bounded CPU-side history; samples arrive with existing telemetry.
-    property var populationRateHistory: []
-    property int populationRateHistoryLimit: 180
 
     Connections {
         target: simulation
@@ -598,51 +595,16 @@ ApplicationWindow {
 
         GridLayout {
             Layout.fillWidth: true
-            columns: 3
-            columnSpacing: 12
-            rowSpacing: 12
+            columns: 2
+            columnSpacing: 24
+            rowSpacing: 8
 
-            MetricCard {
-                Layout.fillWidth: true
-                title: "Completed steps"
-                value: simulation.completedSteps
-                unit: "simulation steps"
-            }
-
-            MetricCard {
-                Layout.fillWidth: true
-                title: "Excitatory firing rate"
-                value: simulation.excitatoryRateHz.toFixed(3)
-                unit: "Hz"
-            }
-
-            MetricCard {
-                Layout.fillWidth: true
-                title: "Inhibitory firing rate"
-                value: simulation.inhibitoryRateHz.toFixed(3)
-                unit: "Hz"
-            }
-
-            MetricCard {
-                Layout.fillWidth: true
-                title: "Excitatory spikes"
-                value: simulation.excitatorySpikes
-                unit: "cumulative"
-            }
-
-            MetricCard {
-                Layout.fillWidth: true
-                title: "Inhibitory spikes"
-                value: simulation.inhibitorySpikes
-                unit: "cumulative"
-            }
-
-            MetricCard {
-                Layout.fillWidth: true
-                title: "Mean membrane voltage"
-                value: simulation.meanVoltageMv.toFixed(3)
-                unit: "mV"
-            }
+            Label { text: "Steps: " + simulation.completedSteps; color: "#f0f4fa" }
+            Label { text: "Mean voltage: " + simulation.meanVoltageMv.toFixed(3) + " mV"; color: "#f0f4fa" }
+            Label { text: "Excitatory rate: " + simulation.excitatoryRateHz.toFixed(3) + " Hz"; color: "#f0f4fa" }
+            Label { text: "Inhibitory rate: " + simulation.inhibitoryRateHz.toFixed(3) + " Hz"; color: "#f0f4fa" }
+            Label { text: "Excitatory spikes: " + simulation.excitatorySpikes; color: "#f0f4fa" }
+            Label { text: "Inhibitory spikes: " + simulation.inhibitorySpikes; color: "#f0f4fa" }
         }
 
         Rectangle {
@@ -1306,33 +1268,11 @@ ApplicationWindow {
             }
         }
 
-        Rectangle {
-            Layout.fillWidth: true
-            radius: 10
-            color: "#192433"
-            border.color: "#2b3a4d"
-            implicitHeight: 58
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.margins: 16
-
-                Label {
-                    text: "Numerical state"
-                    color: "#cbd7e5"
-                    font.pixelSize: 14
-                    font.bold: true
-                }
-
-                Item { Layout.fillWidth: true }
-
-                Label {
-                    text: simulation.finiteState ? "Finite" : "Not yet verified"
-                    color: simulation.finiteState ? "#8de0ca" : "#d5b77b"
-                    font.pixelSize: 14
-                    font.bold: true
-                }
-            }
+        Label {
+            text: "Numerical state: " +
+                  (simulation.finiteState ? "Finite" : "Not yet verified")
+            color: simulation.finiteState ? "#8de0ca" : "#d5b77b"
+            font.pixelSize: 13
         }
 
         Label {
@@ -1361,46 +1301,6 @@ ApplicationWindow {
         }
 
         onAccepted: simulation.reinitializeSimulation()
-    }
-
-    component MetricCard: Rectangle {
-        id: card
-
-        property string title: ""
-        property string value: "—"
-        property string unit: ""
-
-        radius: 12
-        color: "#192433"
-        border.color: "#2b3a4d"
-        implicitHeight: 122
-
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 16
-            spacing: 7
-
-            Label {
-                text: card.title
-                color: "#9fb0c5"
-                font.pixelSize: 13
-            }
-
-            Label {
-                Layout.fillWidth: true
-                text: card.value
-                color: "#f0f4fa"
-                font.pixelSize: 24
-                font.bold: true
-                elide: Text.ElideRight
-            }
-
-            Label {
-                text: card.unit
-                color: "#71839a"
-                font.pixelSize: 11
-            }
-        }
     }
 
     function parameterValue(parameters, group, field) {
