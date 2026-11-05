@@ -268,6 +268,42 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
     }
 }
 
+std::vector<VoltageSample> CudaSimulationRuntime::collect_voltage_samples(
+    const std::vector<std::uint32_t>& neuron_ids) {
+    if (!device_state_)
+        throw std::logic_error("CUDA simulation is not initialized");
+
+    const auto count = device_state_->neuron_count;
+    for (const auto neuron_id : neuron_ids) {
+        if (neuron_id >= count)
+            throw std::out_of_range("Voltage trace neuron ID is out of range");
+    }
+
+    std::vector<VoltageSample> samples;
+    samples.reserve(neuron_ids.size());
+    if (neuron_ids.empty()) return samples;
+
+    // The runtime stream is non-blocking. Finish queued kernels before the
+    // synchronous device-to-host read, just as collect_metrics() does.
+    device_state_->stream.synchronize();
+
+    std::vector<float> voltage(count);
+    SPIKING_CUDA_CHECK(cudaMemcpy(
+        voltage.data(), device_state_->voltage.get(),
+        count * sizeof(float), cudaMemcpyDeviceToHost));
+
+    const double time_ms = elapsed_simulation_ms_;
+    for (const auto neuron_id : neuron_ids) {
+        samples.push_back({
+            completed_steps_,
+            time_ms,
+            neuron_id,
+            voltage[neuron_id]
+        });
+    }
+    return samples;
+}
+
 SimulationMetrics CudaSimulationRuntime::collect_metrics() {
     if (!device_state_) throw std::logic_error("CUDA simulation is not initialized");
     // This runtime uses a non-blocking CUDA stream. The synchronous copies
