@@ -229,15 +229,20 @@ def main():
                 )
                 assert stepped["telemetry"]["completed_steps"] == "1"
 
-                # A subscription delivers an asynchronous event when the
-                # controller publishes a newer telemetry sequence.
-                while True:
+                # Telemetry is intentionally prioritized over spike-event
+                # notifications. Drain both asynchronous message types rather
+                # than assuming the spike notification arrives first.
+                telemetry_received = False
+                spike_payload_with_events = None
+                while not telemetry_received or spike_payload_with_events is None:
                     event_line = reader.readline()
-                    assert event_line, "Server closed before telemetry event"
+                    assert event_line, "Server closed before asynchronous updates"
                     event = json.loads(event_line)
                     if event.get("event") == "spike_events":
                         ASYNC_EVENTS.append(event)
                         assert "events" in event["spike_events"], event
+                        if len(event["spike_events"]["events"]) == 2:
+                            spike_payload_with_events = event["spike_events"]
                         continue
                     assert event["protocol_version"] == 1, event
                     assert event["event"] == "telemetry_update", event
@@ -246,16 +251,9 @@ def main():
                         event["telemetry"]["sequence"]
                         == stepped["telemetry"]["sequence"]
                     ), event
-                    break
+                    telemetry_received = True
 
-                spike_notifications = [
-                    item for item in ASYNC_EVENTS
-                    if item.get("event") == "spike_events"
-                ]
-                assert spike_notifications, (
-                    "No asynchronous spike_events notification was received"
-                )
-                notification_payload = spike_notifications[-1]["spike_events"]
+                notification_payload = spike_payload_with_events
                 assert len(notification_payload["events"]) == 2, (
                     notification_payload
                 )
