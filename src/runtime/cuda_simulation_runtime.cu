@@ -36,7 +36,7 @@ CudaSimulationRuntime::DeviceState::DeviceState(
       voltage(count), recovery(count), spike_counts(count),
       spike_flags(count),
       active_spike_sources(count), active_spike_count(1),
-      completed_steps_device(1),
+      completed_steps_device(1), completed_step_blocks(1),
       row_offsets(topology.row_offsets.size()),
       target_indices(topology.target_indices.size()),
       weights(topology.weights.size()),
@@ -87,6 +87,7 @@ NeuronStateGPU CudaSimulationRuntime::DeviceState::neuron_state() noexcept {
         active_spike_sources.get(),
         active_spike_count.get(),
         completed_steps_device.get(),
+        completed_step_blocks.get(),
         capture_spike_events ? spike_event_steps.get() : nullptr,
         capture_spike_events ? spike_event_neurons.get() : nullptr,
         capture_spike_events ? spike_event_count.get() : nullptr,
@@ -152,6 +153,9 @@ CudaSimulationRuntime::build_device_state(
     SPIKING_CUDA_CHECK(cudaMemsetAsync(
         next->completed_steps_device.get(), 0,
         sizeof(unsigned long long), stream));
+    SPIKING_CUDA_CHECK(cudaMemsetAsync(
+        next->completed_step_blocks.get(), 0,
+        sizeof(std::uint32_t), stream));
     if (capture_spike_events) {
         SPIKING_CUDA_CHECK(cudaMemsetAsync(
             next->spike_event_count.get(), 0,
