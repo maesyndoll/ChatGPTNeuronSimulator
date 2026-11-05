@@ -912,6 +912,193 @@ ApplicationWindow {
             radius: 10
             color: "#192433"
             border.color: "#2b3a4d"
+            implicitHeight: spectrogramColumn.implicitHeight + 32
+
+            ColumnLayout {
+                id: spectrogramColumn
+                anchors.fill: parent
+                anchors.margins: 16
+                spacing: 8
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label {
+                        text: "Neural activity spectrogram"
+                        color: "#f0f4fa"
+                        font.pixelSize: 15
+                        font.bold: true
+                    }
+                    Item { Layout.fillWidth: true }
+                    Label {
+                        text: "Spike density · 240 time bins × 64 neuron groups"
+                        color: "#91a2b8"
+                        font.pixelSize: 11
+                    }
+                }
+
+                Canvas {
+                    id: spikeSpectrogram
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 256
+                    Layout.minimumHeight: 192
+                    antialiasing: false
+
+                    Connections {
+                        target: simulation
+                        function onSpikeEventsChanged() {
+                            spikeSpectrogram.requestPaint()
+                        }
+                        function onTelemetryChanged() {
+                            spikeSpectrogram.requestPaint()
+                        }
+                        function onConfigurationChanged() {
+                            spikeSpectrogram.requestPaint()
+                        }
+                    }
+
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        var w = width
+                        var h = height
+                        ctx.fillStyle = "#101722"
+                        ctx.fillRect(0, 0, w, h)
+
+                        var left = 58
+                        var right = 14
+                        var top = 10
+                        var bottom = 28
+                        var plotWidth = Math.max(1, w - left - right)
+                        var plotHeight = Math.max(1, h - top - bottom)
+                        var columns = 240
+                        var rows = 64
+                        var excitatory = new Array(columns * rows)
+                        var inhibitory = new Array(columns * rows)
+                        for (var clear = 0; clear < columns * rows; ++clear) {
+                            excitatory[clear] = 0
+                            inhibitory[clear] = 0
+                        }
+
+                        var params = simulation.activeParameters || {}
+                        var simParams = params["simulation"] || {}
+                        var eCount = Number(simParams["excitatory_count"] || 0)
+                        var iCount = Number(simParams["inhibitory_count"] || 0)
+                        var total = Math.max(1, eCount + iCount)
+                        var events = simulation.spikeEvents
+                        var endStep = Number(simulation.completedSteps)
+                        if (!isFinite(endStep) || endStep <= 0)
+                            endStep = events.length > 0
+                                    ? Number(events[events.length - 1].step) : 1
+                        var startStep = Math.max(0, endStep - 2000)
+                        var stepRange = Math.max(1, endStep - startStep)
+                        var peak = 1
+
+                        // Aggregate the retained event records into coarse bins.
+                        // No extra IPC requests or GPU work are introduced.
+                        for (var i = 0; i < events.length; ++i) {
+                            var step = Number(events[i].step)
+                            var neuron = Number(events[i].neuron_id)
+                            if (!isFinite(step) || !isFinite(neuron) ||
+                                    step < startStep || step > endStep ||
+                                    neuron < 0 || neuron >= total)
+                                continue
+                            var x = Math.min(columns - 1,
+                                    Math.floor((step - startStep) /
+                                               stepRange * columns))
+                            var y = Math.min(rows - 1,
+                                    Math.floor(neuron / total * rows))
+                            var index = y * columns + x
+                            if (neuron < eCount)
+                                excitatory[index] += 1
+                            else
+                                inhibitory[index] += 1
+                            peak = Math.max(peak, excitatory[index],
+                                            inhibitory[index])
+                        }
+
+                        var cellWidth = plotWidth / columns
+                        var cellHeight = plotHeight / rows
+                        // A logarithmic intensity scale keeps both sparse and
+                        // dense bursts visible in the same display.
+                        for (var row = 0; row < rows; ++row) {
+                            for (var col = 0; col < columns; ++col) {
+                                var bin = row * columns + col
+                                var e = excitatory[bin]
+                                var inh = inhibitory[bin]
+                                if (e === 0 && inh === 0)
+                                    continue
+                                var eLevel = e > 0
+                                        ? Math.min(1, Math.log(1 + e) /
+                                                   Math.log(1 + peak)) : 0
+                                var iLevel = inh > 0
+                                        ? Math.min(1, Math.log(1 + inh) /
+                                                   Math.log(1 + peak)) : 0
+                                var red = Math.round(229 * iLevel)
+                                var green = Math.round(184 * eLevel +
+                                                       164 * iLevel)
+                                var blue = Math.round(165 * eLevel +
+                                                      95 * iLevel)
+                                ctx.fillStyle = "rgb(" + red + "," +
+                                                Math.min(255, green) + "," +
+                                                Math.min(255, blue) + ")"
+                                ctx.fillRect(left + col * cellWidth,
+                                             top + row * cellHeight,
+                                             Math.ceil(cellWidth),
+                                             Math.ceil(cellHeight))
+                            }
+                        }
+
+                        ctx.strokeStyle = "#42536a"
+                        ctx.lineWidth = 1
+                        ctx.strokeRect(left, top, plotWidth, plotHeight)
+                        ctx.fillStyle = "#9fb0c5"
+                        ctx.font = "11px sans-serif"
+                        ctx.textAlign = "center"
+                        ctx.fillText("Simulation time (last 2,000 steps)",
+                                     left + plotWidth / 2, h - 5)
+                        ctx.textAlign = "right"
+                        ctx.fillText("Neuron groups", left - 8, top + 8)
+                        ctx.fillText("0", left - 8, top + plotHeight)
+                        ctx.fillText(String(total - 1),
+                                     left - 8, top + 18)
+
+                        if (events.length === 0) {
+                            ctx.textAlign = "center"
+                            ctx.fillStyle = "#71839a"
+                            ctx.font = "13px sans-serif"
+                            ctx.fillText("Waiting for spike activity...",
+                                         left + plotWidth / 2,
+                                         top + plotHeight / 2)
+                        }
+                    }
+                }
+
+                RowLayout {
+                    spacing: 18
+                    Label {
+                        text: "Brighter = more spikes per time bin"
+                        color: "#91a2b8"
+                        font.pixelSize: 11
+                    }
+                    Item { Layout.fillWidth: true }
+                    Label {
+                        text: "Excitatory"
+                        color: "#54b8a5"
+                        font.pixelSize: 11
+                    }
+                    Label {
+                        text: "Inhibitory"
+                        color: "#e5a45f"
+                        font.pixelSize: 11
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            radius: 10
+            color: "#192433"
+            border.color: "#2b3a4d"
             implicitHeight: 260
 
             Connections {
