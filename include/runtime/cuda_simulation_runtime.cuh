@@ -50,7 +50,8 @@ class CudaSimulationRuntime {
 public:
     explicit CudaSimulationRuntime(ModelParameters defaults = ModelParameters{},
                                    int device = 0,
-                                   bool capture_spike_events = true);
+                                   bool capture_spike_events = true,
+                                   bool enable_plasticity_state = false);
     ~CudaSimulationRuntime() = default;
 
     CudaSimulationRuntime(const CudaSimulationRuntime&) = delete;
@@ -87,11 +88,12 @@ public:
     }
     std::uint64_t completed_steps() const noexcept { return completed_steps_; }
     int device_id() const noexcept { return device_id_; }
+    bool plasticity_state_enabled() const noexcept; 
 
 private:
     struct DeviceState {
         DeviceState(std::size_t count, const CSRTopology& topology,
-                    bool capture_spike_events);
+                    bool capture_spike_events, bool enable_plasticity_state);
         CudaStream stream;
         DeviceBuffer<float> a, b, c, d, current;
         DeviceBuffer<float> voltage, recovery;
@@ -119,6 +121,15 @@ private:
         DeviceBuffer<float> weights;
         DeviceBuffer<std::uint32_t> delays;
 
+        // Optional reverse CSR index and zero-initialized learning traces.
+        // Edge indices refer back to the single authoritative weights array.
+        DeviceBuffer<std::uint32_t> incoming_row_offsets;
+        DeviceBuffer<std::uint32_t> incoming_sources;
+        DeviceBuffer<std::uint32_t> incoming_edge_indices;
+        DeviceBuffer<float> presynaptic_traces;
+        DeviceBuffer<float> postsynaptic_traces;
+        bool plasticity_state_enabled = false;
+
         // Dense target-current ring: [ring_slot][neuron].
         DeviceBuffer<float> synaptic_current;
         std::size_t neuron_count;
@@ -131,7 +142,7 @@ private:
     };
 
     std::unique_ptr<DeviceState> build_device_state(const ModelParameters& parameters,
-                       bool capture_spike_events);
+                       bool capture_spike_events, bool enable_plasticity_state);
 
     ParameterManager parameter_manager_;
     ModelParameters active_parameters_;
@@ -141,6 +152,7 @@ private:
     double elapsed_simulation_ms_ = 0.0;
     int device_id_ = 0;
     bool capture_spike_events_ = true;
+    bool enable_plasticity_state_ = false;
 };
 
 } // namespace spiking
