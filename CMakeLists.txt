@@ -367,6 +367,25 @@ if(SPIKINGMODEL_ENABLE_CUDA)
         set_tests_properties(stdp_associative_recall PROPERTIES TIMEOUT 120)
         add_dependencies(stdp_associative_recall check_parameter_schema)
 
+        add_executable(stdp_recurrent_association
+            experiments/stdp_recurrent_association.cpp
+            src/cuda/neuron_izhikevich.cu
+            src/runtime/cuda_simulation_runtime.cu
+            src/topology/topology_generator.cpp
+            src/topology/topology_io.cpp
+        )
+        target_include_directories(stdp_recurrent_association PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+        target_link_libraries(stdp_recurrent_association PRIVATE
+            CUDA::cudart
+        )
+        set_target_properties(stdp_recurrent_association PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON
+            CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+        )
+        add_dependencies(stdp_recurrent_association check_parameter_schema)
+
         add_executable(stdp_parameter_sweep
             experiments/stdp_parameter_sweep.cpp
             src/cuda/neuron_izhikevich.cu
