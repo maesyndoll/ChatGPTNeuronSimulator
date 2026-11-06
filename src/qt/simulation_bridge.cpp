@@ -16,7 +16,7 @@ SimulationBridge::SimulationBridge(QObject* parent)
     spike_events_update_timer_.setInterval(50);
     connect(&spike_events_update_timer_, &QTimer::timeout,
             this, &SimulationBridge::spikeEventsChanged);
-    topology_visual_timer_.setInterval(1500);
+    topology_visual_timer_.setInterval(5000);
     connect(&topology_visual_timer_, &QTimer::timeout,
             this, &SimulationBridge::refreshTopologyVisual);
     connect(&client_, &SimulationClient::connected, this, [this]() {
