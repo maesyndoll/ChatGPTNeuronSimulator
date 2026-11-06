@@ -38,16 +38,43 @@ Blackwell (`sm_120` by default).
   allocated device state.
 
 Pair-based excitatory STDP is implemented as an opt-in CUDA runtime feature.
-The runtime maintains GPU-resident pre/post traces and applies trace decay,
-presynaptic depression, postsynaptic potentiation, and trace increments at
-each event boundary before spike propagation. The learning kernels run in
-the same CUDA stream and are included in captured CUDA Graph batches; there
-are no per-step host readbacks. Inhibitory-source weights remain fixed.
-Learning is disabled by default and can be enabled through the runtime
-constructor; STDP parameters are currently supplied through that constructor
-rather than the JSON/IPC configuration API. CPU-reference and GPU-kernel tests
-cover pair ordering, simultaneous events, timing curves, and inhibitory-weight
-preservation. The Qt Quick dashboard and asynchronous IPC bridge already exist;
+The standalone executable exposes this feature with `--enable-stdp`. Learning
+parameters can be overridden independently:
+
+```bash
+./build-cuda/spiking_model --config experiments/control_30s.json \
+  --enable-stdp \
+  --stdp-a-plus 0.005 --stdp-a-minus 0.005 \
+  --stdp-tau-pre-ms 20 --stdp-tau-post-ms 20 \
+  --stdp-min-weight 0.001 --stdp-max-weight 1.0 \
+  --telemetry-window-steps 1000 \
+  --connectivity-export experiments/logs/stdp_weights_before.csv \
+  --connectivity-export-after experiments/logs/stdp_weights_after.csv \
+  --log experiments/logs/stdp_training.jsonl
+```
+
+The defaults remain the reference settings in `StdpParameters`:
+A+ = 0.005, A- = 0.00525, both trace time constants = 20 ms, and
+excitatory weight bounds = [0.001, 1.0]. Parameter overrides require
+`--enable-stdp`; server mode does not yet expose STDP controls. The optional
+before/after connectivity exports preserve the exact CSR edge ordering and
+allow independent weight analysis. The run summary and JSONL record report
+the number of plastic excitatory synapses, how many changed, mean initial and
+final weights, mean absolute weight change, and maximum absolute change.
+Inhibitory-source weights are not plastic. A zero changed-synapse count is
+reported as such rather than being treated as a successful learning result.
+
+At each simulation step, the runtime decays traces, applies depression for
+presynaptic excitatory spikes and potentiation for postsynaptic spikes, clamps
+excitatory weights, increments traces, propagates the preceding step's spikes,
+and integrates the next step. Learning kernels run in the same CUDA stream
+and are included in captured CUDA Graph batches; there are no per-step host
+readbacks. CPU-reference and GPU-kernel tests cover pair ordering, simultaneous
+events, timing curves, and inhibitory-weight preservation. A separate host
+test validates before/after weight summaries and confirms connectivity
+structure is unchanged during training.
+
+The Qt Quick dashboard and asynchronous IPC bridge already exist;
 STDP-specific controls, live plasticity analysis, and optional calibration
 workflows remain future integration milestones. Checkpointing is also planned.
 The current
