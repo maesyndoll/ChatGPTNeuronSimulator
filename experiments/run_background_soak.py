@@ -143,8 +143,10 @@ def main():
                     f"timed out waiting for IPC socket; inspect {server_log_path}")
             time.sleep(0.2)
 
-        client = socket.create_connection((socket_path,), timeout=10.0)
+        # This endpoint is a Unix-domain socket, not a TCP host/port pair.
+        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         client.settimeout(10.0)
+        client.connect(socket_path)
         reader = client.makefile("r", encoding="utf-8")
         writer = client.makefile("w", encoding="utf-8")
 
