@@ -11,13 +11,12 @@
 #include <vector>
 
 namespace {
-
 using namespace spiking;
 
 constexpr std::uint32_t kSource = 0;
 constexpr std::uint32_t kTarget = 1;
 constexpr std::uint32_t kTrainingPairs = 20;
-constexpr std::uint64_t kPairIntervalSteps = 1000;
+constexpr std::uint32_t kPairIntervalSteps = 100;
 constexpr std::uint32_t kObservationSteps = 5;
 constexpr float kPulseAmplitude = 20.0f;
 
@@ -37,23 +36,19 @@ ModelParameters make_parameters() {
     p.simulation.inhibitory_current_max = 0.0f;
 
     p.topology.p_ee = 1.0;
-    p.topology.p_ei = 0.0;
-    p.topology.p_ie = 0.0;
-    p.topology.p_ii = 0.0;
+    p.topology.p_ei = p.topology.p_ie = p.topology.p_ii = 0.0;
     p.topology.master_seed = 13579;
     p.topology.topology_seed = 97531;
     p.topology.delay_seed = 86420;
     p.topology.delay_distribution = DelayDistribution::Uniform;
-    p.topology.minimum_delay = 2;
-    p.topology.maximum_delay = 2;
+    p.topology.minimum_delay = p.topology.maximum_delay = 2;
     p.topology.fibonacci_delays = {2};
     p.topology.fibonacci_weights = {1.0};
     return p;
 }
 
 std::uint32_t find_edge(const CSRTopology& graph,
-                        std::uint32_t source,
-                        std::uint32_t target) {
+                        std::uint32_t source, std::uint32_t target) {
     for (std::uint32_t edge = graph.row_offsets.at(source);
          edge < graph.row_offsets.at(source + 1); ++edge) {
         if (graph.target_indices.at(edge) == target) return edge;
@@ -67,18 +62,27 @@ struct Response {
     std::uint64_t target_spikes = 0;
 };
 
-Response observe_source_only(SimulationController& controller,
-                              std::uint64_t start_step) {
+void advance_in_small_chunks(SimulationController& controller,
+                             std::uint32_t steps) {
+    // Keep every runtime call below the CUDA-graph capture threshold (100).
+    // This experiment is intended to validate the explicit step path first.
+    while (steps != 0) {
+        const auto chunk = std::min<std::uint32_t>(steps, 99);
+        controller.step(chunk);
+        steps -= chunk;
+    }
+}
+
+Response observe_source_only(SimulationController& controller) {
     const auto before = controller.spike_events_snapshot(0, 100000);
-    controller.schedule_stimulus(
-        kSource, start_step, 1, kPulseAmplitude);
+    const auto start = controller.telemetry().completed_steps + 1;
+    controller.schedule_stimulus(kSource, start, 1, kPulseAmplitude);
     controller.step(kObservationSteps);
 
-    const auto samples = controller.collect_voltage_samples({kTarget});
-    const auto after = controller.spike_events_snapshot(0, 100000);
-
     Response result;
-    result.target_voltage = samples.at(0).voltage_mv;
+    result.target_voltage =
+        controller.collect_voltage_samples({kTarget}).at(0).voltage_mv;
+    const auto after = controller.spike_events_snapshot(0, 100000);
     for (const auto& event : after.events) {
         if (event.sequence < before.total_events) continue;
         if (event.neuron_id == kSource) ++result.source_spikes;
@@ -87,10 +91,16 @@ Response observe_source_only(SimulationController& controller,
     return result;
 }
 
-void require(bool condition, const char* message) {
-    if (!condition) throw std::runtime_error(message);
+std::pair<std::uint64_t, std::uint64_t> count_events(
+    const SpikeEventSnapshot& snapshot, std::uint64_t first_sequence) {
+    std::pair<std::uint64_t, std::uint64_t> counts{};
+    for (const auto& event : snapshot.events) {
+        if (event.sequence < first_sequence) continue;
+        if (event.neuron_id == kSource) ++counts.first;
+        if (event.neuron_id == kTarget) ++counts.second;
+    }
+    return counts;
 }
-
 } // namespace
 
 int main() {
@@ -104,7 +114,6 @@ int main() {
         stdp.minimum_weight = 0.001f;
         stdp.maximum_weight = 1.0f;
 
-        // A small batch size makes each explicit step boundary observable.
         SimulationController controller(
             parameters, 0, 1, 1000, true, true, stdp);
 
@@ -112,97 +121,91 @@ int main() {
         const auto edge = find_edge(initial_graph, kSource, kTarget);
         const float initial_weight = initial_graph.weights.at(edge);
 
-        // Untrained A-only response. B receives no direct stimulus.
-        const auto baseline = observe_source_only(controller, 1);
-        require(baseline.source_spikes > 0,
-                "Baseline source pulse did not produce an A spike");
+        const auto baseline = observe_source_only(controller);
+        if (baseline.source_spikes == 0)
+            throw std::runtime_error("Baseline A-only pulse produced no A spike");
 
-        // Let the baseline presynaptic trace decay before training.
-        controller.step(1000);
+        // Five time constants at dt=0.1 ms, advanced without graph capture.
+        advance_in_small_chunks(controller, 1000);
 
-        const auto training_start =
-            controller.telemetry().completed_steps + 2;
+        const auto training_first_sequence =
+            controller.spike_events_snapshot(0, 100000).total_events;
         for (std::uint32_t trial = 0; trial < kTrainingPairs; ++trial) {
-            const auto source_step =
-                training_start + trial * kPairIntervalSteps;
-            // A precedes B by three integration steps; the A->B synaptic
-            // delay is two steps. This is a causal pre-before-post pairing.
+            // Explicitly execute A, then B three integration steps later.
+            // The A->B synaptic delay is two steps.
+            auto source_step = controller.telemetry().completed_steps + 1;
             controller.schedule_stimulus(
                 kSource, source_step, 1, kPulseAmplitude);
+            controller.step(3);
+
+            const auto target_step = controller.telemetry().completed_steps + 1;
             controller.schedule_stimulus(
-                kTarget, source_step + 3, 1, kPulseAmplitude);
+                kTarget, target_step, 1, kPulseAmplitude);
+            controller.step(3);
+
+            // Complete a 100-step inter-pair interval. The remaining gap
+            // allows traces to evolve naturally while preserving weights.
+            advance_in_small_chunks(controller, kPairIntervalSteps - 6);
         }
 
-        const auto final_target_step =
-            training_start + (kTrainingPairs - 1) * kPairIntervalSteps + 3;
-        const auto current_step = controller.telemetry().completed_steps;
-        const auto training_steps =
-            static_cast<std::uint32_t>(final_target_step + 2 - current_step);
-        controller.step(training_steps);
-
+        const auto training_events =
+            controller.spike_events_snapshot(0, 100000);
+        const auto training_counts =
+            count_events(training_events, training_first_sequence);
         const auto trained_graph = controller.connectivity_snapshot();
         const float trained_weight = trained_graph.weights.at(edge);
 
-        // More than five STDP time constants: retain weights, clear traces
-        // through natural decay, and avoid a residual training association.
-        controller.step(1000);
+        // Clear residual traces by decay only; do not reinitialize the network.
+        advance_in_small_chunks(controller, 1000);
 
-        const auto recall_start = controller.telemetry().completed_steps + 1;
-        const auto recall = observe_source_only(controller, recall_start);
-
-        const auto events = controller.spike_events_snapshot(0, 100000);
+        const auto recall = observe_source_only(controller);
+        const auto all_events = controller.spike_events_snapshot(0, 100000);
         const auto final_graph = controller.connectivity_snapshot();
         const float final_weight = final_graph.weights.at(edge);
         const auto config = controller.configuration_snapshot();
 
-        require(config.simulation_generation == 0,
-                "Unexpected simulation reinitialization during experiment");
-        require(events.dropped_events == 0,
-                "Spike-event recorder dropped events");
-        require(trained_weight > initial_weight,
-                "Paired A-before-B training did not potentiate A->B");
-        require(recall.source_spikes > 0,
-                "A-only recall pulse did not produce an A spike");
-
         const float response_delta =
             recall.target_voltage - baseline.target_voltage;
-        require(response_delta > 1.0e-6f,
-                "Potentiated A->B connection did not measurably improve "
-                "the target response to A-only stimulation");
 
         std::cout << std::fixed << std::setprecision(7)
-                  << "STDP associative-recall experiment\n"
-                  << "GPU/controller generation: "
-                  << config.simulation_generation << '\n'
+                  << "STDP associative-recall diagnostic\n"
+                  << "Simulation generation: " << config.simulation_generation << '\n'
                   << "A->B initial weight: " << initial_weight << '\n'
-                  << "A->B after paired training: " << trained_weight << '\n'
+                  << "A->B after training: " << trained_weight << '\n'
                   << "A->B after recall: " << final_weight << '\n'
                   << "Training pairs: " << kTrainingPairs << '\n'
-                  << "Baseline A-only B voltage: "
-                  << baseline.target_voltage << " mV\n"
-                  << "Trained A-only B voltage: "
-                  << recall.target_voltage << " mV\n"
-                  << "A-only B voltage change: "
-                  << response_delta << " mV\n"
-                  << "Baseline A/B spikes in observation: "
-                  << baseline.source_spikes << '/'
-                  << baseline.target_spikes << '\n'
-                  << "Recall A/B spikes in observation: "
-                  << recall.source_spikes << '/'
-                  << recall.target_spikes << '\n'
-                  << "Total recorded spike events: "
-                  << events.total_events << '\n'
-                  << "Dropped spike events: " << events.dropped_events
-                  << '\n';
+                  << "Training A spikes: " << training_counts.first << '\n'
+                  << "Training B spikes: " << training_counts.second << '\n'
+                  << "Baseline A/B spikes: " << baseline.source_spikes
+                  << '/' << baseline.target_spikes << '\n'
+                  << "Recall A/B spikes: " << recall.source_spikes
+                  << '/' << recall.target_spikes << '\n'
+                  << "Baseline B voltage: " << baseline.target_voltage << " mV\n"
+                  << "Recall B voltage: " << recall.target_voltage << " mV\n"
+                  << "B voltage delta: " << response_delta << " mV\n"
+                  << "Total recorded events: " << all_events.total_events << '\n'
+                  << "Dropped events: " << all_events.dropped_events << '\n';
 
-        if (response_delta > 0.0f) {
-            std::cout << "RESULT: learned A->B efficacy increased B's "
-                         "response to A-only stimulation.\n";
-        } else {
-            std::cout << "RESULT: STDP potentiated A->B, but this protocol "
-                         "did not produce a larger measured A-only B voltage.\n";
-        }
+        if (config.simulation_generation != 0)
+            throw std::runtime_error("Simulation unexpectedly reinitialized");
+        if (all_events.dropped_events != 0)
+            throw std::runtime_error("Spike-event recorder dropped events");
+        if (training_counts.first < kTrainingPairs ||
+            training_counts.second < kTrainingPairs)
+            throw std::runtime_error(
+                "Training did not produce the expected A and B spike pairs; "
+                "inspect the counts above");
+        if (trained_weight <= initial_weight)
+            throw std::runtime_error(
+                "A/B spikes occurred but STDP did not potentiate A->B");
+        if (recall.source_spikes == 0)
+            throw std::runtime_error("A-only recall pulse produced no A spike");
+        if (response_delta <= 1.0e-6f)
+            throw std::runtime_error(
+                "Weight potentiated, but B voltage did not improve on recall");
 
+        std::cout << "PASS: causal pairing potentiated A->B and improved "
+                     "the A-only target response.\n";
         return EXIT_SUCCESS;
     } catch (const std::exception& error) {
         std::cerr << "STDP associative-recall experiment failed: "
