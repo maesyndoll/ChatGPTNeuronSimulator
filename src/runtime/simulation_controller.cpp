@@ -226,6 +226,18 @@ SpikeEventSnapshot SimulationController::spike_events_snapshot(
     return snapshot;
 }
 
+TopologyVisualSnapshot SimulationController::topology_visual_snapshot(
+    std::uint32_t maximum_neurons,
+    std::uint32_t maximum_edges_per_neuron) const {
+    return const_cast<SimulationController*>(this)->submit(
+        [maximum_neurons, maximum_edges_per_neuron]
+        (CudaSimulationRuntime& runtime) {
+            return runtime.collect_topology_visual_snapshot(
+                maximum_neurons, maximum_edges_per_neuron);
+        }
+    );
+}
+
 TopologyStatistics SimulationController::connectivity_statistics() const {
     return const_cast<SimulationController*>(this)->submit(
         [](CudaSimulationRuntime& runtime) {
