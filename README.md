@@ -1,5 +1,19 @@
 # SpikingModel
 
+
+## Project ownership and AI-assisted development
+
+SpikingModel is an independent project conceived, directed, and maintained by
+its project owner. ChatGPT has been used as an AI development assistant during
+the project, including for architecture discussions, code drafting and review,
+debugging, and experimental analysis. AI-assisted contributions remain subject
+to the project owner's review and testing.
+
+References to ChatGPT and OpenAI describe the development tools used; they do
+not indicate that this project is an OpenAI product. SpikingModel is not
+developed by, affiliated with, sponsored by, or endorsed by OpenAI. ChatGPT and
+OpenAI are names and trademarks of their respective owners.
+
 Native CUDA C++ spiking-neural-network simulation project targeting NVIDIA
 Blackwell (`sm_120` by default).
 
