@@ -32,6 +32,7 @@ namespace {
 
 struct CommandLineOptions {
     bool server = false;
+    bool headless = false;
     bool small = false;
     bool log_results = true;
     int device = 0;
@@ -93,6 +94,8 @@ CommandLineOptions parse_arguments(int argc, char** argv) {
 
         if (arg == "--server") {
             options.server = true;
+        } else if (arg == "--headless") {
+            options.headless = true;
         } else if (arg == "--small") {
             options.small = true;
         } else if (arg == "--config") {
@@ -185,7 +188,7 @@ CommandLineOptions parse_arguments(int argc, char** argv) {
         } else if (arg == "--help" || arg == "-h") {
             std::cout
                 << "Usage: spiking_model [--config FILE] [--small] [--device N] [--log FILE] [--no-log] [--enable-stdp] [--stdp-a-plus X] [--stdp-a-minus X] [--stdp-tau-pre-ms X] [--stdp-tau-post-ms X] [--stdp-min-weight X] [--stdp-max-weight X] [--connectivity-export FILE] [--connectivity-export-after FILE] [--telemetry-window-steps N] [--voltage-trace FILE --voltage-trace-neuron ID ...] [--voltage-trace-interval N]\n"
-                << "       spiking_model --server [--socket PATH] [--config FILE] [--small] [--device N] [--enable-stdp]\n";
+                << "       spiking_model --server [--socket PATH] [--config FILE] [--small] [--device N] [--enable-stdp] [--headless]\n";
             std::exit(0);
         } else {
             throw std::invalid_argument("unknown argument: " + arg);
@@ -216,6 +219,8 @@ CommandLineOptions parse_arguments(int argc, char** argv) {
 
     if (!options.server && !options.socket_path.empty())
         throw std::invalid_argument("--socket requires --server");
+    if (options.headless && !options.server)
+        throw std::invalid_argument("--headless requires --server");
     if (options.server && options.log_results)
         options.log_results = false;
     return options;
@@ -400,7 +405,7 @@ int main(int argc, char** argv) {
             if (options.socket_path.empty())
                 options.socket_path = "/tmp/spiking_model-" + std::to_string(getuid()) + ".sock";
             SimulationController controller(
-                parameters, options.device, 100, 10000, true,
+                parameters, options.device, 100, 10000, !options.headless,
                 options.enable_stdp, options.stdp_parameters);
             return ipc::run_unix_socket_server(controller, options.socket_path);
         }
