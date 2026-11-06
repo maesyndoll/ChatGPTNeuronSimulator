@@ -405,7 +405,7 @@ int main(int argc, char** argv) {
             if (options.socket_path.empty())
                 options.socket_path = "/tmp/spiking_model-" + std::to_string(getuid()) + ".sock";
             SimulationController controller(
-                parameters, options.device, 100, 10000, !options.headless,
+                parameters, options.device, 1000, 10000, !options.headless,
                 options.enable_stdp, options.stdp_parameters);
             return ipc::run_unix_socket_server(controller, options.socket_path);
         }
