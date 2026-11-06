@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run SpikingModel as a low-priority background IPC service and sample it."""
+"""Run SpikingModel headlessly, disconnect IPC during execution, and sample host resources."""
 
 import argparse
 import datetime as dt
@@ -126,7 +126,7 @@ def main():
             os.nice(args.nice)
 
         process = subprocess.Popen(
-            [str(binary), "--server", "--enable-stdp", "--config", str(config),
+            [str(binary), "--server", "--headless", "--enable-stdp", "--config", str(config),
              "--device", str(args.device), "--socket", socket_path],
             stdout=server_log, stderr=subprocess.STDOUT,
             preexec_fn=lower_cpu_priority,
@@ -161,6 +161,14 @@ def main():
                process=process_usage(process.pid),
                gpu=gpu_usage(args.device))
 
+        # The server owns the simulation. Disconnect the observer while it
+        # runs so no frontend/client polling or telemetry IPC is required.
+        writer.close()
+        reader.close()
+        client.close()
+        client = None
+        reader = writer = None
+
         while True:
             elapsed = time.monotonic() - start_time
             remaining = args.duration_seconds - elapsed
@@ -171,13 +179,17 @@ def main():
                 raise RuntimeError(
                     f"background server exited with code {process.returncode}; "
                     f"inspect {server_log_path}")
-            telemetry = request(reader, writer, "get_telemetry")
-            record("sample", elapsed_wall_seconds=round(
+            record("resource_sample", elapsed_wall_seconds=round(
                        time.monotonic() - start_time, 3),
-                   telemetry=telemetry,
                    process=process_usage(process.pid),
                    gpu=gpu_usage(args.device))
 
+        # Reconnect only after the workload ends to retrieve final state.
+        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        client.settimeout(10.0)
+        client.connect(socket_path)
+        reader = client.makefile("r", encoding="utf-8")
+        writer = client.makefile("w", encoding="utf-8")
         paused = request(reader, writer, "pause")
         final_telemetry = paused.get("telemetry") or request(
             reader, writer, "get_telemetry")
