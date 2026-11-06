@@ -18,7 +18,9 @@ constexpr std::uint32_t kTarget = 1;
 constexpr std::uint32_t kTrainingPairs = 20;
 constexpr std::uint32_t kPairIntervalSteps = 1000;
 constexpr std::uint32_t kObservationSteps = 5;
-constexpr float kPulseAmplitude = 20.0f;
+// A one-step pulse must reliably evoke a spike from the settled -70 mV
+// resting state, not merely from the initial -65 mV condition.
+constexpr float kPulseAmplitude = 100.0f;
 
 ModelParameters make_parameters() {
     ModelParameters p;
@@ -121,11 +123,15 @@ int main() {
         const auto edge = find_edge(initial_graph, kSource, kTarget);
         const float initial_weight = initial_graph.weights.at(edge);
 
+        // Let every neuron reach its resting state before measuring baseline.
+        // The same settled state is used before training and recall.
+        advance_in_small_chunks(controller, 1000);
         const auto baseline = observe_source_only(controller);
         if (baseline.source_spikes == 0)
-            throw std::runtime_error("Baseline A-only pulse produced no A spike");
+            throw std::runtime_error(
+                "Baseline A-only pulse produced no A spike from rest");
 
-        // Allow five STDP time constants at dt=0.1 ms, advanced without graph capture.
+        // Clear residual voltage/recovery transients and STDP traces.
         advance_in_small_chunks(controller, 1000);
 
         const auto training_first_sequence =
