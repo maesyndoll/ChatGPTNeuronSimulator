@@ -179,16 +179,19 @@ def main():
         paused = request(reader, writer, "pause")
         final_telemetry = paused.get("telemetry") or request(
             reader, writer, "get_telemetry")
+        final_connectivity = request(reader, writer, "get_connectivity")
         record("completed", elapsed_wall_seconds=round(
                    time.monotonic() - start_time, 3),
                pause=paused, final_telemetry=final_telemetry,
+               final_connectivity=final_connectivity,
                process=process_usage(process.pid),
                gpu=gpu_usage(args.device))
         print(json.dumps({
             "result": "PASS",
             "wall_seconds": round(time.monotonic() - start_time, 3),
             "pid": process.pid,
-            "connectivity": connectivity,
+            "connectivity_before": connectivity,
+            "connectivity_after": final_connectivity,
             "final_telemetry": final_telemetry,
             "jsonl_log": str(output),
             "server_log": str(server_log_path),
