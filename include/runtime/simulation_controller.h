@@ -87,6 +87,8 @@ public:
                            float amplitude);
     void clear_stimuli();
     CSRTopology connectivity_snapshot() const;
+    std::vector<VoltageSample> collect_voltage_samples(
+        const std::vector<std::uint32_t>& neuron_ids) const;
 
     ParameterUpdateResult apply_parameters(const ModelParameters& candidate);
     ParameterUpdateResult reset_parameters_to_defaults();
