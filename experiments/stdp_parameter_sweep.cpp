@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -127,6 +128,9 @@ int main(int argc, char** argv) {
             {"potentiation_plus_5pct", 0.00550f}
         };
 
+        const auto output_parent = std::filesystem::path(output_path).parent_path();
+        if (!output_parent.empty())
+            std::filesystem::create_directories(output_parent);
         std::ofstream output(output_path);
         if (!output) throw std::runtime_error("Cannot create CSV: " + output_path);
         output << std::setprecision(10)
