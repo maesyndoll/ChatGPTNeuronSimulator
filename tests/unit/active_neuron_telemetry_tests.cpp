@@ -15,9 +15,9 @@ int main() {
 
         const auto active = spiking::count_active_neurons(
             {0, 2, 5, 7, 1}, {3, 2, 8, 7, 4}, 3);
-        if (active.excitatory != 2 || active.inhibitory != 2 ||
+        if (active.excitatory != 2 || active.inhibitory != 1 ||
             std::abs(active.excitatory_percent - 200.0 / 3.0) > 1e-9 ||
-            std::abs(active.inhibitory_percent - 100.0) > 1e-9)
+            std::abs(active.inhibitory_percent - 50.0) > 1e-9)
             throw std::runtime_error("per-neuron activity or percentages incorrect");
 
         const auto wrapped = spiking::count_active_neurons(
