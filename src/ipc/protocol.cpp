@@ -117,6 +117,28 @@ Json connectivity_json(const TopologyStatistics& stats) {
     };
 }
 
+Json topology_visual_json(const TopologyVisualSnapshot& snapshot) {
+    Json neuron_ids = Json::array();
+    for (const auto neuron_id : snapshot.neuron_ids)
+        neuron_ids.push_back(neuron_id);
+    Json edges = Json::array();
+    for (const auto& edge : snapshot.edges) {
+        edges.push_back({
+            {"source", edge.source}, {"target", edge.target},
+            {"weight", edge.weight}
+        });
+    }
+    return {
+        {"excitatory_count", snapshot.excitatory_count},
+        {"inhibitory_count", snapshot.inhibitory_count},
+        {"synapse_count", std::to_string(snapshot.synapse_count)},
+        {"sampled_neuron_count", snapshot.neuron_ids.size()},
+        {"sampled_edge_count", snapshot.edges.size()},
+        {"neuron_ids", std::move(neuron_ids)},
+        {"edges", std::move(edges)}
+    };
+}
+
 Json spike_events_json(const SpikeEventSnapshot& snapshot) {
     Json events = Json::array();
     for (const auto& event : snapshot.events) {
@@ -250,6 +272,11 @@ Json handle_request(SimulationController& controller, const Json& request) {
         if (command == "get_connectivity") {
             return success_response(
                 request_id, connectivity_json(controller.connectivity_statistics()));
+        }
+
+        if (command == "get_topology_visual") {
+            return success_response(request_id, topology_visual_json(
+                controller.topology_visual_snapshot(256U, 8U)));
         }
 
         if (command == "get_spike_events") {
