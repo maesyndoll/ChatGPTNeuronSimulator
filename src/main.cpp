@@ -204,8 +204,6 @@ CommandLineOptions parse_arguments(int argc, char** argv) {
         throw std::invalid_argument("--connectivity-export is not available in server mode");
     if (options.server && !options.connectivity_export_after_path.empty())
         throw std::invalid_argument("--connectivity-export-after is not available in server mode");
-    if (options.server && options.enable_stdp)
-        throw std::invalid_argument("--enable-stdp is currently available only in standalone mode");
     if (options.stdp_parameters_explicit && !options.enable_stdp)
         throw std::invalid_argument("STDP parameter overrides require --enable-stdp");
     if (options.enable_stdp)
@@ -401,7 +399,9 @@ int main(int argc, char** argv) {
         if (options.server) {
             if (options.socket_path.empty())
                 options.socket_path = "/tmp/spiking_model-" + std::to_string(getuid()) + ".sock";
-            SimulationController controller(parameters, options.device, 100, 10000, true);
+            SimulationController controller(
+                parameters, options.device, 100, 10000, true,
+                options.enable_stdp, options.stdp_parameters);
             return ipc::run_unix_socket_server(controller, options.socket_path);
         }
 
