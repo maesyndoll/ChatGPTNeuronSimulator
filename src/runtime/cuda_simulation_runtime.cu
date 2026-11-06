@@ -554,6 +554,19 @@ CSRTopology CudaSimulationRuntime::collect_connectivity() {
     return topology;
 }
 
+std::vector<std::uint32_t> CudaSimulationRuntime::collect_spike_count_snapshot() {
+    if (!device_state_)
+        throw std::logic_error("CUDA simulation is not initialized");
+    // The runtime stream is non-blocking; finish queued kernels before copying.
+    device_state_->stream.synchronize();
+    const auto count = device_state_->neuron_count;
+    std::vector<std::uint32_t> snapshot(count);
+    SPIKING_CUDA_CHECK(cudaMemcpy(
+        snapshot.data(), device_state_->spike_counts.get(),
+        count * sizeof(std::uint32_t), cudaMemcpyDeviceToHost));
+    return snapshot;
+}
+
 SimulationMetrics CudaSimulationRuntime::collect_metrics() {
     if (!device_state_) throw std::logic_error("CUDA simulation is not initialized");
     // This runtime uses a non-blocking CUDA stream. The synchronous copies
