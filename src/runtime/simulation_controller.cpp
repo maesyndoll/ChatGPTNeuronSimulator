@@ -10,7 +10,9 @@ SimulationController::SimulationController(
     int device,
     std::uint32_t batch_size,
     std::uint64_t telemetry_interval_steps,
-    bool collect_spike_events)
+    bool collect_spike_events,
+    bool enable_plasticity_state,
+    StdpParameters stdp_parameters)
     : batch_size_(batch_size),
       telemetry_interval_steps_(telemetry_interval_steps),
       collect_spike_events_(collect_spike_events) {
@@ -32,7 +34,9 @@ SimulationController::SimulationController(
         std::move(defaults),
         device,
         std::move(initialized),
-        collect_spike_events_);
+        collect_spike_events_,
+        enable_plasticity_state,
+        stdp_parameters);
 
     try {
         ready.get();
@@ -106,6 +110,31 @@ void SimulationController::step(std::uint32_t steps) {
             status_ = ControllerStatus::Paused;
         }
     });
+}
+
+void SimulationController::schedule_stimulus(
+    std::uint32_t neuron_id,
+    std::uint64_t start_step,
+    std::uint32_t duration_steps,
+    float amplitude) {
+    submit([=](CudaSimulationRuntime& runtime) {
+        runtime.schedule_stimulus(
+            neuron_id, start_step, duration_steps, amplitude);
+    });
+}
+
+void SimulationController::clear_stimuli() {
+    submit([](CudaSimulationRuntime& runtime) {
+        runtime.clear_stimuli();
+    });
+}
+
+CSRTopology SimulationController::connectivity_snapshot() const {
+    return const_cast<SimulationController*>(this)->submit(
+        [](CudaSimulationRuntime& runtime) {
+            return runtime.collect_connectivity();
+        }
+    );
 }
 
 ParameterUpdateResult SimulationController::apply_parameters(
@@ -276,12 +305,15 @@ void SimulationController::worker_main(
     ModelParameters defaults,
     int device,
     std::promise<void> initialized,
-    bool collect_spike_events) {
+    bool collect_spike_events,
+    bool enable_plasticity_state,
+    StdpParameters stdp_parameters) {
     std::unique_ptr<CudaSimulationRuntime> runtime;
 
     try {
         runtime = std::make_unique<CudaSimulationRuntime>(
-            std::move(defaults), device, collect_spike_events);
+            std::move(defaults), device, collect_spike_events,
+            enable_plasticity_state, stdp_parameters);
         const auto initial_metrics = runtime->collect_metrics();
         if (collect_spike_events) {
             const auto initial_events = runtime->collect_spike_events();
