@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 #include <cuda_runtime_api.h>
 
@@ -54,6 +55,15 @@ public:
                                    bool capture_spike_events = true,
                                    bool enable_plasticity_state = false,
                                    StdpParameters stdp_parameters = {});
+
+    // Initialize from a previously saved CSR topology instead of generating
+    // a new random graph. Reinitialization reloads this same file.
+    CudaSimulationRuntime(ModelParameters defaults,
+                          const std::string& topology_file,
+                          int device = 0,
+                          bool capture_spike_events = true,
+                          bool enable_plasticity_state = false,
+                          StdpParameters stdp_parameters = {});
     ~CudaSimulationRuntime() = default;
 
     CudaSimulationRuntime(const CudaSimulationRuntime&) = delete;
@@ -65,6 +75,14 @@ public:
 
     void run();
     void run_steps(std::uint32_t steps);
+
+    // Schedule an additive external-current pulse. Steps are zero-based;
+    // the pulse is active on [start_step, start_step + duration_steps).
+    void schedule_stimulus(std::uint32_t neuron_id,
+                           std::uint64_t start_step,
+                           std::uint32_t duration_steps,
+                           float amplitude);
+    void clear_stimuli();
     SimulationMetrics collect_metrics();
     // Read post-integration voltage and recovery state for selected neurons.
     // Samples reflect threshold resets and the recovery increment when spiking.
@@ -134,6 +152,11 @@ private:
 
         // Dense target-current ring: [ring_slot][neuron].
         DeviceBuffer<float> synaptic_current;
+
+        // Persistent additive external current and fixed-address event schedule.
+        DeviceBuffer<float> external_current;
+        DeviceBuffer<ExternalStimulusGPU> external_stimuli;
+        DeviceBuffer<std::uint32_t> external_stimulus_count;
         std::size_t neuron_count;
         std::uint32_t edge_count;
         std::uint32_t ring_slots;
@@ -148,6 +171,7 @@ private:
 
     ParameterManager parameter_manager_;
     ModelParameters active_parameters_;
+    std::string topology_file_;
     std::unique_ptr<DeviceState> device_state_;
     std::uint64_t completed_steps_ = 0;
     std::uint64_t spike_event_read_cursor_ = 0;
@@ -156,6 +180,8 @@ private:
     bool capture_spike_events_ = true;
     bool enable_plasticity_state_ = false;
     StdpParameters stdp_parameters_{};
+    std::vector<ExternalStimulusGPU> external_stimuli_;
+    bool external_stimuli_dirty_ = false;
 };
 
 } // namespace spiking

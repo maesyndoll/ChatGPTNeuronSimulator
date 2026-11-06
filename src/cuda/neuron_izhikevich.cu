@@ -153,8 +153,7 @@ __global__ void stdp_depression_kernel(
     for (std::uint32_t edge = row_offsets[source];
          edge < row_offsets[source + 1]; ++edge) {
         const std::uint32_t target = targets[edge];
-        float weight = weights[edge] - depression_rate * post_traces[target];
-        weights[edge] = fminf(maximum_weight, fmaxf(minimum_weight, weight));
+        weights[edge] -= depression_rate * post_traces[target];
     }
 }
 
@@ -182,8 +181,25 @@ __global__ void stdp_potentiation_kernel(
         const std::uint32_t source = incoming_sources[incoming];
         if (source >= excitatory_count) continue;
         const std::uint32_t edge = incoming_edge_indices[incoming];
-        float weight = weights[edge] + potentiation_rate * pre_traces[source];
-        weights[edge] = fminf(maximum_weight, fmaxf(minimum_weight, weight));
+        weights[edge] += potentiation_rate * pre_traces[source];
+    }
+}
+
+__global__ void stdp_clamp_weights_kernel(
+    const std::uint32_t* row_offsets,
+    float* weights,
+    std::uint32_t neuron_count,
+    std::uint32_t excitatory_count,
+    float minimum_weight,
+    float maximum_weight
+) {
+    const std::uint32_t source = blockIdx.x * blockDim.x + threadIdx.x;
+    if (source >= neuron_count || source >= excitatory_count) return;
+
+    for (std::uint32_t edge = row_offsets[source];
+         edge < row_offsets[source + 1]; ++edge) {
+        weights[edge] = fminf(
+            maximum_weight, fmaxf(minimum_weight, weights[edge]));
     }
 }
 
@@ -203,6 +219,25 @@ __global__ void increment_stdp_traces_kernel(
     post_traces[neuron] += 1.0f;
 }
 
+__global__ void external_stimulus_kernel(
+    const ExternalStimulusGPU* stimuli,
+    const std::uint32_t* stimulus_count,
+    const unsigned long long* completed_steps,
+    float* external_current
+) {
+    const std::uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index >= *stimulus_count || index >= kMaxExternalStimuli) return;
+
+    const ExternalStimulusGPU stimulus = stimuli[index];
+    const unsigned long long step = *completed_steps + 1ULL;
+
+    if (step == stimulus.start_step)
+        atomicAdd(&external_current[stimulus.neuron_id], stimulus.amplitude);
+
+    if (step == stimulus.end_step)
+        atomicAdd(&external_current[stimulus.neuron_id], -stimulus.amplitude);
+}
+
 __global__ void neuron_step_kernel(
     NeuronParametersGPU p,
     NeuronStateGPU s,
@@ -210,7 +245,8 @@ __global__ void neuron_step_kernel(
     float dt,
     float threshold,
     float* synaptic_current,
-    std::uint32_t ring_slots
+    std::uint32_t ring_slots,
+    float* external_current
 ) {
     const std::uint32_t id =
         blockIdx.x * blockDim.x + threadIdx.x;
@@ -235,8 +271,10 @@ __global__ void neuron_step_kernel(
         static_cast<std::uint32_t>(completed % ring_slots);
     const std::size_t current_offset =
         static_cast<std::size_t>(ring_slot) * count + id;
+    const float external =
+        external_current != nullptr ? external_current[id] : 0.0f;
     const float current =
-        p.current[id] + synaptic_current[current_offset];
+        p.current[id] + synaptic_current[current_offset] + external;
 
     // Consume this slot exactly once. Propagation and integration are
     // ordered in the same CUDA stream.
@@ -415,9 +453,36 @@ void apply_stdp(
             parameters.maximum_weight);
         SPIKING_CUDA_CHECK(cudaGetLastError());
     }
+    if (weights != nullptr) {
+        stdp_clamp_weights_kernel<<<neuron_blocks, threads, 0, stream>>>(
+            outgoing_row_offsets, weights, neuron_count, excitatory_count,
+            parameters.minimum_weight, parameters.maximum_weight);
+        SPIKING_CUDA_CHECK(cudaGetLastError());
+    }
+
     increment_stdp_traces_kernel<<<neuron_blocks, threads, 0, stream>>>(
         active_spike_sources, active_spike_count, presynaptic_traces,
         postsynaptic_traces, neuron_count);
+    SPIKING_CUDA_CHECK(cudaGetLastError());
+}
+
+void apply_external_stimuli(
+    const ExternalStimulusGPU* stimuli,
+    const std::uint32_t* stimulus_count,
+    const unsigned long long* completed_steps,
+    float* external_current,
+    cudaStream_t stream
+) {
+    if (stimuli == nullptr || stimulus_count == nullptr ||
+        completed_steps == nullptr || external_current == nullptr)
+        throw std::invalid_argument("Invalid external stimulation buffers");
+
+    constexpr int threads = 256;
+    constexpr int blocks =
+        (kMaxExternalStimuli + threads - 1) / threads;
+
+    external_stimulus_kernel<<<blocks, threads, 0, stream>>>(
+        stimuli, stimulus_count, completed_steps, external_current);
     SPIKING_CUDA_CHECK(cudaGetLastError());
 }
 
@@ -429,14 +494,15 @@ void simulate_neurons(
     float threshold,
     float* synaptic_current,
     std::uint32_t ring_slots,
-    cudaStream_t stream
+    cudaStream_t stream,
+    float* external_current
 ) {
     constexpr int threads = 256;
     const int blocks = (neuron_count + threads - 1) / threads;
 
     neuron_step_kernel<<<blocks, threads, 0, stream>>>(
         parameters, state, neuron_count, dt, threshold,
-        synaptic_current, ring_slots
+        synaptic_current, ring_slots, external_current
     );
     SPIKING_CUDA_CHECK(cudaGetLastError());
 

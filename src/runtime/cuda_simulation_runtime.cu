@@ -2,6 +2,7 @@
 
 #include "cuda/cuda_check.cuh"
 #include "topology/topology_generator.h"
+#include "topology/topology_io.h"
 #include "plasticity/stdp.h"
 
 #include <algorithm>
@@ -43,6 +44,9 @@ CudaSimulationRuntime::DeviceState::DeviceState(
       weights(topology.weights.size()),
       delays(topology.delays.size()),
       plasticity_state_enabled(enable_learning_state),
+      external_current(count),
+      external_stimuli(kMaxExternalStimuli),
+      external_stimulus_count(1),
       neuron_count(count),
       edge_count(static_cast<std::uint32_t>(topology.weights.size())),
       ring_slots(topology.maximum_delay + 1U),
@@ -141,6 +145,26 @@ CudaSimulationRuntime::CudaSimulationRuntime(
                                        enable_plasticity_state_);
 }
 
+CudaSimulationRuntime::CudaSimulationRuntime(
+    ModelParameters defaults, const std::string& topology_file, int device,
+    bool capture_spike_events, bool enable_plasticity_state,
+    StdpParameters stdp_parameters)
+    : parameter_manager_(std::move(defaults)),
+      active_parameters_(parameter_manager_.active_parameters()),
+      topology_file_(topology_file),
+      device_id_(device),
+      capture_spike_events_(capture_spike_events),
+      enable_plasticity_state_(enable_plasticity_state),
+      stdp_parameters_(stdp_parameters) {
+    if (topology_file_.empty()) {
+        throw std::invalid_argument("Topology filename must not be empty");
+    }
+
+    SPIKING_CUDA_CHECK(cudaSetDevice(device_id_));
+    device_state_ = build_device_state(active_parameters_, capture_spike_events_,
+                                       enable_plasticity_state_);
+}
+
 std::unique_ptr<CudaSimulationRuntime::DeviceState>
 CudaSimulationRuntime::build_device_state(
     const ModelParameters& parameters, bool capture_spike_events,
@@ -149,8 +173,15 @@ CudaSimulationRuntime::build_device_state(
     const std::uint32_t total = p.neuron_count();
     if (total == 0) throw std::invalid_argument("Cannot initialize an empty network");
 
-    const CSRTopology topology =
-        generate_random_sparse_topology(p, parameters.topology);
+    const CSRTopology topology = topology_file_.empty()
+        ? generate_random_sparse_topology(p, parameters.topology)
+        : load_csr_topology(topology_file_);
+
+    if (topology.excitatory_count != p.excitatory_count ||
+        topology.inhibitory_count != p.inhibitory_count) {
+        throw std::invalid_argument(
+            "Saved topology population counts do not match simulation parameters");
+    }
 
     if (topology.weights.size() >
         static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())) {
@@ -185,6 +216,12 @@ CudaSimulationRuntime::build_device_state(
     SPIKING_CUDA_CHECK(cudaMemsetAsync(
         next->synaptic_current.get(), 0,
         next->synaptic_current.size() * sizeof(float), stream));
+    SPIKING_CUDA_CHECK(cudaMemsetAsync(
+        next->external_current.get(), 0,
+        next->external_current.size() * sizeof(float), stream));
+    SPIKING_CUDA_CHECK(cudaMemsetAsync(
+        next->external_stimulus_count.get(), 0,
+        sizeof(std::uint32_t), stream));
     SPIKING_CUDA_CHECK(cudaMemsetAsync(
         next->active_spike_count.get(), 0,
         sizeof(std::uint32_t), stream));
@@ -239,6 +276,49 @@ void CudaSimulationRuntime::reinitialize_simulation() {
     completed_steps_ = 0;
     elapsed_simulation_ms_ = 0.0;
     spike_event_read_cursor_ = 0;
+    external_stimuli_.clear();
+    external_stimuli_dirty_ = false;
+}
+
+void CudaSimulationRuntime::schedule_stimulus(
+    std::uint32_t neuron_id,
+    std::uint64_t start_step,
+    std::uint32_t duration_steps,
+    float amplitude) {
+    if (!device_state_)
+        throw std::logic_error("CUDA simulation is not initialized");
+    if (neuron_id >= device_state_->neuron_count)
+        throw std::out_of_range("External stimulus neuron ID is out of range");
+    if (duration_steps == 0)
+        throw std::invalid_argument("External stimulus duration must be positive");
+    if (!std::isfinite(amplitude))
+        throw std::invalid_argument("External stimulus amplitude must be finite");
+    if (start_step <= completed_steps_)
+        throw std::invalid_argument("External stimulus must start in a future step");
+    if (start_step > std::numeric_limits<std::uint64_t>::max() - duration_steps)
+        throw std::overflow_error("External stimulus end step overflows");
+    if (external_stimuli_.size() >= kMaxExternalStimuli)
+        throw std::length_error("External stimulus schedule is full");
+
+    external_stimuli_.push_back({
+        neuron_id, start_step, start_step + duration_steps, amplitude
+    });
+    external_stimuli_dirty_ = true;
+}
+
+void CudaSimulationRuntime::clear_stimuli() {
+    if (!device_state_)
+        throw std::logic_error("CUDA simulation is not initialized");
+
+    device_state_->stream.synchronize();
+    SPIKING_CUDA_CHECK(cudaMemset(
+        device_state_->external_current.get(), 0,
+        device_state_->external_current.size() * sizeof(float)));
+    SPIKING_CUDA_CHECK(cudaMemset(
+        device_state_->external_stimulus_count.get(), 0,
+        sizeof(std::uint32_t)));
+    external_stimuli_.clear();
+    external_stimuli_dirty_ = false;
 }
 
 void CudaSimulationRuntime::run() {
@@ -252,6 +332,25 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
     const auto state = device_state_->neuron_state();
     const auto count = static_cast<std::uint32_t>(device_state_->neuron_count);
     const auto stream = device_state_->stream.get();
+
+    if (external_stimuli_dirty_) {
+        device_state_->stream.synchronize();
+        if (!external_stimuli_.empty()) {
+            SPIKING_CUDA_CHECK(cudaMemcpy(
+                device_state_->external_stimuli.get(),
+                external_stimuli_.data(),
+                external_stimuli_.size() * sizeof(ExternalStimulusGPU),
+                cudaMemcpyHostToDevice));
+        }
+        const auto stimulus_count =
+            static_cast<std::uint32_t>(external_stimuli_.size());
+        SPIKING_CUDA_CHECK(cudaMemcpy(
+            device_state_->external_stimulus_count.get(),
+            &stimulus_count, sizeof(stimulus_count),
+            cudaMemcpyHostToDevice));
+        external_stimuli_dirty_ = false;
+    }
+
     if (!std::isfinite(stdp_parameters_.potentiation_rate) ||
         stdp_parameters_.potentiation_rate < 0.0f ||
         !std::isfinite(stdp_parameters_.depression_rate) ||
@@ -304,6 +403,11 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
         SPIKING_CUDA_CHECK(cudaStreamBeginCapture(
             stream, cudaStreamCaptureModeThreadLocal));
         for (std::uint32_t i = 0; i < kCudaGraphBatchSteps; ++i) {
+            apply_external_stimuli(
+                device_state_->external_stimuli.get(),
+                device_state_->external_stimulus_count.get(),
+                graph_state.completed_steps,
+                device_state_->external_current.get(), stream);
             if (device_state_->plasticity_state_enabled) {
                 apply_stdp(
                     graph_state.active_spike_sources, graph_state.active_spike_count,
@@ -323,7 +427,8 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
             simulate_neurons(
                 params, graph_state, count, p.dt, p.threshold,
                 device_state_->synaptic_current.get(),
-                device_state_->ring_slots, stream);
+                device_state_->ring_slots, stream,
+                device_state_->external_current.get());
         }
         SPIKING_CUDA_CHECK(cudaStreamEndCapture(
             stream, &device_state_->step_graph));
@@ -341,6 +446,11 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
     }
 
     for (std::uint32_t i = 0; i < steps; ++i) {
+        apply_external_stimuli(
+            device_state_->external_stimuli.get(),
+            device_state_->external_stimulus_count.get(),
+            state.completed_steps,
+            device_state_->external_current.get(), stream);
         apply_learning();
         propagate_spikes(state, synapses, count, stream);
         SPIKING_CUDA_CHECK(cudaMemsetAsync(
@@ -349,7 +459,8 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
         simulate_neurons(
             params, state, count, p.dt, p.threshold,
             device_state_->synaptic_current.get(),
-            device_state_->ring_slots, stream);
+            device_state_->ring_slots, stream,
+            device_state_->external_current.get());
         ++completed_steps_;
         elapsed_simulation_ms_ += p.dt;
     }

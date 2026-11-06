@@ -17,6 +17,25 @@ add_custom_target(check_parameter_schema
 )
 
 include(CTest)
+
+add_library(neuron_analysis STATIC
+    src/analysis/izhikevich_analysis.cpp
+)
+target_include_directories(neuron_analysis PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_options(neuron_analysis PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+)
+
+if(BUILD_TESTING)
+    add_executable(izhikevich_analysis_tests
+        tests/unit/izhikevich_analysis_tests.cpp
+    )
+    target_link_libraries(izhikevich_analysis_tests PRIVATE neuron_analysis)
+    add_test(NAME izhikevich_analysis_tests
+             COMMAND izhikevich_analysis_tests)
+endif()
 if(BUILD_TESTING)
     add_executable(parameter_tests tests/unit/parameter_tests.cpp)
     target_include_directories(parameter_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -39,6 +58,7 @@ if(BUILD_TESTING)
     add_executable(topology_tests
         tests/unit/topology_tests.cpp
         src/topology/topology_generator.cpp
+        src/topology/topology_io.cpp
     )
     target_include_directories(topology_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     add_dependencies(topology_tests check_parameter_schema)
@@ -132,6 +152,17 @@ if(SPIKINGMODEL_ENABLE_QT_CLIENT)
     )
 endif()
 
+add_executable(topology_inspect
+    src/topology/topology_inspect.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(topology_inspect PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_options(topology_inspect PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+)
+
 option(SPIKINGMODEL_ENABLE_CUDA "Build the CUDA simulation executable" ON)
 if(SPIKINGMODEL_ENABLE_CUDA)
     enable_language(CUDA)
@@ -146,6 +177,7 @@ if(SPIKINGMODEL_ENABLE_CUDA)
         src/runtime/cuda_simulation_runtime.cu
         src/runtime/simulation_controller.cpp
         src/topology/topology_generator.cpp
+        src/topology/topology_io.cpp
         src/ipc/parameter_json.cpp
         src/ipc/protocol.cpp
         src/ipc/unix_socket_server.cpp
@@ -181,12 +213,28 @@ if(SPIKINGMODEL_ENABLE_CUDA)
         )
         add_test(NAME stdp_cuda_tests COMMAND stdp_cuda_tests)
 
+        add_executable(external_stimulation_cuda_tests
+            tests/cuda/external_stimulation_cuda_tests.cpp
+            src/cuda/neuron_izhikevich.cu
+        )
+        target_include_directories(external_stimulation_cuda_tests PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+        target_link_libraries(external_stimulation_cuda_tests PRIVATE CUDA::cudart)
+        set_target_properties(external_stimulation_cuda_tests PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON
+            CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+        )
+        add_test(NAME external_stimulation_cuda_tests
+                 COMMAND external_stimulation_cuda_tests)
+
         add_executable(cuda_runtime_smoke
             tests/cuda/runtime_smoke.cpp
             src/cuda/neuron_izhikevich.cu
             src/runtime/cuda_simulation_runtime.cu
             src/runtime/simulation_controller.cpp
             src/topology/topology_generator.cpp
+            src/topology/topology_io.cpp
         )
         target_include_directories(cuda_runtime_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
         target_link_libraries(cuda_runtime_smoke PRIVATE CUDA::cudart)
@@ -197,11 +245,31 @@ if(SPIKINGMODEL_ENABLE_CUDA)
         add_test(NAME cuda_runtime_smoke COMMAND cuda_runtime_smoke)
         add_dependencies(cuda_runtime_smoke check_parameter_schema)
 
+        add_executable(network_integration_tests
+            tests/cuda/network_integration_tests.cpp
+            src/cuda/neuron_izhikevich.cu
+            src/runtime/cuda_simulation_runtime.cu
+            src/topology/topology_generator.cpp
+            src/topology/topology_io.cpp
+        )
+        target_include_directories(network_integration_tests PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+        target_link_libraries(network_integration_tests PRIVATE CUDA::cudart)
+        set_target_properties(network_integration_tests PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON
+            CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+        )
+        add_test(NAME network_integration_tests COMMAND network_integration_tests)
+        set_tests_properties(network_integration_tests PROPERTIES TIMEOUT 120)
+        add_dependencies(network_integration_tests check_parameter_schema)
+
         add_executable(determinism_smoke
             tests/cuda/determinism_smoke.cpp
             src/cuda/neuron_izhikevich.cu
             src/runtime/cuda_simulation_runtime.cu
             src/topology/topology_generator.cpp
+            src/topology/topology_io.cpp
         )
         target_include_directories(determinism_smoke PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -221,6 +289,7 @@ if(SPIKINGMODEL_ENABLE_CUDA)
             src/runtime/cuda_simulation_runtime.cu
             src/runtime/simulation_controller.cpp
             src/topology/topology_generator.cpp
+            src/topology/topology_io.cpp
         )
         target_include_directories(controller_smoke PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -233,6 +302,24 @@ if(SPIKINGMODEL_ENABLE_CUDA)
         add_test(NAME controller_smoke COMMAND controller_smoke)
         add_dependencies(controller_smoke check_parameter_schema)
 
+        add_executable(cpu_gpu_neuron_validation
+            tests/cuda/cpu_gpu_neuron_validation.cpp
+            src/cuda/neuron_izhikevich.cu
+            src/analysis/izhikevich_analysis.cpp
+        )
+        target_include_directories(cpu_gpu_neuron_validation PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+        target_link_libraries(cpu_gpu_neuron_validation PRIVATE CUDA::cudart)
+        set_target_properties(cpu_gpu_neuron_validation PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON
+            CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+        )
+        add_test(
+            NAME cpu_gpu_neuron_validation
+            COMMAND cpu_gpu_neuron_validation
+        )
+
         add_test(
             NAME ipc_server_integration
             COMMAND ${Python3_EXECUTABLE}
@@ -241,4 +328,21 @@ if(SPIKINGMODEL_ENABLE_CUDA)
         )
         set_tests_properties(ipc_server_integration PROPERTIES TIMEOUT 30)
     endif()
+endif()
+
+
+if(BUILD_TESTING)
+    add_executable(phase_plane_tests
+        tests/unit/phase_plane_tests.cpp
+    )
+    target_link_libraries(phase_plane_tests PRIVATE neuron_analysis)
+    add_test(NAME phase_plane_tests COMMAND phase_plane_tests)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(trajectory_tests
+        tests/unit/trajectory_tests.cpp
+    )
+    target_link_libraries(trajectory_tests PRIVATE neuron_analysis)
+    add_test(NAME trajectory_tests COMMAND trajectory_tests)
 endif()

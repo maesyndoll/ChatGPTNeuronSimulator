@@ -1,4 +1,5 @@
 #include "cuda/neuron_izhikevich.cuh"
+#include "plasticity/stdp.h"
 
 #include <cuda_runtime.h>
 
@@ -134,6 +135,100 @@ int main() {
               "GPU STDP failed to clamp potentiation to its maximum");
         check(near(w[2], -0.5f),
               "GPU STDP changed an inhibitory-source weight");
+
+
+        // Compare the CUDA implementation against the CPU reference over
+        // a multi-step sequence, including repeated and simultaneous spikes.
+        const std::vector<std::uint32_t> host_sources{0, 0, 2};
+        const std::vector<std::uint32_t> host_targets{1, 2, 0};
+        std::vector<float> host_weights{0.5f, 0.5f, -0.5f};
+        StdpTraces host_traces{
+            std::vector<float>(3, 0.0f),
+            std::vector<float>(3, 0.0f)
+        };
+
+        const StdpParameters host_parameters{
+            0.1f, 0.2f, 10.0f, 10.0f, 0.05f, 0.9f
+        };
+
+        weights.upload(host_weights);
+        pre_traces.upload({0.0f, 0.0f, 0.0f});
+        post_traces.upload({0.0f, 0.0f, 0.0f});
+
+        const std::vector<std::vector<std::uint32_t>> event_sequence{
+            {0}, {1}, {1, 2}, {0}, {2}, {0, 1}, {}, {1}
+        };
+
+        for (std::size_t step_index = 0;
+             step_index < event_sequence.size(); ++step_index) {
+            std::vector<std::uint8_t> host_events(3, 0);
+            std::vector<std::uint32_t> gpu_events(3, 0);
+
+            for (std::size_t i = 0;
+                 i < event_sequence[step_index].size(); ++i) {
+                const auto neuron = event_sequence[step_index][i];
+                host_events[neuron] = 1;
+                gpu_events[i] = neuron;
+            }
+
+            active_sources.upload(gpu_events);
+            const auto active_count_value =
+                static_cast<std::uint32_t>(
+                    event_sequence[step_index].size());
+            active_count.upload({active_count_value});
+
+            apply_pair_stdp_step(
+                host_weights, host_sources, host_targets,
+                3, 2, host_events, host_traces, 1.0f,
+                host_parameters);
+
+            apply_stdp(
+                active_sources.get(), active_count.get(),
+                outgoing_offsets.get(), outgoing_targets.get(),
+                weights.get(), incoming_offsets.get(),
+                incoming_sources.get(), incoming_edges.get(),
+                pre_traces.get(), post_traces.get(),
+                3, 2, 1.0f, parameters);
+
+            cuda_check(cudaDeviceSynchronize(),
+                       "CPU/GPU STDP sequence synchronization");
+
+            const auto gpu_weights = weights.download();
+            const auto gpu_pre = pre_traces.download();
+            const auto gpu_post = post_traces.download();
+
+            if (step_index == 5) {
+                std::cerr << "Step 5 trace comparison:\\n";
+                for (std::size_t neuron = 0; neuron < 3; ++neuron) {
+                    std::cerr << "neuron " << neuron
+                              << " pre CPU/GPU="
+                              << host_traces.presynaptic[neuron] << "/"
+                              << gpu_pre[neuron]
+                              << " post CPU/GPU="
+                              << host_traces.postsynaptic[neuron] << "/"
+                              << gpu_post[neuron] << '\\n';
+                }
+            }
+
+            for (std::size_t edge = 0; edge < host_weights.size(); ++edge) {
+                if (!near(gpu_weights[edge], host_weights[edge], 5.0e-6f)) {
+                    std::cerr << "STDP mismatch: step=" << step_index
+                              << ", edge=" << edge
+                              << ", CPU=" << host_weights[edge]
+                              << ", GPU=" << gpu_weights[edge] << '\\n';
+                    throw std::runtime_error(
+                        "CPU/GPU STDP weight mismatch at sequence step");
+                }
+            }
+            for (std::size_t neuron = 0; neuron < 3; ++neuron) {
+                check(near(gpu_pre[neuron],
+                           host_traces.presynaptic[neuron], 5.0e-6f),
+                      "CPU/GPU presynaptic trace mismatch");
+                check(near(gpu_post[neuron],
+                           host_traces.postsynaptic[neuron], 5.0e-6f),
+                      "CPU/GPU postsynaptic trace mismatch");
+            }
+        }
 
         std::cout << "All GPU STDP kernel tests passed.\n";
         return EXIT_SUCCESS;

@@ -1,8 +1,11 @@
 #include "topology/topology_generator.h"
+#include "topology/topology_io.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <fstream>
+#include <cstdio>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -268,6 +271,67 @@ int main() {
     }
     check(rejected_bad_fibonacci_weights,
           "generator rejects Fibonacci weights with zero total");
+
+
+    // Persistence must preserve the exact canonical CSR arrays.
+    const std::string topology_file = "topology_roundtrip_test.csrbin";
+    const std::string corrupt_file = "topology_corrupt_test.csrbin";
+
+    try {
+        save_csr_topology(first, topology_file);
+        const auto restored = load_csr_topology(topology_file);
+
+        check(restored.excitatory_count == first.excitatory_count &&
+              restored.inhibitory_count == first.inhibitory_count &&
+              restored.minimum_delay == first.minimum_delay &&
+              restored.maximum_delay == first.maximum_delay &&
+              restored.row_offsets == first.row_offsets &&
+              restored.target_indices == first.target_indices &&
+              restored.weights == first.weights &&
+              restored.delays == first.delays,
+              "CSR binary save/load preserves the exact graph");
+
+        const auto stats = analyze_csr_topology(first);
+        check(stats.synapse_count == first.synapse_count() &&
+              stats.excitatory_to_excitatory +
+              stats.excitatory_to_inhibitory +
+              stats.inhibitory_to_excitatory +
+              stats.inhibitory_to_inhibitory == first.synapse_count(),
+              "topology statistics classify every edge exactly once");
+
+        check(stats.outgoing_degree.count == first.neuron_count() &&
+              stats.incoming_degree.count == first.neuron_count() &&
+              stats.weights.count == first.synapse_count() &&
+              stats.delays.count == first.synapse_count(),
+              "topology statistics report complete distributions");
+
+        check(stats.density >= 0.0 && stats.density <= 1.0,
+              "topology density is within [0,1]");
+
+        {
+            std::ifstream input(topology_file, std::ios::binary);
+            std::ofstream output(corrupt_file, std::ios::binary | std::ios::trunc);
+            char byte = 0;
+            std::size_t copied = 0;
+            while (copied < 12 && input.get(byte)) {
+                output.put(byte);
+                ++copied;
+            }
+        }
+
+        bool rejected_truncated = false;
+        try {
+            (void)load_csr_topology(corrupt_file);
+        } catch (const std::exception&) {
+            rejected_truncated = true;
+        }
+        check(rejected_truncated, "loader rejects truncated CSR files");
+    } catch (const std::exception& error) {
+        check(false, std::string("CSR persistence/statistics: ") + error.what());
+    }
+
+    std::remove(topology_file.c_str());
+    std::remove(corrupt_file.c_str());
 
     if (failures == 0) {
         std::cout << "All topology tests passed.\n";

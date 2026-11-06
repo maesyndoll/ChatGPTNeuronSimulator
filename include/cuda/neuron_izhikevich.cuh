@@ -32,6 +32,15 @@ struct NeuronStateGPU {
     std::uint32_t spike_event_capacity = 0;
 };
 
+inline constexpr std::uint32_t kMaxExternalStimuli = 4096U;
+
+struct ExternalStimulusGPU {
+    std::uint32_t neuron_id = 0;
+    std::uint64_t start_step = 0;
+    std::uint64_t end_step = 0;
+    float amplitude = 0.0f;
+};
+
 struct StdpParametersGPU {
     float potentiation_rate = 0.005f;
     float depression_rate = 0.00525f;
@@ -99,6 +108,15 @@ void simulate_neurons(
     float threshold,
     float* synaptic_current,
     std::uint32_t ring_slots,
+    cudaStream_t stream = nullptr,
+    float* external_current = nullptr
+);
+
+void apply_external_stimuli(
+    const ExternalStimulusGPU* stimuli,
+    const std::uint32_t* stimulus_count,
+    const unsigned long long* completed_steps,
+    float* external_current,
     cudaStream_t stream = nullptr
 );
 
