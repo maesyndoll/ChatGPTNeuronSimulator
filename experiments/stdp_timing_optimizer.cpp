@@ -44,6 +44,12 @@ int main(int argc, char** argv) {
         const auto observations = read_observations(input_path);
 
         spiking::StdpParameters initial;
+        // Deliberately offset the starting point so the fitter must recover
+        // the measured parameters rather than merely echo the defaults.
+        initial.potentiation_rate = 0.006f;
+        initial.depression_rate = 0.0045f;
+        initial.presynaptic_tau_ms = 15.0f;
+        initial.postsynaptic_tau_ms = 30.0f;
         const auto fit = spiking::fit_stdp_timing_curve(
             observations, initial, 10000.0, 500);
 
