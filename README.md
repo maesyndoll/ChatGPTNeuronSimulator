@@ -38,6 +38,30 @@ milestones. The current
 connectivity generator supports seeded random sparse networks; structured
 population-to-population connectivity is a planned extension.
 
+## Planned architecture: Meta-topology and ActiveConnectome
+
+The next architectural direction is to preserve each existing CSR network as
+an independently executable module, connect modules through a separate
+bridge-connectivity layer, and coordinate them through a system-level
+`MetaTopology`. An `ActiveConnectome` layer will observe the evolving system
+and distinguish:
+
+- **Structural connectivity:** which local and inter-module edges exist.
+- **Functional connectivity:** which pathways participate in communication
+  during a defined observation window.
+- **Plastic connectivity:** how synaptic weights and plasticity state evolve.
+
+This is an architecture proposal, not an implemented feature. The design
+prioritizes preserving the validated local CSR and CUDA runtime, deterministic
+inter-module event delivery, independently measurable local and bridge
+plasticity, and eventual SNN–ANN interoperability. A fly-brain-inspired
+organism model is a motivating research use case, subject to explicit dataset
+provenance and biological validation.
+
+See [Active Connectome and Meta-Topology Architecture](docs/architecture/active_connectome.md)
+for the design, execution semantics, learning boundaries, experimental
+requirements, and incremental implementation milestones.
+
 ## CPU-only configuration tests
 
 ```bash
@@ -115,12 +139,11 @@ readback overhead. The trace mode currently cannot be
 combined with `--telemetry-window-steps` or server mode. Repeat
 `--voltage-trace-neuron` to record multiple neuron IDs.
 
-
 To export the exact connectivity graph allocated on the GPU, use
 `--connectivity-export`:
 
 ```bash
-./build-cuda/spiking_model --config experiments/deterministic_control.json \\
+./build-cuda/spiking_model --config experiments/deterministic_control.json \
   --connectivity-export experiments/logs/connectivity.csv
 ```
 
