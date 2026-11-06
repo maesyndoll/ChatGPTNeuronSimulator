@@ -28,6 +28,7 @@ SimulationBridge::SimulationBridge(QObject* parent)
         setStatusMessage(
             QStringLiteral("Connected; subscribing to telemetry and spike events"));
         client_.sendRequest(QStringLiteral("subscribe_telemetry"));
+        client_.sendRequest(QStringLiteral("subscribe_spike_events"));
         refreshConfiguration();
         refreshTopologyVisual();
         topology_visual_timer_.start();
