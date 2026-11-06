@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime/cuda_simulation_runtime.cuh"
+#include "topology/topology_io.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -19,8 +20,6 @@
 #include <utility>
 
 namespace spiking {
-
-struct TopologyStatistics;
 
 enum class ControllerStatus {
     Ready,
