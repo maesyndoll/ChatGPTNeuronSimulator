@@ -39,6 +39,8 @@ class SimulationBridge : public QObject {
 
     Q_PROPERTY(QVariantMap connectivityStatistics READ connectivityStatistics
                NOTIFY connectivityChanged)
+    Q_PROPERTY(QVariantMap topologyVisual READ topologyVisual
+               NOTIFY topologyVisualChanged)
 
     Q_PROPERTY(QVariantList spikeEvents READ spikeEvents
                NOTIFY spikeEventsChanged)
@@ -76,6 +78,7 @@ public:
     QString simulationGeneration() const;
 
     QVariantMap connectivityStatistics() const;
+    QVariantMap topologyVisual() const;
     QVariantList spikeEvents() const;
     QString spikeEventCount() const;
     QString spikeEventsDropped() const;
@@ -92,6 +95,7 @@ public:
     Q_INVOKABLE void reinitializeSimulation();
     Q_INVOKABLE void refreshSpikeEvents();
     Q_INVOKABLE void refreshConnectivity();
+    Q_INVOKABLE void refreshTopologyVisual();
 
 signals:
     void connectionChanged();
@@ -102,6 +106,7 @@ signals:
     void configurationChanged();
     void spikeEventsChanged();
     void connectivityChanged();
+    void topologyVisualChanged();
     void errorOccurred(const QString& message);
 
 private:
@@ -123,6 +128,9 @@ private:
     bool has_history_step_ = false;
     QJsonObject configuration_;
     QVariantMap connectivity_statistics_;
+    QVariantMap topology_visual_;
+    QTimer topology_visual_timer_;
+    bool topology_visual_request_pending_ = false;
     QVariantList spike_events_;
     QString spike_event_count_ = QStringLiteral("0");
     QString spike_events_dropped_ = QStringLiteral("0");
