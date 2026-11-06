@@ -583,8 +583,9 @@ TopologyVisualSnapshot CudaSimulationRuntime::collect_topology_visual_snapshot(
                          static_cast<std::uint32_t>(
                             (static_cast<std::uint64_t>(sample) * (degree - 1U)) /
                             (take - 1U)));
-                    snapshot.edges.push_back({
-                        source, targets[local_edge], weights[local_edge]});
+                    const std::uint32_t target = targets[local_edge];
+                    snapshot.edges.push_back({source, target, weights[local_edge]});
+                    snapshot.neuron_ids.push_back(target);
                 }
             }
         }
