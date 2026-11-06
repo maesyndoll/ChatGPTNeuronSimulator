@@ -29,6 +29,10 @@ ApplicationWindow {
             telemetryTrendChart.requestPaint()
         }
 
+        function onSpikeEventsChanged() {
+            spikeRaster.requestPaint()
+        }
+
         function onConfigurationChanged() {
             if (window.parameterDraftInitialized)
                 return
@@ -641,6 +645,128 @@ ApplicationWindow {
                     Label { text: "I → I: " + (simulation.connectivityStatistics.population_edges?.inhibitory_to_inhibitory ?? "—"); color: "#e6b66b" }
                     Label { text: "Mean out-degree: " + (simulation.connectivityStatistics.outgoing_degree?.mean === undefined ? "—" : Number(simulation.connectivityStatistics.outgoing_degree.mean).toFixed(2)); color: "#dce6f2" }
                     Label { text: "Mean in-degree: " + (simulation.connectivityStatistics.incoming_degree?.mean === undefined ? "—" : Number(simulation.connectivityStatistics.incoming_degree.mean).toFixed(2)); color: "#dce6f2" }
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            radius: 12
+            color: "#192433"
+            border.color: "#2b3a4d"
+            implicitHeight: spikeRasterColumn.implicitHeight + 28
+
+            ColumnLayout {
+                id: spikeRasterColumn
+                anchors.fill: parent
+                anchors.margins: 14
+                spacing: 8
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label {
+                        text: "Live spike raster"
+                        color: "#f0f4fa"
+                        font.pixelSize: 17
+                        font.bold: true
+                    }
+                    Item { Layout.fillWidth: true }
+                    Label {
+                        text: simulation.spikeEventCount + " total · " +
+                              simulation.spikeEvents.length + " retained · " +
+                              simulation.spikeEventsDropped + " dropped"
+                        color: "#91a2b8"
+                        font.pixelSize: 11
+                    }
+                }
+
+                Canvas {
+                    id: spikeRaster
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 250
+                    contextType: "2d"
+
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        ctx.clearRect(0, 0, width, height)
+                        ctx.fillStyle = "#121c29"
+                        ctx.fillRect(0, 0, width, height)
+
+                        var events = simulation.spikeEvents
+                        var parameters = simulation.activeParameters["simulation"] || {}
+                        var excitatoryCount = Number(parameters["excitatory_count"] || 0)
+                        var neuronCount = excitatoryCount +
+                                          Number(parameters["inhibitory_count"] || 0)
+                        var firstStep = Number.POSITIVE_INFINITY
+                        var lastStep = 0
+
+                        for (var i = 0; i < events.length; ++i) {
+                            var eventStep = Number(events[i].step)
+                            firstStep = Math.min(firstStep, eventStep)
+                            lastStep = Math.max(lastStep, eventStep)
+                            neuronCount = Math.max(neuronCount,
+                                Number(events[i].neuron_id) + 1)
+                        }
+
+                        var left = 46
+                        var right = width - 12
+                        var top = 12
+                        var bottom = height - 25
+                        var plotWidth = Math.max(1, right - left)
+                        var plotHeight = Math.max(1, bottom - top)
+
+                        ctx.strokeStyle = "#34465c"
+                        ctx.lineWidth = 1
+                        ctx.beginPath()
+                        ctx.moveTo(left, top)
+                        ctx.lineTo(left, bottom)
+                        ctx.lineTo(right, bottom)
+                        ctx.stroke()
+
+                        ctx.fillStyle = "#91a2b8"
+                        ctx.font = "10px sans-serif"
+                        ctx.fillText("Neuron", 5, 12)
+                        ctx.fillText("0", 26, bottom + 3)
+                        ctx.fillText(String(Math.max(0, neuronCount - 1)), 2, top + 4)
+                        ctx.fillText("Simulation step", right - 88, height - 5)
+
+                        if (events.length === 0 || !isFinite(firstStep)) {
+                            ctx.fillText("Waiting for spike events…", left + 12,
+                                         top + plotHeight / 2)
+                            return
+                        }
+
+                        var stepSpan = Math.max(1, lastStep - firstStep)
+                        var neuronSpan = Math.max(1, neuronCount - 1)
+                        for (var j = 0; j < events.length; ++j) {
+                            var spike = events[j]
+                            var x = left + ((Number(spike.step) - firstStep) /
+                                            stepSpan) * plotWidth
+                            var neuronId = Number(spike.neuron_id)
+                            var y = bottom - (neuronId / neuronSpan) * plotHeight
+                            ctx.fillStyle = neuronId < excitatoryCount
+                                            ? "#65b9ed" : "#e6b66b"
+                            ctx.fillRect(x, y, 2, 2)
+                        }
+
+                        ctx.fillStyle = "#71839a"
+                        ctx.fillText("Step " + firstStep, left, height - 5)
+                        ctx.textAlign = "right"
+                        ctx.fillText("Step " + lastStep, right, height - 5)
+                        ctx.textAlign = "left"
+                    }
+                }
+
+                RowLayout {
+                    spacing: 16
+                    Label { text: "● Excitatory"; color: "#65b9ed"; font.pixelSize: 11 }
+                    Label { text: "● Inhibitory"; color: "#e6b66b"; font.pixelSize: 11 }
+                    Item { Layout.fillWidth: true }
+                    Label {
+                        text: "Time →   Neuron ID ↑"
+                        color: "#71839a"
+                        font.pixelSize: 11
+                    }
                 }
             }
         }
