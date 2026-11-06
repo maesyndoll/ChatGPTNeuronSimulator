@@ -65,7 +65,9 @@ public:
         int device = 0,
         std::uint32_t batch_size = 100,
         std::uint64_t telemetry_interval_steps = 1000,
-        bool collect_spike_events = true);
+        bool collect_spike_events = true,
+        bool enable_plasticity_state = false,
+        StdpParameters stdp_parameters = {});
 
     ~SimulationController();
 
@@ -77,6 +79,14 @@ public:
     void start();
     void pause();
     void step(std::uint32_t steps);
+
+    // Runtime operations are serialized through the owning worker thread.
+    void schedule_stimulus(std::uint32_t neuron_id,
+                           std::uint64_t start_step,
+                           std::uint32_t duration_steps,
+                           float amplitude);
+    void clear_stimuli();
+    CSRTopology connectivity_snapshot() const;
 
     ParameterUpdateResult apply_parameters(const ModelParameters& candidate);
     ParameterUpdateResult reset_parameters_to_defaults();
@@ -149,7 +159,9 @@ private:
         ModelParameters defaults,
         int device,
         std::promise<void> initialized,
-        bool collect_spike_events);
+        bool collect_spike_events,
+        bool enable_plasticity_state,
+        StdpParameters stdp_parameters);
 
     void publish_metrics(const SimulationMetrics& metrics);
     void publish_spike_events(
