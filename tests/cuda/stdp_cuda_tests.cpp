@@ -197,19 +197,6 @@ int main() {
             const auto gpu_pre = pre_traces.download();
             const auto gpu_post = post_traces.download();
 
-            if (step_index == 5) {
-                std::cerr << "Step 5 trace comparison:\\n";
-                for (std::size_t neuron = 0; neuron < 3; ++neuron) {
-                    std::cerr << "neuron " << neuron
-                              << " pre CPU/GPU="
-                              << host_traces.presynaptic[neuron] << "/"
-                              << gpu_pre[neuron]
-                              << " post CPU/GPU="
-                              << host_traces.postsynaptic[neuron] << "/"
-                              << gpu_post[neuron] << '\n';
-                }
-            }
-
             for (std::size_t edge = 0; edge < host_weights.size(); ++edge) {
                 if (!near(gpu_weights[edge], host_weights[edge], 5.0e-6f)) {
                     std::cerr << "STDP mismatch: step=" << step_index
