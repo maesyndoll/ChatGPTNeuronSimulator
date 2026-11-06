@@ -16,6 +16,9 @@ SimulationBridge::SimulationBridge(QObject* parent)
     spike_events_update_timer_.setInterval(50);
     connect(&spike_events_update_timer_, &QTimer::timeout,
             this, &SimulationBridge::spikeEventsChanged);
+    topology_visual_timer_.setInterval(1500);
+    connect(&topology_visual_timer_, &QTimer::timeout,
+            this, &SimulationBridge::refreshTopologyVisual);
     connect(&client_, &SimulationClient::connected, this, [this]() {
         connected_ = true;
         connection_status_ = QStringLiteral("Connected");
@@ -26,6 +29,8 @@ SimulationBridge::SimulationBridge(QObject* parent)
             QStringLiteral("Connected; subscribing to telemetry and spike events"));
         client_.sendRequest(QStringLiteral("subscribe_telemetry"));
         refreshConfiguration();
+        refreshTopologyVisual();
+        topology_visual_timer_.start();
         // The server's spike subscription starts with a recent bounded
         // snapshot; do not separately request the oldest retained events.
     });
@@ -35,6 +40,10 @@ SimulationBridge::SimulationBridge(QObject* parent)
         connection_status_ = QStringLiteral("Disconnected");
         emit connectionChanged();
         spike_events_update_timer_.stop();
+        topology_visual_timer_.stop();
+        topology_visual_request_pending_ = false;
+        topology_visual_.clear();
+        emit topologyVisualChanged();
         spike_events_.clear();
         spike_event_count_ = QStringLiteral("0");
         spike_events_dropped_ = QStringLiteral("0");
@@ -42,6 +51,8 @@ SimulationBridge::SimulationBridge(QObject* parent)
         spike_events_generation_ = QStringLiteral("—");
         last_spike_event_sequence_ = 0;
         emit spikeEventsChanged();
+        connectivity_statistics_.clear();
+        emit connectivityChanged();
         setStatusMessage(QStringLiteral("Disconnected from simulation server"));
     });
 
@@ -69,6 +80,13 @@ SimulationBridge::SimulationBridge(QObject* parent)
             updateConfiguration(result);
         } else if (command == QStringLiteral("get_spike_events")) {
             updateSpikeEvents(result);
+        } else if (command == QStringLiteral("get_connectivity")) {
+            connectivity_statistics_ = result.toVariantMap();
+            emit connectivityChanged();
+        } else if (command == QStringLiteral("get_topology_visual")) {
+            topology_visual_request_pending_ = false;
+            topology_visual_ = result.toVariantMap();
+            emit topologyVisualChanged();
         } else {
             const QJsonValue configurationValue =
                 result.value(QStringLiteral("configuration"));
@@ -153,6 +171,8 @@ SimulationBridge::SimulationBridge(QObject* parent)
             this,
             [this](const QString&, const QString& command,
                    const QString& errorCode, const QString& message) {
+        if (command == QStringLiteral("get_topology_visual"))
+            topology_visual_request_pending_ = false;
         const QString combined =
             QStringLiteral("%1 (%2): %3").arg(command, errorCode, message);
         setErrorMessage(combined);
@@ -240,6 +260,14 @@ QString SimulationBridge::simulationGeneration() const {
     return configuration_
         .value(QStringLiteral("simulation_generation")).toString(
             QStringLiteral("—"));
+}
+
+QVariantMap SimulationBridge::connectivityStatistics() const {
+    return connectivity_statistics_;
+}
+
+QVariantMap SimulationBridge::topologyVisual() const {
+    return topology_visual_;
 }
 
 QVariantList SimulationBridge::spikeEvents() const {
@@ -330,6 +358,19 @@ void SimulationBridge::applyParameters(const QVariantMap& parameters) {
         QJsonObject{
             {QStringLiteral("parameters"), parameterObject}
         });
+}
+
+void SimulationBridge::refreshConnectivity() {
+    if (connected_) {
+        client_.sendRequest(QStringLiteral("get_connectivity"));
+    }
+}
+
+void SimulationBridge::refreshTopologyVisual() {
+    if (!connected_ || topology_visual_request_pending_)
+        return;
+    topology_visual_request_pending_ = true;
+    client_.sendRequest(QStringLiteral("get_topology_visual"), {}, 10000);
 }
 
 void SimulationBridge::refreshSpikeEvents() {

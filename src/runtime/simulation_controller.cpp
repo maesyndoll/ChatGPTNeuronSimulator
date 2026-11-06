@@ -1,4 +1,5 @@
 #include "runtime/simulation_controller.h"
+#include "topology/topology_io.h"
 
 #include <stdexcept>
 
@@ -9,7 +10,9 @@ SimulationController::SimulationController(
     int device,
     std::uint32_t batch_size,
     std::uint64_t telemetry_interval_steps,
-    bool collect_spike_events)
+    bool collect_spike_events,
+    bool enable_plasticity_state,
+    StdpParameters stdp_parameters)
     : batch_size_(batch_size),
       telemetry_interval_steps_(telemetry_interval_steps),
       collect_spike_events_(collect_spike_events) {
@@ -31,7 +34,9 @@ SimulationController::SimulationController(
         std::move(defaults),
         device,
         std::move(initialized),
-        collect_spike_events_);
+        collect_spike_events_,
+        enable_plasticity_state,
+        stdp_parameters);
 
     try {
         ready.get();
@@ -107,6 +112,52 @@ void SimulationController::step(std::uint32_t steps) {
     });
 }
 
+void SimulationController::schedule_stimulus(
+    std::uint32_t neuron_id,
+    std::uint64_t start_step,
+    std::uint32_t duration_steps,
+    float amplitude) {
+    submit([=](CudaSimulationRuntime& runtime) {
+        runtime.schedule_stimulus(
+            neuron_id, start_step, duration_steps, amplitude);
+    });
+}
+
+void SimulationController::schedule_stimuli(
+    const std::vector<ExternalStimulus>& stimuli) {
+    if (stimuli.empty()) return;
+    submit([stimuli](CudaSimulationRuntime& runtime) {
+        for (const auto& stimulus : stimuli) {
+            runtime.schedule_stimulus(
+                stimulus.neuron_id, stimulus.start_step,
+                stimulus.duration_steps, stimulus.amplitude);
+        }
+    });
+}
+
+void SimulationController::clear_stimuli() {
+    submit([](CudaSimulationRuntime& runtime) {
+        runtime.clear_stimuli();
+    });
+}
+
+CSRTopology SimulationController::connectivity_snapshot() const {
+    return const_cast<SimulationController*>(this)->submit(
+        [](CudaSimulationRuntime& runtime) {
+            return runtime.collect_connectivity();
+        }
+    );
+}
+
+std::vector<VoltageSample> SimulationController::collect_voltage_samples(
+    const std::vector<std::uint32_t>& neuron_ids) const {
+    return const_cast<SimulationController*>(this)->submit(
+        [neuron_ids](CudaSimulationRuntime& runtime) {
+            return runtime.collect_voltage_samples(neuron_ids);
+        }
+    );
+}
+
 ParameterUpdateResult SimulationController::apply_parameters(
     const ModelParameters& candidate) {
     return submit([candidate](CudaSimulationRuntime& runtime) {
@@ -175,6 +226,26 @@ SpikeEventSnapshot SimulationController::spike_events_snapshot(
     return snapshot;
 }
 
+TopologyVisualSnapshot SimulationController::topology_visual_snapshot(
+    std::uint32_t maximum_neurons,
+    std::uint32_t maximum_edges_per_neuron) const {
+    return const_cast<SimulationController*>(this)->submit(
+        [maximum_neurons, maximum_edges_per_neuron]
+        (CudaSimulationRuntime& runtime) {
+            return runtime.collect_topology_visual_snapshot(
+                maximum_neurons, maximum_edges_per_neuron);
+        }
+    );
+}
+
+TopologyStatistics SimulationController::connectivity_statistics() const {
+    return const_cast<SimulationController*>(this)->submit(
+        [](CudaSimulationRuntime& runtime) {
+            return analyze_csr_topology(runtime.collect_connectivity());
+        }
+    );
+}
+
 ControllerConfigurationSnapshot
 SimulationController::configuration_snapshot() const {
     return const_cast<SimulationController*>(this)->submit(
@@ -206,12 +277,12 @@ bool SimulationController::wait_until_steps(
     std::unique_lock<std::mutex> lock(mutex_);
 
     const bool reached = condition_.wait_for(lock, timeout, [this, target] {
-        return observed_completed_steps_ >= target ||
+        return observed_completed_steps_.load(std::memory_order_acquire) >= target ||
                status_ == ControllerStatus::Faulted ||
                status_ == ControllerStatus::ShuttingDown;
     });
 
-    return reached && observed_completed_steps_ >= target;
+    return reached && observed_completed_steps_.load(std::memory_order_acquire) >= target;
 }
 
 std::exception_ptr SimulationController::last_execution_error() const {
@@ -256,8 +327,9 @@ void SimulationController::publish_metrics(const SimulationMetrics& metrics) {
         std::lock_guard<std::mutex> lock(mutex_);
         telemetry_.metrics = metrics;
         ++telemetry_.sequence;
-        if (metrics.completed_steps > observed_completed_steps_) {
-            observed_completed_steps_ = metrics.completed_steps;
+        const auto previous = observed_completed_steps_.load(std::memory_order_relaxed);
+        if (metrics.completed_steps > previous) {
+            observed_completed_steps_.store(metrics.completed_steps, std::memory_order_release);
         }
     }
     condition_.notify_all();
@@ -267,12 +339,15 @@ void SimulationController::worker_main(
     ModelParameters defaults,
     int device,
     std::promise<void> initialized,
-    bool collect_spike_events) {
+    bool collect_spike_events,
+    bool enable_plasticity_state,
+    StdpParameters stdp_parameters) {
     std::unique_ptr<CudaSimulationRuntime> runtime;
 
     try {
         runtime = std::make_unique<CudaSimulationRuntime>(
-            std::move(defaults), device, collect_spike_events);
+            std::move(defaults), device, collect_spike_events,
+            enable_plasticity_state, stdp_parameters);
         const auto initial_metrics = runtime->collect_metrics();
         if (collect_spike_events) {
             const auto initial_events = runtime->collect_spike_events();
@@ -295,6 +370,7 @@ void SimulationController::worker_main(
         ? runtime->spike_event_collection_batch_interval(batch_size_)
         : 0U;
     std::uint32_t batches_since_event_collection = 0;
+    std::uint32_t batches_since_progress_notification = 0;
 
     for (;;) {
         std::function<void(CudaSimulationRuntime&)> command;
@@ -329,13 +405,14 @@ void SimulationController::worker_main(
                 const auto completed = runtime->completed_steps();
                 {
                     std::lock_guard<std::mutex> lock(mutex_);
-                    observed_completed_steps_ = completed;
+                    observed_completed_steps_.store(completed, std::memory_order_release);
                 }
                 next_telemetry_step = completed + telemetry_interval_steps_;
                 event_collection_interval = collect_spike_events
                     ? runtime->spike_event_collection_batch_interval(batch_size_)
                     : 0U;
                 batches_since_event_collection = 0;
+                batches_since_progress_notification = 0;
                 condition_.notify_all();
             }
             continue;
@@ -354,11 +431,12 @@ void SimulationController::worker_main(
             }
 
             const auto completed = runtime->completed_steps();
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                observed_completed_steps_ = completed;
+            observed_completed_steps_.store(completed, std::memory_order_release);
+            if (++batches_since_progress_notification >=
+                kProgressNotificationBatches) {
+                batches_since_progress_notification = 0;
+                condition_.notify_all();
             }
-            condition_.notify_all();
 
             // Avoid forcing a GPU/CPU synchronization after every small
             // simulation batch. The interval is bounded from the worst-case

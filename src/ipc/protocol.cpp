@@ -1,6 +1,7 @@
 #include "ipc/protocol.h"
 
 #include "ipc/parameter_json.h"
+#include "topology/topology_io.h"
 
 #include <limits>
 #include <stdexcept>
@@ -90,6 +91,53 @@ Json telemetry_json(const TelemetrySnapshot& snapshot) {
     };
 }
 
+
+Json connectivity_json(const TopologyStatistics& stats) {
+    const auto distribution = [](const TopologyDistributionStats& value) {
+        return Json{{"count", std::to_string(value.count)},
+                    {"minimum", value.minimum}, {"maximum", value.maximum},
+                    {"mean", value.mean}};
+    };
+    return {
+        {"excitatory_count", stats.excitatory_count},
+        {"inhibitory_count", stats.inhibitory_count},
+        {"neuron_count", static_cast<std::uint64_t>(stats.excitatory_count) + stats.inhibitory_count},
+        {"synapse_count", std::to_string(stats.synapse_count)},
+        {"density", stats.density},
+        {"population_edges", {
+            {"excitatory_to_excitatory", std::to_string(stats.excitatory_to_excitatory)},
+            {"excitatory_to_inhibitory", std::to_string(stats.excitatory_to_inhibitory)},
+            {"inhibitory_to_excitatory", std::to_string(stats.inhibitory_to_excitatory)},
+            {"inhibitory_to_inhibitory", std::to_string(stats.inhibitory_to_inhibitory)}
+        }},
+        {"outgoing_degree", distribution(stats.outgoing_degree)},
+        {"incoming_degree", distribution(stats.incoming_degree)},
+        {"weights", distribution(stats.weights)},
+        {"delays", distribution(stats.delays)}
+    };
+}
+
+Json topology_visual_json(const TopologyVisualSnapshot& snapshot) {
+    Json neuron_ids = Json::array();
+    for (const auto neuron_id : snapshot.neuron_ids)
+        neuron_ids.push_back(neuron_id);
+    Json edges = Json::array();
+    for (const auto& edge : snapshot.edges) {
+        edges.push_back({
+            {"source", edge.source}, {"target", edge.target},
+            {"weight", edge.weight}
+        });
+    }
+    return {
+        {"excitatory_count", snapshot.excitatory_count},
+        {"inhibitory_count", snapshot.inhibitory_count},
+        {"synapse_count", std::to_string(snapshot.synapse_count)},
+        {"sampled_neuron_count", snapshot.neuron_ids.size()},
+        {"sampled_edge_count", snapshot.edges.size()},
+        {"neuron_ids", std::move(neuron_ids)},
+        {"edges", std::move(edges)}
+    };
+}
 
 Json spike_events_json(const SpikeEventSnapshot& snapshot) {
     Json events = Json::array();
@@ -219,6 +267,16 @@ Json handle_request(SimulationController& controller, const Json& request) {
         if (command == "get_telemetry") {
             return success_response(
                 request_id, telemetry_json(controller.telemetry_snapshot()));
+        }
+
+        if (command == "get_connectivity") {
+            return success_response(
+                request_id, connectivity_json(controller.connectivity_statistics()));
+        }
+
+        if (command == "get_topology_visual") {
+            return success_response(request_id, topology_visual_json(
+                controller.topology_visual_snapshot(256U, 8U)));
         }
 
         if (command == "get_spike_events") {

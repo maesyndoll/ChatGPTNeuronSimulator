@@ -1,7 +1,9 @@
 #pragma once
 
 #include "runtime/cuda_simulation_runtime.cuh"
+#include "topology/topology_io.h"
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -31,6 +33,13 @@ enum class ControllerStatus {
 struct TelemetrySnapshot {
     SimulationMetrics metrics;
     std::uint64_t sequence = 0;
+};
+
+struct ExternalStimulus {
+    std::uint32_t neuron_id = 0;
+    std::uint64_t start_step = 0;
+    std::uint32_t duration_steps = 0;
+    float amplitude = 0.0f;
 };
 
 struct SequencedSpikeEvent {
@@ -64,7 +73,9 @@ public:
         int device = 0,
         std::uint32_t batch_size = 100,
         std::uint64_t telemetry_interval_steps = 1000,
-        bool collect_spike_events = true);
+        bool collect_spike_events = true,
+        bool enable_plasticity_state = false,
+        StdpParameters stdp_parameters = {});
 
     ~SimulationController();
 
@@ -77,6 +88,18 @@ public:
     void pause();
     void step(std::uint32_t steps);
 
+    // Runtime operations are serialized through the owning worker thread.
+    void schedule_stimulus(std::uint32_t neuron_id,
+                           std::uint64_t start_step,
+                           std::uint32_t duration_steps,
+                           float amplitude);
+    // Submit a complete training pattern in one worker-thread round trip.
+    void schedule_stimuli(const std::vector<ExternalStimulus>& stimuli);
+    void clear_stimuli();
+    CSRTopology connectivity_snapshot() const;
+    std::vector<VoltageSample> collect_voltage_samples(
+        const std::vector<std::uint32_t>& neuron_ids) const;
+
     ParameterUpdateResult apply_parameters(const ModelParameters& candidate);
     ParameterUpdateResult reset_parameters_to_defaults();
     void reinitialize_simulation();
@@ -87,6 +110,12 @@ public:
         std::uint64_t after_sequence = 0,
         std::size_t maximum_events = 4096) const;
     ControllerConfigurationSnapshot configuration_snapshot() const;
+    // Return a bounded graph sample for visualization clients.
+    TopologyVisualSnapshot topology_visual_snapshot(
+        std::uint32_t maximum_neurons = 256,
+        std::uint32_t maximum_edges_per_neuron = 8) const;
+    // Analyze the exact CSR graph currently resident in the simulation runtime.
+    TopologyStatistics connectivity_statistics() const;
 
     ControllerStatus status() const;
     bool is_running() const;
@@ -146,7 +175,9 @@ private:
         ModelParameters defaults,
         int device,
         std::promise<void> initialized,
-        bool collect_spike_events);
+        bool collect_spike_events,
+        bool enable_plasticity_state,
+        StdpParameters stdp_parameters);
 
     void publish_metrics(const SimulationMetrics& metrics);
     void publish_spike_events(
@@ -162,7 +193,8 @@ private:
     std::thread worker_;
 
     ControllerStatus status_ = ControllerStatus::Ready;
-    std::uint64_t observed_completed_steps_ = 0;
+    std::atomic<std::uint64_t> observed_completed_steps_{0};
+    static constexpr std::uint32_t kProgressNotificationBatches = 10;
     TelemetrySnapshot telemetry_;
     std::deque<SequencedSpikeEvent> spike_events_;
     std::uint64_t spike_event_total_events_ = 0;

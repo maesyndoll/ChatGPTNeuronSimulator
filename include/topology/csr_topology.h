@@ -113,4 +113,79 @@ struct CSRTopology {
     }
 };
 
+// Incoming adjacency for postsynaptic traversal. Each target row stores the
+// presynaptic source and the corresponding edge index in the original
+// source-oriented CSR weight/delay arrays.
+struct IncomingCSRIndex {
+    std::vector<std::uint32_t> row_offsets;
+    std::vector<std::uint32_t> source_indices;
+    std::vector<std::uint32_t> edge_indices;
+
+    void validate(std::uint32_t neuron_count, std::size_t edge_count) const {
+        if (row_offsets.size() != static_cast<std::size_t>(neuron_count) + 1 ||
+            source_indices.size() != edge_count ||
+            edge_indices.size() != edge_count ||
+            row_offsets.empty() || row_offsets.front() != 0 ||
+            row_offsets.back() != edge_count) {
+            throw std::invalid_argument("Malformed incoming CSR index");
+        }
+        for (std::uint32_t target = 0; target < neuron_count; ++target) {
+            if (row_offsets[target] > row_offsets[target + 1] ||
+                row_offsets[target + 1] > edge_count) {
+                throw std::invalid_argument("Incoming CSR offsets are not monotonic");
+            }
+            std::uint32_t previous_source = 0;
+            bool first = true;
+            for (std::uint32_t entry = row_offsets[target];
+                 entry < row_offsets[target + 1]; ++entry) {
+                const auto source = source_indices[entry];
+                if (source >= neuron_count || source == target ||
+                    edge_indices[entry] >= edge_count ||
+                    (!first && source <= previous_source)) {
+                    throw std::invalid_argument("Invalid incoming CSR entry");
+                }
+                previous_source = source;
+                first = false;
+            }
+        }
+    }
+};
+
+// Construct a deterministic reverse index without duplicating synaptic
+// weights. edge_indices always address the original outgoing CSR arrays.
+inline IncomingCSRIndex build_incoming_csr_index(const CSRTopology& topology) {
+    topology.validate();
+    const auto neurons = topology.neuron_count();
+    if (topology.synapse_count() >
+        static_cast<std::size_t>(UINT32_MAX)) {
+        throw std::length_error("Incoming CSR supports at most UINT32_MAX edges");
+    }
+
+    IncomingCSRIndex incoming;
+    incoming.row_offsets.assign(static_cast<std::size_t>(neurons) + 1, 0);
+    incoming.source_indices.resize(topology.synapse_count());
+    incoming.edge_indices.resize(topology.synapse_count());
+
+    for (const auto target : topology.target_indices) {
+        ++incoming.row_offsets[static_cast<std::size_t>(target) + 1];
+    }
+    for (std::uint32_t target = 0; target < neurons; ++target) {
+        incoming.row_offsets[target + 1] += incoming.row_offsets[target];
+    }
+
+    auto cursor = incoming.row_offsets;
+    for (std::uint32_t source = 0; source < neurons; ++source) {
+        for (std::uint32_t edge = topology.row_offsets[source];
+             edge < topology.row_offsets[source + 1]; ++edge) {
+            const auto target = topology.target_indices[edge];
+            const auto slot = cursor[target]++;
+            incoming.source_indices[slot] = source;
+            incoming.edge_indices[slot] = edge;
+        }
+    }
+
+    incoming.validate(neurons, topology.synapse_count());
+    return incoming;
+}
+
 } // namespace spiking
