@@ -123,6 +123,18 @@ void SimulationController::schedule_stimulus(
     });
 }
 
+void SimulationController::schedule_stimuli(
+    const std::vector<ExternalStimulus>& stimuli) {
+    if (stimuli.empty()) return;
+    submit([stimuli](CudaSimulationRuntime& runtime) {
+        for (const auto& stimulus : stimuli) {
+            runtime.schedule_stimulus(
+                stimulus.neuron_id, stimulus.start_step,
+                stimulus.duration_steps, stimulus.amplitude);
+        }
+    });
+}
+
 void SimulationController::clear_stimuli() {
     submit([](CudaSimulationRuntime& runtime) {
         runtime.clear_stimuli();
@@ -253,12 +265,12 @@ bool SimulationController::wait_until_steps(
     std::unique_lock<std::mutex> lock(mutex_);
 
     const bool reached = condition_.wait_for(lock, timeout, [this, target] {
-        return observed_completed_steps_ >= target ||
+        return observed_completed_steps_.load(std::memory_order_acquire) >= target ||
                status_ == ControllerStatus::Faulted ||
                status_ == ControllerStatus::ShuttingDown;
     });
 
-    return reached && observed_completed_steps_ >= target;
+    return reached && observed_completed_steps_.load(std::memory_order_acquire) >= target;
 }
 
 std::exception_ptr SimulationController::last_execution_error() const {
@@ -303,8 +315,9 @@ void SimulationController::publish_metrics(const SimulationMetrics& metrics) {
         std::lock_guard<std::mutex> lock(mutex_);
         telemetry_.metrics = metrics;
         ++telemetry_.sequence;
-        if (metrics.completed_steps > observed_completed_steps_) {
-            observed_completed_steps_ = metrics.completed_steps;
+        const auto previous = observed_completed_steps_.load(std::memory_order_relaxed);
+        if (metrics.completed_steps > previous) {
+            observed_completed_steps_.store(metrics.completed_steps, std::memory_order_release);
         }
     }
     condition_.notify_all();
@@ -345,6 +358,7 @@ void SimulationController::worker_main(
         ? runtime->spike_event_collection_batch_interval(batch_size_)
         : 0U;
     std::uint32_t batches_since_event_collection = 0;
+    std::uint32_t batches_since_progress_notification = 0;
 
     for (;;) {
         std::function<void(CudaSimulationRuntime&)> command;
@@ -379,13 +393,14 @@ void SimulationController::worker_main(
                 const auto completed = runtime->completed_steps();
                 {
                     std::lock_guard<std::mutex> lock(mutex_);
-                    observed_completed_steps_ = completed;
+                    observed_completed_steps_.store(completed, std::memory_order_release);
                 }
                 next_telemetry_step = completed + telemetry_interval_steps_;
                 event_collection_interval = collect_spike_events
                     ? runtime->spike_event_collection_batch_interval(batch_size_)
                     : 0U;
                 batches_since_event_collection = 0;
+                batches_since_progress_notification = 0;
                 condition_.notify_all();
             }
             continue;
@@ -404,11 +419,12 @@ void SimulationController::worker_main(
             }
 
             const auto completed = runtime->completed_steps();
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                observed_completed_steps_ = completed;
+            observed_completed_steps_.store(completed, std::memory_order_release);
+            if (++batches_since_progress_notification >=
+                kProgressNotificationBatches) {
+                batches_since_progress_notification = 0;
+                condition_.notify_all();
             }
-            condition_.notify_all();
 
             // Avoid forcing a GPU/CPU synchronization after every small
             // simulation batch. The interval is bounded from the worst-case
