@@ -67,6 +67,14 @@ if(BUILD_TESTING)
     add_executable(stdp_tests tests/unit/stdp_tests.cpp)
     target_include_directories(stdp_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     add_test(NAME stdp_tests COMMAND stdp_tests)
+
+    add_executable(stdp_experiment tools/stdp_experiment.cpp)
+    target_include_directories(stdp_experiment PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_compile_options(stdp_experiment PRIVATE
+        $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+    )
 endif()
 
 option(SPIKINGMODEL_ENABLE_QT_CLIENT "Build the optional Qt IPC client" OFF)

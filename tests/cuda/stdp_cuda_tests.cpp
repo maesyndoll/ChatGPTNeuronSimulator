@@ -206,7 +206,7 @@ int main() {
                               << gpu_pre[neuron]
                               << " post CPU/GPU="
                               << host_traces.postsynaptic[neuron] << "/"
-                              << gpu_post[neuron] << '\\n';
+                              << gpu_post[neuron] << '\n';
                 }
             }
 
@@ -215,7 +215,7 @@ int main() {
                     std::cerr << "STDP mismatch: step=" << step_index
                               << ", edge=" << edge
                               << ", CPU=" << host_weights[edge]
-                              << ", GPU=" << gpu_weights[edge] << '\\n';
+                              << ", GPU=" << gpu_weights[edge] << '\n';
                     throw std::runtime_error(
                         "CPU/GPU STDP weight mismatch at sequence step");
                 }
@@ -227,6 +227,77 @@ int main() {
                 check(near(gpu_post[neuron],
                            host_traces.postsynaptic[neuron], 5.0e-6f),
                       "CPU/GPU postsynaptic trace mismatch");
+            }
+        }
+
+
+        // Validate the CUDA timing window against the analytical
+        // pair-based STDP response at several pre/post intervals.
+        {
+            const float a_plus = 0.01f;
+            const float a_minus = 0.012f;
+            const float tau_pre = 20.0f;
+            const float tau_post = 25.0f;
+            const float dt_ms = 1.0f;
+
+            const StdpParametersGPU curve_parameters{
+                a_plus,
+                a_minus,
+                std::exp(-dt_ms / tau_pre),
+                std::exp(-dt_ms / tau_post),
+                0.05f,
+                0.9f
+            };
+
+            auto gpu_event = [&](const std::vector<std::uint32_t>& neurons) {
+                std::vector<std::uint32_t> padded(3, 0);
+                for (std::size_t i = 0; i < neurons.size(); ++i)
+                    padded[i] = neurons[i];
+
+                active_sources.upload(padded);
+                active_count.upload({
+                    static_cast<std::uint32_t>(neurons.size())
+                });
+
+                apply_stdp(
+                    active_sources.get(), active_count.get(),
+                    outgoing_offsets.get(), outgoing_targets.get(),
+                    weights.get(), incoming_offsets.get(),
+                    incoming_sources.get(), incoming_edges.get(),
+                    pre_traces.get(), post_traces.get(),
+                    3, 2, dt_ms, curve_parameters);
+
+                cuda_check(cudaDeviceSynchronize(),
+                           "CUDA timing-window synchronization");
+            };
+
+            auto measure_pair = [&](bool pre_first, int lag) {
+                weights.upload({0.5f, 0.5f, -0.5f});
+                pre_traces.upload({0.0f, 0.0f, 0.0f});
+                post_traces.upload({0.0f, 0.0f, 0.0f});
+
+                gpu_event({pre_first ? 0U : 1U});
+
+                for (int elapsed = 1; elapsed < lag; ++elapsed)
+                    gpu_event({});
+
+                gpu_event({pre_first ? 1U : 0U});
+                return weights.download()[0] - 0.5f;
+            };
+
+            for (const int lag : {1, 5, 10, 20, 40, 100}) {
+                const float ltp = measure_pair(true, lag);
+                const float ltd = measure_pair(false, lag);
+
+                const float expected_ltp =
+                    a_plus * std::exp(-static_cast<float>(lag) / tau_pre);
+                const float expected_ltd =
+                    -a_minus * std::exp(-static_cast<float>(lag) / tau_post);
+
+                check(near(ltp, expected_ltp, 5.0e-6f),
+                      "CUDA potentiation timing curve differs from analytical response");
+                check(near(ltd, expected_ltd, 5.0e-6f),
+                      "CUDA depression timing curve differs from analytical response");
             }
         }
 
