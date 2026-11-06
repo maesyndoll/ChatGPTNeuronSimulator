@@ -326,6 +326,26 @@ if(SPIKINGMODEL_ENABLE_CUDA)
         add_test(NAME controller_smoke COMMAND controller_smoke)
         add_dependencies(controller_smoke check_parameter_schema)
 
+        add_executable(stdp_associative_recall
+            experiments/stdp_associative_recall.cpp
+            src/cuda/neuron_izhikevich.cu
+            src/runtime/cuda_simulation_runtime.cu
+            src/runtime/simulation_controller.cpp
+            src/topology/topology_generator.cpp
+            src/topology/topology_io.cpp
+        )
+        target_include_directories(stdp_associative_recall PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+        target_link_libraries(stdp_associative_recall PRIVATE CUDA::cudart)
+        set_target_properties(stdp_associative_recall PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON
+            CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+        )
+        add_test(NAME stdp_associative_recall COMMAND stdp_associative_recall)
+        set_tests_properties(stdp_associative_recall PROPERTIES TIMEOUT 120)
+        add_dependencies(stdp_associative_recall check_parameter_schema)
+
         add_executable(cpu_gpu_neuron_validation
             tests/cuda/cpu_gpu_neuron_validation.cpp
             src/cuda/neuron_izhikevich.cu
