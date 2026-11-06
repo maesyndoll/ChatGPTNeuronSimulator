@@ -772,6 +772,7 @@ ApplicationWindow {
                         var activeDrawn = 0
                         for (var activeId in activeNeuronTimes) {
                             if (activeDrawn >= 1000) break
+                            if (positions[activeId] !== undefined) continue
                             var activePoint = positions[activeId]
                             if (activePoint === undefined) {
                                 var numericId = Number(activeId)
