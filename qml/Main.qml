@@ -693,20 +693,27 @@ ApplicationWindow {
                         }
 
                         var goldenAngle = 2.399963229728653
-                        for (var p = 0; p < ids.length; ++p) {
-                            var id = Number(ids[p])
+                        var totalNeurons = excitatoryCount +
+                                           Number(graph.inhibitory_count || 0)
+                        function neuronPosition(id) {
                             var isExcitatory = id < excitatoryCount
-                            var index = isExcitatory ? eIndex++ : iIndex++
-                            var total = isExcitatory ? eTotal : iTotal
-                            var radius = Math.sqrt((index + 0.5) / Math.max(1, total))
-                            var angle = index * goldenAngle
+                            var localIndex = isExcitatory ? id : id - excitatoryCount
+                            var populationSize = isExcitatory ? excitatoryCount :
+                                Number(graph.inhibitory_count || 0)
+                            var radius = Math.sqrt((localIndex + 0.5) /
+                                                   Math.max(1, populationSize))
+                            var angle = localIndex * goldenAngle
                             var centerX = isExcitatory ? width * 0.34 : width * 0.76
                             var spreadX = isExcitatory ? width * 0.265 : width * 0.17
-                            var spreadY = height * 0.39
-                            positions[id] = {
+                            return {
                                 x: centerX + Math.cos(angle) * radius * spreadX,
-                                y: height * 0.51 + Math.sin(angle) * radius * spreadY
+                                y: height * 0.51 +
+                                   Math.sin(angle) * radius * height * 0.39
                             }
+                        }
+                        for (var p = 0; p < ids.length; ++p) {
+                            var id = Number(ids[p])
+                            positions[id] = neuronPosition(id)
                         }
 
                         // Draw the sampled, real CSR edges first. Weight controls
@@ -758,6 +765,29 @@ ApplicationWindow {
                                 ctx.lineWidth = 1.2
                                 ctx.stroke()
                             }
+                        }
+
+                        // Spikes from neurons outside the fixed topology sample
+                        // still appear at their deterministic population coordinates.
+                        var activeDrawn = 0
+                        for (var activeId in activeNeuronTimes) {
+                            if (activeDrawn >= 1000) break
+                            var activePoint = positions[activeId]
+                            if (activePoint === undefined) {
+                                var numericId = Number(activeId)
+                                if (!isFinite(numericId) || numericId < 0 ||
+                                    numericId >= totalNeurons) continue
+                                activePoint = neuronPosition(numericId)
+                            }
+                            var activeAge = Date.now() - activeNeuronTimes[activeId]
+                            if (activeAge >= 520) continue
+                            var pulse = Math.max(0, 1 - activeAge / 520)
+                            ctx.beginPath()
+                            ctx.arc(activePoint.x, activePoint.y, 3 + pulse * 5,
+                                    0, Math.PI * 2)
+                            ctx.fillStyle = "rgba(222,255,246," + (0.55 + pulse * 0.45) + ")"
+                            ctx.fill()
+                            activeDrawn++
                         }
 
                         ctx.font = "11px sans-serif"
