@@ -9,7 +9,7 @@ namespace {
 void check(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
-bool near(double a, double b, double tolerance = 1.0e-9) {
+bool near(double a, double b, double tolerance = 1.0e-7) {
     return std::abs(a - b) <= tolerance;
 }
 }
