@@ -2,6 +2,7 @@
 #include "ipc/unix_socket_server.h"
 #include "ipc/parameter_json.h"
 #include "runtime/cuda_simulation_runtime.cuh"
+#include "runtime/active_neuron_telemetry.h"
 #include "runtime/simulation_controller.h"
 
 #include <cuda_runtime.h>
@@ -52,6 +53,10 @@ struct WindowTelemetry {
     double excitatory_rate_hz = 0.0;
     double inhibitory_rate_hz = 0.0;
     double mean_voltage_snapshot_mv = 0.0;
+    std::uint64_t excitatory_active_neurons = 0;
+    std::uint64_t inhibitory_active_neurons = 0;
+    double excitatory_active_neuron_percent = 0.0;
+    double inhibitory_active_neuron_percent = 0.0;
 };
 
 CommandLineOptions parse_arguments(int argc, char** argv) {
@@ -266,7 +271,11 @@ void append_experiment_record(
                 {"inhibitory_spikes", window.inhibitory_spikes},
                 {"excitatory_mean_firing_rate_hz", window.excitatory_rate_hz},
                 {"inhibitory_mean_firing_rate_hz", window.inhibitory_rate_hz},
-                {"mean_membrane_voltage_snapshot_mv", window.mean_voltage_snapshot_mv}
+                {"mean_membrane_voltage_snapshot_mv", window.mean_voltage_snapshot_mv},
+                {"excitatory_active_neurons", window.excitatory_active_neurons},
+                {"inhibitory_active_neurons", window.inhibitory_active_neurons},
+                {"excitatory_active_neuron_percent", window.excitatory_active_neuron_percent},
+                {"inhibitory_active_neuron_percent", window.inhibitory_active_neuron_percent}
             });
         }
     }
@@ -384,6 +393,7 @@ int main(int argc, char** argv) {
         } else {
             std::uint64_t previous_excitatory_spikes = 0;
             std::uint64_t previous_inhibitory_spikes = 0;
+            auto previous_spike_counts = runtime.collect_spike_count_snapshot();
             const std::uint64_t total_steps = simulation.steps;
             std::uint64_t completed_window_steps = 0;
 
@@ -394,6 +404,9 @@ int main(int argc, char** argv) {
 
                 runtime.run_steps(window_steps);
                 const auto window_metrics = runtime.collect_metrics();
+                const auto current_spike_counts = runtime.collect_spike_count_snapshot();
+                const auto active = count_active_neurons(previous_spike_counts,
+                    current_spike_counts, simulation.excitatory_count);
 
                 const double window_duration_seconds =
                     static_cast<double>(window_steps) * simulation.dt / 1000.0;
@@ -415,10 +428,15 @@ int main(int argc, char** argv) {
                     (static_cast<double>(simulation.inhibitory_count) *
                      window_duration_seconds);
                 window.mean_voltage_snapshot_mv = window_metrics.mean_voltage_mv;
+                window.excitatory_active_neurons = active.excitatory;
+                window.inhibitory_active_neurons = active.inhibitory;
+                window.excitatory_active_neuron_percent = active.excitatory_percent;
+                window.inhibitory_active_neuron_percent = active.inhibitory_percent;
                 telemetry.push_back(window);
 
                 previous_excitatory_spikes = window_metrics.excitatory_spikes;
                 previous_inhibitory_spikes = window_metrics.inhibitory_spikes;
+                previous_spike_counts = current_spike_counts;
                 completed_window_steps += window_steps;
             }
         }
@@ -447,7 +465,11 @@ int main(int argc, char** argv) {
                           << window.end_time_ms << ") ms: E "
                           << window.excitatory_rate_hz << " Hz, I "
                           << window.inhibitory_rate_hz << " Hz, voltage snapshot "
-                          << window.mean_voltage_snapshot_mv << " mV\n";
+                          << window.mean_voltage_snapshot_mv << " mV, active E "
+                          << window.excitatory_active_neurons << " ("
+                          << window.excitatory_active_neuron_percent
+                          << "%), active I " << window.inhibitory_active_neurons
+                          << " (" << window.inhibitory_active_neuron_percent << "%)\n";
             }
         }
 

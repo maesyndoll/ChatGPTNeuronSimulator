@@ -64,6 +64,14 @@ if(BUILD_TESTING)
     add_dependencies(topology_tests check_parameter_schema)
     add_test(NAME topology_tests COMMAND topology_tests)
 
+    add_executable(active_neuron_telemetry_tests
+        tests/unit/active_neuron_telemetry_tests.cpp
+    )
+    target_include_directories(active_neuron_telemetry_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    add_test(NAME active_neuron_telemetry_tests COMMAND active_neuron_telemetry_tests)
+
     add_executable(stdp_tests tests/unit/stdp_tests.cpp)
     target_include_directories(stdp_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     add_test(NAME stdp_tests COMMAND stdp_tests)
