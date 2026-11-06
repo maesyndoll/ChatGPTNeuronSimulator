@@ -166,6 +166,9 @@ int main() {
 
         const float response_delta =
             recall.target_voltage - baseline.target_voltage;
+        require(response_delta > 1.0e-6f,
+                "Potentiated A->B connection did not measurably improve "
+                "the target response to A-only stimulation");
 
         std::cout << std::fixed << std::setprecision(7)
                   << "STDP associative-recall experiment\n"
