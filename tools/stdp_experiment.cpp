@@ -174,8 +174,20 @@ StabilityResult run_independent_activity(
         minimum_seen = std::min(minimum_seen, weight);
         maximum_seen = std::max(maximum_seen, weight);
 
-        if (weight <= kMinimumWeight + 1.0e-6f ||
-            weight >= kMaximumWeight - 1.0e-6f)
+        // Measure occupancy at the active policy's actual boundaries.
+        // Reflecting uses the original interval after mapping; the other
+        // policies use the limits supplied to the STDP update.
+        const float boundary_min =
+            boundary_policy == BoundaryPolicy::Reflecting
+                ? kMinimumWeight
+                : p.minimum_weight;
+        const float boundary_max =
+            boundary_policy == BoundaryPolicy::Reflecting
+                ? kMaximumWeight
+                : p.maximum_weight;
+
+        if (weight <= boundary_min + 1.0e-6f ||
+            weight >= boundary_max - 1.0e-6f)
             ++boundary_steps;
     }
 
