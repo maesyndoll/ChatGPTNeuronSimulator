@@ -76,6 +76,14 @@ if(BUILD_TESTING)
     target_include_directories(stdp_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     add_test(NAME stdp_tests COMMAND stdp_tests)
 
+    add_executable(stdp_weight_analysis_tests
+        tests/unit/stdp_weight_analysis_tests.cpp
+    )
+    target_include_directories(stdp_weight_analysis_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    add_test(NAME stdp_weight_analysis_tests COMMAND stdp_weight_analysis_tests)
+
     add_executable(stdp_experiment tools/stdp_experiment.cpp)
     target_include_directories(stdp_experiment PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include

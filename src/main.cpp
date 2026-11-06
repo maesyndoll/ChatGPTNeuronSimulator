@@ -3,6 +3,7 @@
 #include "ipc/parameter_json.h"
 #include "runtime/cuda_simulation_runtime.cuh"
 #include "runtime/active_neuron_telemetry.h"
+#include "runtime/stdp_weight_analysis.h"
 #include "runtime/simulation_controller.h"
 
 #include <cuda_runtime.h>
@@ -18,6 +19,7 @@
 #include <iomanip>
 #include <limits>
 #include <iostream>
+#include <cmath>
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <stdexcept>
@@ -39,6 +41,10 @@ struct CommandLineOptions {
     std::uint32_t telemetry_window_steps = 0;
     std::string voltage_trace_path;
     std::string connectivity_export_path;
+    std::string connectivity_export_after_path;
+    bool enable_stdp = false;
+    bool stdp_parameters_explicit = false;
+    spiking::StdpParameters stdp_parameters{};
     std::vector<std::uint32_t> voltage_trace_neurons;
     std::uint32_t voltage_trace_interval_steps = 1;
 };
@@ -58,6 +64,64 @@ struct WindowTelemetry {
     double excitatory_active_neuron_percent = 0.0;
     double inhibitory_active_neuron_percent = 0.0;
 };
+
+float parse_float_option(const char* value, const char* option_name) {
+    std::size_t consumed = 0;
+    const std::string text(value);
+    const float parsed = std::stof(text, &consumed);
+    if (consumed != text.size() || !std::isfinite(parsed))
+        throw std::invalid_argument(std::string(option_name) + " requires a finite number");
+    return parsed;
+}
+
+void validate_stdp_parameters(const spiking::StdpParameters& p) {
+    if (!std::isfinite(p.potentiation_rate) || p.potentiation_rate < 0.0f ||
+        !std::isfinite(p.depression_rate) || p.depression_rate < 0.0f ||
+        !std::isfinite(p.presynaptic_tau_ms) || p.presynaptic_tau_ms <= 0.0f ||
+        !std::isfinite(p.postsynaptic_tau_ms) || p.postsynaptic_tau_ms <= 0.0f ||
+        !std::isfinite(p.minimum_weight) || p.minimum_weight <= 0.0f ||
+        !std::isfinite(p.maximum_weight) ||
+        p.maximum_weight < p.minimum_weight)
+        throw std::invalid_argument("Invalid STDP parameters");
+}
+
+StdpWeightSummary summarize_stdp_weight_changes(
+    const spiking::CSRTopology& before,
+    const spiking::CSRTopology& after) {
+    if (before.excitatory_count != after.excitatory_count ||
+        before.inhibitory_count != after.inhibitory_count ||
+        before.row_offsets != after.row_offsets ||
+        before.target_indices != after.target_indices ||
+        before.weights.size() != after.weights.size())
+        throw std::runtime_error("Connectivity structure changed during STDP training");
+
+    StdpWeightSummary summary;
+    double initial_sum = 0.0;
+    double final_sum = 0.0;
+    double absolute_change_sum = 0.0;
+    for (std::uint32_t source = 0; source < before.excitatory_count; ++source) {
+        for (std::uint32_t edge = before.row_offsets[source];
+             edge < before.row_offsets[source + 1]; ++edge) {
+            const double initial = before.weights[edge];
+            const double final = after.weights[edge];
+            const double change = std::abs(final - initial);
+            ++summary.plastic_synapses;
+            initial_sum += initial;
+            final_sum += final;
+            absolute_change_sum += change;
+            summary.maximum_absolute_change =
+                std::max(summary.maximum_absolute_change, change);
+            if (final != initial) ++summary.changed_synapses;
+        }
+    }
+    if (summary.plastic_synapses != 0) {
+        const double count = static_cast<double>(summary.plastic_synapses);
+        summary.mean_initial_weight = initial_sum / count;
+        summary.mean_final_weight = final_sum / count;
+        summary.mean_absolute_change = absolute_change_sum / count;
+    }
+    return summary;
+}
 
 CommandLineOptions parse_arguments(int argc, char** argv) {
     CommandLineOptions options;
@@ -87,10 +151,40 @@ CommandLineOptions parse_arguments(int argc, char** argv) {
                 value > std::numeric_limits<std::uint32_t>::max())
                 throw std::invalid_argument("--telemetry-window-steps must be a positive 32-bit integer");
             options.telemetry_window_steps = static_cast<std::uint32_t>(value);
+        } else if (arg == "--enable-stdp") {
+            options.enable_stdp = true;
+        } else if (arg == "--stdp-a-plus") {
+            if (++i >= argc) throw std::invalid_argument("--stdp-a-plus requires a number");
+            options.stdp_parameters.potentiation_rate = parse_float_option(argv[i], "--stdp-a-plus");
+            options.stdp_parameters_explicit = true;
+        } else if (arg == "--stdp-a-minus") {
+            if (++i >= argc) throw std::invalid_argument("--stdp-a-minus requires a number");
+            options.stdp_parameters.depression_rate = parse_float_option(argv[i], "--stdp-a-minus");
+            options.stdp_parameters_explicit = true;
+        } else if (arg == "--stdp-tau-pre-ms") {
+            if (++i >= argc) throw std::invalid_argument("--stdp-tau-pre-ms requires a number");
+            options.stdp_parameters.presynaptic_tau_ms = parse_float_option(argv[i], "--stdp-tau-pre-ms");
+            options.stdp_parameters_explicit = true;
+        } else if (arg == "--stdp-tau-post-ms") {
+            if (++i >= argc) throw std::invalid_argument("--stdp-tau-post-ms requires a number");
+            options.stdp_parameters.postsynaptic_tau_ms = parse_float_option(argv[i], "--stdp-tau-post-ms");
+            options.stdp_parameters_explicit = true;
+        } else if (arg == "--stdp-min-weight") {
+            if (++i >= argc) throw std::invalid_argument("--stdp-min-weight requires a number");
+            options.stdp_parameters.minimum_weight = parse_float_option(argv[i], "--stdp-min-weight");
+            options.stdp_parameters_explicit = true;
+        } else if (arg == "--stdp-max-weight") {
+            if (++i >= argc) throw std::invalid_argument("--stdp-max-weight requires a number");
+            options.stdp_parameters.maximum_weight = parse_float_option(argv[i], "--stdp-max-weight");
+            options.stdp_parameters_explicit = true;
         } else if (arg == "--connectivity-export") {
             if (++i >= argc)
                 throw std::invalid_argument("--connectivity-export requires a CSV file path");
             options.connectivity_export_path = argv[i];
+        } else if (arg == "--connectivity-export-after") {
+            if (++i >= argc)
+                throw std::invalid_argument("--connectivity-export-after requires a CSV file path");
+            options.connectivity_export_after_path = argv[i];
         } else if (arg == "--voltage-trace") {
             if (++i >= argc)
                 throw std::invalid_argument("--voltage-trace requires a CSV file path");
@@ -128,7 +222,7 @@ CommandLineOptions parse_arguments(int argc, char** argv) {
                 throw std::invalid_argument("--device must be a non-negative integer");
         } else if (arg == "--help" || arg == "-h") {
             std::cout
-                << "Usage: spiking_model [--config FILE] [--small] [--device N] [--log FILE] [--no-log] [--connectivity-export FILE] [--telemetry-window-steps N] [--voltage-trace FILE --voltage-trace-neuron ID ...] [--voltage-trace-interval N]\n"
+                << "Usage: spiking_model [--config FILE] [--small] [--device N] [--log FILE] [--no-log] [--enable-stdp] [--stdp-a-plus X] [--stdp-a-minus X] [--stdp-tau-pre-ms X] [--stdp-tau-post-ms X] [--stdp-min-weight X] [--stdp-max-weight X] [--connectivity-export FILE] [--connectivity-export-after FILE] [--telemetry-window-steps N] [--voltage-trace FILE --voltage-trace-neuron ID ...] [--voltage-trace-interval N]\n"
                 << "       spiking_model --server [--socket PATH] [--config FILE] [--small] [--device N]\n";
             std::exit(0);
         } else {
@@ -146,6 +240,17 @@ CommandLineOptions parse_arguments(int argc, char** argv) {
         throw std::invalid_argument("--voltage-trace and --telemetry-window-steps cannot be combined yet");
     if (options.server && !options.connectivity_export_path.empty())
         throw std::invalid_argument("--connectivity-export is not available in server mode");
+    if (options.server && !options.connectivity_export_after_path.empty())
+        throw std::invalid_argument("--connectivity-export-after is not available in server mode");
+    if (options.server && options.enable_stdp)
+        throw std::invalid_argument("--enable-stdp is currently available only in standalone mode");
+    if (options.stdp_parameters_explicit && !options.enable_stdp)
+        throw std::invalid_argument("STDP parameter overrides require --enable-stdp");
+    if (options.enable_stdp)
+        validate_stdp_parameters(options.stdp_parameters);
+    if (!options.connectivity_export_path.empty() &&
+        options.connectivity_export_path == options.connectivity_export_after_path)
+        throw std::invalid_argument("before/after connectivity exports must use different paths");
     if (options.server && !options.voltage_trace_path.empty())
         throw std::invalid_argument("--voltage-trace is not available in server mode");
 
@@ -224,7 +329,10 @@ void append_experiment_record(
     int device_id,
     double elapsed_seconds,
     const std::string& config_path,
-    const std::vector<WindowTelemetry>& telemetry
+    const std::vector<WindowTelemetry>& telemetry,
+    bool stdp_enabled,
+    const spiking::StdpParameters& stdp_parameters,
+    const spiking::StdpWeightSummary* stdp_weight_summary
 ) {
     namespace fs = std::filesystem;
     const fs::path log_path(path);
@@ -256,6 +364,26 @@ void append_experiment_record(
             {"wall_time_seconds", elapsed_seconds}
         }}
     };
+
+    record["results"]["stdp"] = {
+        {"enabled", stdp_enabled},
+        {"potentiation_rate", stdp_parameters.potentiation_rate},
+        {"depression_rate", stdp_parameters.depression_rate},
+        {"presynaptic_tau_ms", stdp_parameters.presynaptic_tau_ms},
+        {"postsynaptic_tau_ms", stdp_parameters.postsynaptic_tau_ms},
+        {"minimum_weight", stdp_parameters.minimum_weight},
+        {"maximum_weight", stdp_parameters.maximum_weight}
+    };
+    if (stdp_weight_summary != nullptr) {
+        record["results"]["stdp"]["weight_changes"] = {
+            {"plastic_synapses", stdp_weight_summary->plastic_synapses},
+            {"changed_synapses", stdp_weight_summary->changed_synapses},
+            {"mean_initial_weight", stdp_weight_summary->mean_initial_weight},
+            {"mean_final_weight", stdp_weight_summary->mean_final_weight},
+            {"mean_absolute_change", stdp_weight_summary->mean_absolute_change},
+            {"maximum_absolute_change", stdp_weight_summary->maximum_absolute_change}
+        };
+    }
 
     if (!telemetry.empty()) {
         record["results"]["time_resolved_telemetry"] = nlohmann::json::array();
@@ -327,7 +455,9 @@ int main(int argc, char** argv) {
             }
         }
 
-        CudaSimulationRuntime runtime(parameters, options.device);
+        CudaSimulationRuntime runtime(
+            parameters, options.device, true, options.enable_stdp,
+            options.stdp_parameters);
         cudaDeviceProp properties{};
         SPIKING_CUDA_CHECK(cudaGetDeviceProperties(&properties, runtime.device_id()));
 
@@ -344,13 +474,28 @@ int main(int argc, char** argv) {
             std::cout << "Configuration: " << options.config_path << '\n';
         std::cout << "Neuron seed: " << simulation.random_seed << '\n'
                   << "Topology seed: " << parameters.topology.topology_seed << '\n'
-                  << "Delay seed: " << parameters.topology.delay_seed << '\n';
+                  << "Delay seed: " << parameters.topology.delay_seed << '\n'
+                  << "STDP: " << (options.enable_stdp ? "ENABLED" : "disabled") << '\n';
+        if (options.enable_stdp) {
+            std::cout << "STDP A+: " << options.stdp_parameters.potentiation_rate
+                      << ", A-: " << options.stdp_parameters.depression_rate
+                      << ", tau_pre: " << options.stdp_parameters.presynaptic_tau_ms
+                      << " ms, tau_post: " << options.stdp_parameters.postsynaptic_tau_ms
+                      << " ms, weight bounds: [" << options.stdp_parameters.minimum_weight
+                      << ", " << options.stdp_parameters.maximum_weight << "]\n";
+        }
 
+        CSRTopology initial_topology;
+        bool have_initial_topology = false;
+        if (options.enable_stdp || !options.connectivity_export_path.empty()) {
+            initial_topology = runtime.collect_connectivity();
+            have_initial_topology = true;
+        }
         if (!options.connectivity_export_path.empty()) {
-            const auto topology = runtime.collect_connectivity();
-            write_connectivity_csv(options.connectivity_export_path, topology);
-            std::cout << "Connectivity export: " << options.connectivity_export_path
-                      << " (" << topology.synapse_count() << " synapses)\n";
+            write_connectivity_csv(options.connectivity_export_path, initial_topology);
+            std::cout << "Initial connectivity export: "
+                      << options.connectivity_export_path
+                      << " (" << initial_topology.synapse_count() << " synapses)\n";
         }
 
         const auto start = std::chrono::steady_clock::now();
@@ -441,6 +586,29 @@ int main(int argc, char** argv) {
             }
         }
 
+        spiking::StdpWeightSummary stdp_weight_summary;
+        bool have_stdp_weight_summary = false;
+        if (options.enable_stdp || !options.connectivity_export_after_path.empty()) {
+            const auto final_topology = runtime.collect_connectivity();
+            if (options.enable_stdp && have_initial_topology) {
+                stdp_weight_summary =
+                    summarize_stdp_weight_changes(initial_topology, final_topology);
+                have_stdp_weight_summary = true;
+                std::cout << "STDP weight changes: "
+                          << stdp_weight_summary.changed_synapses << " / "
+                          << stdp_weight_summary.plastic_synapses
+                          << " excitatory synapses changed; mean |delta w| "
+                          << stdp_weight_summary.mean_absolute_change
+                          << ", max |delta w| "
+                          << stdp_weight_summary.maximum_absolute_change << '\n';
+            }
+            if (!options.connectivity_export_after_path.empty()) {
+                write_connectivity_csv(options.connectivity_export_after_path, final_topology);
+                std::cout << "Final connectivity export: "
+                          << options.connectivity_export_after_path << '\n';
+            }
+        }
+
         const auto metrics = runtime.collect_metrics();
         const double elapsed_seconds = std::chrono::duration<double>(
             std::chrono::steady_clock::now() - start).count();
@@ -476,7 +644,9 @@ int main(int argc, char** argv) {
         if (options.log_results) {
             append_experiment_record(options.log_path, parameters, metrics, properties,
                                      runtime.device_id(), elapsed_seconds, options.config_path,
-                                     telemetry);
+                                     telemetry, options.enable_stdp,
+                                     options.stdp_parameters,
+                                     have_stdp_weight_summary ? &stdp_weight_summary : nullptr);
             std::cout << "Experiment log: " << options.log_path << '\n';
         }
         return metrics.finite_state ? 0 : 2;
