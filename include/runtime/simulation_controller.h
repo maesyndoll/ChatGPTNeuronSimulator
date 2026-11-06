@@ -3,6 +3,7 @@
 #include "runtime/cuda_simulation_runtime.cuh"
 #include "topology/topology_io.h"
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -32,6 +33,13 @@ enum class ControllerStatus {
 struct TelemetrySnapshot {
     SimulationMetrics metrics;
     std::uint64_t sequence = 0;
+};
+
+struct ExternalStimulus {
+    std::uint32_t neuron_id = 0;
+    std::uint64_t start_step = 0;
+    std::uint32_t duration_steps = 0;
+    float amplitude = 0.0f;
 };
 
 struct SequencedSpikeEvent {
@@ -85,6 +93,8 @@ public:
                            std::uint64_t start_step,
                            std::uint32_t duration_steps,
                            float amplitude);
+    // Submit a complete training pattern in one worker-thread round trip.
+    void schedule_stimuli(const std::vector<ExternalStimulus>& stimuli);
     void clear_stimuli();
     CSRTopology connectivity_snapshot() const;
     std::vector<VoltageSample> collect_voltage_samples(
@@ -179,7 +189,8 @@ private:
     std::thread worker_;
 
     ControllerStatus status_ = ControllerStatus::Ready;
-    std::uint64_t observed_completed_steps_ = 0;
+    std::atomic<std::uint64_t> observed_completed_steps_{0};
+    static constexpr std::uint32_t kProgressNotificationBatches = 10;
     TelemetrySnapshot telemetry_;
     std::deque<SequencedSpikeEvent> spike_events_;
     std::uint64_t spike_event_total_events_ = 0;
