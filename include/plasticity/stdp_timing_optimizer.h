@@ -50,7 +50,8 @@ inline StdpTimingPrediction predict_periodic_stdp_pair(
     const double ap = p.potentiation_rate;
     const double am = p.depression_rate;
     const double distance = std::abs(lag_ms);
-    const bool causal = lag_ms >= 0.0;
+    if (distance == 0.0) return {};
+    const bool causal = lag_ms > 0.0;
 
     const double pre_decay = std::exp(-interval_ms / tp);
     const double post_decay = std::exp(-interval_ms / tm);
@@ -222,7 +223,7 @@ inline StdpFitResult fit_stdp_timing_curve(
     }
 
     result.final_loss = current_loss;
-    if (current_loss < 1.0e-16) result.converged = true;
+    if (current_loss < 1.0e-12) result.converged = true;
     return result;
 }
 
