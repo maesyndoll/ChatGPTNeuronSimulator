@@ -306,9 +306,16 @@ int main(int argc, char** argv) {
             plastic.trained_ab > plastic.initial_ab + 0.1 &&
             plastic.trained_ab > plastic.final_cd * 2.0;
         const bool spike_recall = plastic.recall.b_spikes > 0;
-        const bool selective_voltage =
-            plastic.recall.b_voltage - plastic.baseline.b_voltage >
-            plastic.recall.d_voltage - plastic.baseline.d_voltage + 0.5;
+        // Voltage is sampled after the recall window. Spiking neurons have
+        // already reset and entered recovery, so post-window voltage can be
+        // lower despite a successful response. Compare evoked spike counts.
+        const auto b_evoked_spikes =
+            plastic.recall.b_spikes - plastic.baseline.b_spikes;
+        const auto d_evoked_spikes =
+            plastic.recall.d_spikes - plastic.baseline.d_spikes;
+        const bool selective_spiking_response =
+            b_evoked_spikes > d_evoked_spikes &&
+            plastic.recall.d_spikes == plastic.baseline.d_spikes;
         const bool control_unchanged =
             std::abs(control.final_ab - control.initial_ab) < 1.0e-5;
         const bool stable = plastic.finite_state && control.finite_state;
@@ -346,7 +353,7 @@ int main(int argc, char** argv) {
                   << "Finite state: " << (stable ? "PASS" : "FAIL") << '\n'
                   << "CSV: " << output_path << '\n';
 
-        return selective_weight_change && spike_recall && selective_voltage &&
+        return selective_weight_change && spike_recall && selective_spiking_response &&
                control_unchanged && control.recall.b_spikes == 0 && stable
             ? 0 : 2;
     } catch (const std::exception& error) {
