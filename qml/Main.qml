@@ -20,17 +20,35 @@ ApplicationWindow {
     palette.highlight: "#54b8a5"
 
     property bool parameterDraftInitialized: false
+    property string visualGeneration: "—"
+    property double visualLastSequence: 0
 
 
     Connections {
         target: simulation
 
-        function onTelemetryChanged() {
-            telemetryTrendChart.requestPaint()
+        function onTopologyVisualChanged() {
+            topologyCanvas.requestPaint()
         }
 
         function onSpikeEventsChanged() {
-            spikeRaster.requestPaint()
+            var generation = simulation.spikeEventsGeneration
+            if (window.visualGeneration !== generation) {
+                window.visualGeneration = generation
+                window.visualLastSequence = 0
+                topologyCanvas.activeNeuronTimes = ({})
+            }
+            var events = simulation.spikeEvents
+            var active = Object.assign({}, topologyCanvas.activeNeuronTimes)
+            var now = Date.now()
+            for (var i = 0; i < events.length; ++i) {
+                var sequence = Number(events[i].sequence)
+                if (sequence <= window.visualLastSequence) continue
+                window.visualLastSequence = sequence
+                active[String(events[i].neuron_id)] = now
+            }
+            topologyCanvas.activeNeuronTimes = active
+            topologyCanvas.requestPaint()
         }
 
         function onConfigurationChanged() {
@@ -52,6 +70,25 @@ ApplicationWindow {
             pEiField.text = String(topologyParameters["p_ei"] ?? "")
 
             window.parameterDraftInitialized = true
+        }
+    }
+
+    Timer {
+        interval: 50
+        repeat: true
+        running: simulation.connected
+        onTriggered: {
+            var active = Object.assign({}, topologyCanvas.activeNeuronTimes)
+            var now = Date.now()
+            var changed = false
+            for (var id in active) {
+                if (now - active[id] > 520) {
+                    delete active[id]
+                    changed = true
+                }
+            }
+            if (changed) topologyCanvas.activeNeuronTimes = active
+            topologyCanvas.requestPaint()
         }
     }
 
@@ -596,13 +633,12 @@ ApplicationWindow {
 
         Rectangle {
             Layout.fillWidth: true
-            radius: 12
-            color: "#192433"
-            border.color: "#2b3a4d"
-            implicitHeight: connectomeColumn.implicitHeight + 28
+            Layout.preferredHeight: 510
+            radius: 14
+            color: "#0c1420"
+            border.color: "#26384b"
 
             ColumnLayout {
-                id: connectomeColumn
                 anchors.fill: parent
                 anchors.margins: 14
                 spacing: 8
@@ -610,292 +646,145 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     Label {
-                        text: "CSR connectome"
-                        color: "#f0f4fa"
-                        font.pixelSize: 17
-                        font.bold: true
-                    }
-                    Item { Layout.fillWidth: true }
-                    Button {
-                        text: "Refresh graph analysis"
-                        enabled: simulation.connected
-                        onClicked: simulation.refreshConnectivity()
-                    }
-                }
-
-                Label {
-                    Layout.fillWidth: true
-                    color: "#91a2b8"
-                    wrapMode: Text.Wrap
-                    text: "Statistics are calculated from the active GPU-resident CSR graph, " +
-                          "not inferred from the requested connection probabilities."
-                }
-
-                GridLayout {
-                    Layout.fillWidth: true
-                    columns: 3
-                    columnSpacing: 18
-                    rowSpacing: 8
-                    Label { text: "Neurons: " + (simulation.connectivityStatistics.neuron_count ?? "—"); color: "#dce6f2" }
-                    Label { text: "Synapses: " + (simulation.connectivityStatistics.synapse_count ?? "—"); color: "#dce6f2" }
-                    Label { text: "Density: " + (simulation.connectivityStatistics.density === undefined ? "—" : (Number(simulation.connectivityStatistics.density) * 100).toFixed(3) + "%"); color: "#dce6f2" }
-                    Label { text: "E → E: " + (simulation.connectivityStatistics.population_edges?.excitatory_to_excitatory ?? "—"); color: "#8fc9ed" }
-                    Label { text: "E → I: " + (simulation.connectivityStatistics.population_edges?.excitatory_to_inhibitory ?? "—"); color: "#8fc9ed" }
-                    Label { text: "I → E: " + (simulation.connectivityStatistics.population_edges?.inhibitory_to_excitatory ?? "—"); color: "#e6b66b" }
-                    Label { text: "I → I: " + (simulation.connectivityStatistics.population_edges?.inhibitory_to_inhibitory ?? "—"); color: "#e6b66b" }
-                    Label { text: "Mean out-degree: " + (simulation.connectivityStatistics.outgoing_degree?.mean === undefined ? "—" : Number(simulation.connectivityStatistics.outgoing_degree.mean).toFixed(2)); color: "#dce6f2" }
-                    Label { text: "Mean in-degree: " + (simulation.connectivityStatistics.incoming_degree?.mean === undefined ? "—" : Number(simulation.connectivityStatistics.incoming_degree.mean).toFixed(2)); color: "#dce6f2" }
-                }
-            }
-        }
-
-        Rectangle {
-            Layout.fillWidth: true
-            radius: 12
-            color: "#192433"
-            border.color: "#2b3a4d"
-            implicitHeight: spikeRasterColumn.implicitHeight + 28
-
-            ColumnLayout {
-                id: spikeRasterColumn
-                anchors.fill: parent
-                anchors.margins: 14
-                spacing: 8
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    Label {
-                        text: "Live spike raster"
-                        color: "#f0f4fa"
-                        font.pixelSize: 17
+                        text: "Live CSR neural activity"
+                        color: "#edf5ff"
+                        font.pixelSize: 18
                         font.bold: true
                     }
                     Item { Layout.fillWidth: true }
                     Label {
-                        text: simulation.spikeEventCount + " total · " +
-                              simulation.spikeEvents.length + " retained · " +
-                              simulation.spikeEventsDropped + " dropped"
+                        text: simulation.topologyVisual.sampled_neuron_count === undefined
+                              ? "Waiting for topology…" :
+                                simulation.topologyVisual.sampled_neuron_count +
+                                " neurons · " +
+                                simulation.topologyVisual.sampled_edge_count +
+                                " sampled connections"
                         color: "#91a2b8"
                         font.pixelSize: 11
                     }
                 }
 
                 Canvas {
-                    id: spikeRaster
+                    id: topologyCanvas
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 250
+                    Layout.fillHeight: true
                     contextType: "2d"
+
+                    property var activeNeuronTimes: ({})
 
                     onPaint: {
                         var ctx = getContext("2d")
                         ctx.clearRect(0, 0, width, height)
-                        ctx.fillStyle = "#121c29"
+                        ctx.fillStyle = "#0a111b"
                         ctx.fillRect(0, 0, width, height)
 
-                        var events = simulation.spikeEvents
-                        var parameters = simulation.activeParameters["simulation"] || {}
-                        var excitatoryCount = Number(parameters["excitatory_count"] || 0)
-                        var neuronCount = excitatoryCount +
-                                          Number(parameters["inhibitory_count"] || 0)
-                        var firstStep = Number.POSITIVE_INFINITY
-                        var lastStep = 0
-
-                        for (var i = 0; i < events.length; ++i) {
-                            var eventStep = Number(events[i].step)
-                            firstStep = Math.min(firstStep, eventStep)
-                            lastStep = Math.max(lastStep, eventStep)
-                            neuronCount = Math.max(neuronCount,
-                                Number(events[i].neuron_id) + 1)
+                        var graph = simulation.topologyVisual
+                        var ids = graph.neuron_ids || []
+                        var edges = graph.edges || []
+                        var excitatoryCount = Number(graph.excitatory_count || 0)
+                        var positions = ({})
+                        var eIndex = 0
+                        var iIndex = 0
+                        var eTotal = 0
+                        var iTotal = 0
+                        for (var n = 0; n < ids.length; ++n) {
+                            if (Number(ids[n]) < excitatoryCount) eTotal++
+                            else iTotal++
                         }
 
-                        var left = 46
-                        var right = width - 12
-                        var top = 12
-                        var bottom = height - 25
-                        var plotWidth = Math.max(1, right - left)
-                        var plotHeight = Math.max(1, bottom - top)
-
-                        ctx.strokeStyle = "#34465c"
-                        ctx.lineWidth = 1
-                        ctx.beginPath()
-                        ctx.moveTo(left, top)
-                        ctx.lineTo(left, bottom)
-                        ctx.lineTo(right, bottom)
-                        ctx.stroke()
-
-                        ctx.fillStyle = "#91a2b8"
-                        ctx.font = "10px sans-serif"
-                        ctx.fillText("Neuron", 5, 12)
-                        ctx.fillText("0", 26, bottom + 3)
-                        ctx.fillText(String(Math.max(0, neuronCount - 1)), 2, top + 4)
-                        ctx.fillText("Simulation step", right - 88, height - 5)
-
-                        if (events.length === 0 || !isFinite(firstStep)) {
-                            ctx.fillText("Waiting for spike events…", left + 12,
-                                         top + plotHeight / 2)
-                            return
+                        var goldenAngle = 2.399963229728653
+                        for (var p = 0; p < ids.length; ++p) {
+                            var id = Number(ids[p])
+                            var isExcitatory = id < excitatoryCount
+                            var index = isExcitatory ? eIndex++ : iIndex++
+                            var total = isExcitatory ? eTotal : iTotal
+                            var radius = Math.sqrt((index + 0.5) / Math.max(1, total))
+                            var angle = index * goldenAngle
+                            var centerX = isExcitatory ? width * 0.34 : width * 0.76
+                            var spreadX = isExcitatory ? width * 0.265 : width * 0.17
+                            var spreadY = height * 0.39
+                            positions[id] = {
+                                x: centerX + Math.cos(angle) * radius * spreadX,
+                                y: height * 0.51 + Math.sin(angle) * radius * spreadY
+                            }
                         }
 
-                        var stepSpan = Math.max(1, lastStep - firstStep)
-                        var neuronSpan = Math.max(1, neuronCount - 1)
-                        for (var j = 0; j < events.length; ++j) {
-                            var spike = events[j]
-                            var x = left + ((Number(spike.step) - firstStep) /
-                                            stepSpan) * plotWidth
-                            var neuronId = Number(spike.neuron_id)
-                            var y = bottom - (neuronId / neuronSpan) * plotHeight
-                            ctx.fillStyle = neuronId < excitatoryCount
-                                            ? "#65b9ed" : "#e6b66b"
-                            ctx.fillRect(x, y, 2, 2)
+                        // Draw the sampled, real CSR edges first. Weight controls
+                        // opacity; active presynaptic neurons illuminate outgoing edges.
+                        for (var e = 0; e < edges.length; ++e) {
+                            var edge = edges[e]
+                            var from = positions[Number(edge.source)]
+                            var to = positions[Number(edge.target)]
+                            if (from === undefined || to === undefined) continue
+                            var weight = Number(edge.weight)
+                            var active = activeNeuronTimes[String(edge.source)] !== undefined &&
+                                Date.now() - activeNeuronTimes[String(edge.source)] < 520
+                            var strength = Math.min(1, Math.abs(weight) / 0.5)
+                            ctx.beginPath()
+                            ctx.moveTo(from.x, from.y)
+                            ctx.lineTo(to.x, to.y)
+                            ctx.lineWidth = active ? 1.45 : 0.55
+                            if (active)
+                                ctx.strokeStyle = "rgba(112,245,201," +
+                                                  (0.42 + strength * 0.5) + ")"
+                            else if (weight >= 0)
+                                ctx.strokeStyle = "rgba(79,163,222," +
+                                                  (0.08 + strength * 0.38) + ")"
+                            else
+                                ctx.strokeStyle = "rgba(226,164,83," +
+                                                  (0.12 + strength * 0.48) + ")"
+                            ctx.stroke()
                         }
 
-                        ctx.fillStyle = "#71839a"
-                        ctx.fillText("Step " + firstStep, left, height - 5)
-                        ctx.textAlign = "right"
-                        ctx.fillText("Step " + lastStep, right, height - 5)
-                        ctx.textAlign = "left"
+                        // Neurons flash briefly when their spike event arrives.
+                        for (var v = 0; v < ids.length; ++v) {
+                            var neuronId = Number(ids[v])
+                            var point = positions[neuronId]
+                            var lastSpike = activeNeuronTimes[String(neuronId)]
+                            var age = lastSpike === undefined ? 9999 : Date.now() - lastSpike
+                            var isHot = age < 520
+                            var alpha = isHot ? Math.max(0, 1 - age / 520) : 0
+                            ctx.beginPath()
+                            ctx.arc(point.x, point.y, isHot ? 3.2 + alpha * 3.4 : 2.15,
+                                    0, Math.PI * 2)
+                            ctx.fillStyle = isHot
+                                ? "rgba(226,255,247," + (0.75 + alpha * 0.25) + ")"
+                                : (neuronId < excitatoryCount ? "#58aee5" : "#e4ad61")
+                            ctx.fill()
+                            if (isHot) {
+                                ctx.beginPath()
+                                ctx.arc(point.x, point.y, 7 + alpha * 8, 0, Math.PI * 2)
+                                ctx.strokeStyle = "rgba(105,239,198," + (alpha * 0.65) + ")"
+                                ctx.lineWidth = 1.2
+                                ctx.stroke()
+                            }
+                        }
+
+                        ctx.font = "11px sans-serif"
+                        ctx.fillStyle = "#8fa4bb"
+                        ctx.fillText("EXCITATORY", width * 0.25, height - 7)
+                        ctx.fillText("INHIBITORY", width * 0.70, height - 7)
+                        if (ids.length === 0) {
+                            ctx.fillStyle = "#91a2b8"
+                            ctx.fillText("Waiting for sampled CSR topology…", 18, height / 2)
+                        }
                     }
                 }
 
                 RowLayout {
+                    Layout.fillWidth: true
                     spacing: 16
-                    Label { text: "● Excitatory"; color: "#65b9ed"; font.pixelSize: 11 }
-                    Label { text: "● Inhibitory"; color: "#e6b66b"; font.pixelSize: 11 }
+                    Label { text: "● Excitatory"; color: "#58aee5"; font.pixelSize: 11 }
+                    Label { text: "● Inhibitory"; color: "#e4ad61"; font.pixelSize: 11 }
+                    Label { text: "━ STDP-strengthened / positive"; color: "#65b8e9"; font.pixelSize: 11 }
+                    Label { text: "━ Inhibitory"; color: "#e4ad61"; font.pixelSize: 11 }
                     Item { Layout.fillWidth: true }
                     Label {
-                        text: "Time →   Neuron ID ↑"
+                        text: simulation.topologyVisual.synapse_count === undefined
+                              ? "" : "Full graph: " + simulation.topologyVisual.synapse_count +
+                                    " synapses"
                         color: "#71839a"
-                        font.pixelSize: 11
-                    }
-                }
-            }
-        }
-
-        Label {
-            text: "Live telemetry"
-            color: "#f0f4fa"
-            font.pixelSize: 19
-            font.bold: true
-        }
-
-        Rectangle {
-            Layout.fillWidth: true
-            radius: 12
-            color: "#192433"
-            border.color: "#2b3a4d"
-            implicitHeight: telemetryChartColumn.implicitHeight + 28
-
-            ColumnLayout {
-                id: telemetryChartColumn
-                anchors.fill: parent
-                anchors.margins: 14
-                spacing: 8
-
-                Label {
-                    text: "Telemetry trends · last 120 samples"
-                    color: "#dce6f2"
-                    font.pixelSize: 14
-                    font.bold: true
-                }
-
-                Canvas {
-                    id: telemetryTrendChart
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 218
-                    contextType: "2d"
-
-                    onPaint: {
-                        var ctx = getContext("2d")
-                        ctx.clearRect(0, 0, width, height)
-
-                        var history = simulation.telemetryHistory
-                        var series = [
-                            { key: "mean_voltage_mv", label: "Mean voltage (mV)", color: "#63b3ed" },
-                            { key: "excitatory_rate_hz", label: "Excitatory rate (Hz)", color: "#70d6a5" },
-                            { key: "inhibitory_rate_hz", label: "Inhibitory rate (Hz)", color: "#e6b66b" }
-                        ]
-
-                        var left = 126
-                        var right = width - 12
-                        var plotWidth = Math.max(1, right - left)
-                        var laneHeight = 68
-
-                        for (var s = 0; s < series.length; ++s) {
-                            var top = s * 72 + 3
-                            var bottom = top + laneHeight - 12
-                            var values = []
-                            var minValue = Number.POSITIVE_INFINITY
-                            var maxValue = Number.NEGATIVE_INFINITY
-
-                            for (var j = 0; j < history.length; ++j) {
-                                var value = Number(history[j][series[s].key])
-                                values.push(value)
-                                minValue = Math.min(minValue, value)
-                                maxValue = Math.max(maxValue, value)
-                            }
-
-                            ctx.strokeStyle = "#34465c"
-                            ctx.lineWidth = 1
-                            ctx.beginPath()
-                            ctx.moveTo(left, bottom)
-                            ctx.lineTo(right, bottom)
-                            ctx.stroke()
-
-                            ctx.fillStyle = series[s].color
-                            ctx.font = "11px sans-serif"
-                            ctx.fillText(series[s].label, 4, top + 24)
-
-                            if (values.length === 0)
-                                continue
-
-                            var span = maxValue - minValue
-                            if (!isFinite(span) || span < 0.000001) {
-                                var pad = Math.max(1, Math.abs(maxValue) * 0.05)
-                                minValue -= pad
-                                maxValue += pad
-                                span = maxValue - minValue
-                            }
-
-                            ctx.strokeStyle = series[s].color
-                            ctx.lineWidth = 2
-                            ctx.beginPath()
-
-                            for (var k = 0; k < values.length; ++k) {
-                                var x = left + (values.length === 1 ? plotWidth / 2 :
-                                    (k / (values.length - 1)) * plotWidth)
-                                var y = bottom - ((values[k] - minValue) / span) *
-                                    (laneHeight - 25)
-                                if (k === 0)
-                                    ctx.moveTo(x, y)
-                                else
-                                    ctx.lineTo(x, y)
-                            }
-                            ctx.stroke()
-
-                            if (values.length === 1) {
-                                var onlyX = left + plotWidth / 2
-                                var onlyY = bottom - ((values[0] - minValue) / span) *
-                                    (laneHeight - 25)
-                                ctx.fillStyle = series[s].color
-                                ctx.beginPath()
-                                ctx.arc(onlyX, onlyY, 3, 0, Math.PI * 2)
-                                ctx.fill()
-                            }
-                        }
-
-                        if (history.length === 0) {
-                            ctx.fillStyle = "#91a2b8"
-                            ctx.font = "12px sans-serif"
-                            ctx.fillText("Waiting for telemetry samples…", left + 8, 112)
-                        } else {
-                            ctx.fillStyle = "#71839a"
-                            ctx.font = "10px sans-serif"
-                            ctx.fillText("Step " + history[0].completed_steps, left, height - 2)
-                            ctx.textAlign = "right"
-                            ctx.fillText("Step " +
-                                history[history.length - 1].completed_steps, right, height - 2)
-                            ctx.textAlign = "left"
-                        }
+                        font.pixelSize: 10
                     }
                 }
             }
