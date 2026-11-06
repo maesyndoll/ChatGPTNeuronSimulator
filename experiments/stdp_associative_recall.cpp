@@ -16,7 +16,7 @@ using namespace spiking;
 constexpr std::uint32_t kSource = 0;
 constexpr std::uint32_t kTarget = 1;
 constexpr std::uint32_t kTrainingPairs = 20;
-constexpr std::uint32_t kPairIntervalSteps = 100;
+constexpr std::uint32_t kPairIntervalSteps = 1000;
 constexpr std::uint32_t kObservationSteps = 5;
 constexpr float kPulseAmplitude = 20.0f;
 
@@ -125,7 +125,7 @@ int main() {
         if (baseline.source_spikes == 0)
             throw std::runtime_error("Baseline A-only pulse produced no A spike");
 
-        // Five time constants at dt=0.1 ms, advanced without graph capture.
+        // Allow five STDP time constants at dt=0.1 ms, advanced without graph capture.
         advance_in_small_chunks(controller, 1000);
 
         const auto training_first_sequence =
@@ -143,8 +143,9 @@ int main() {
                 kTarget, target_step, 1, kPulseAmplitude);
             controller.step(3);
 
-            // Complete a 100-step inter-pair interval. The remaining gap
-            // allows traces to evolve naturally while preserving weights.
+            // Complete a 1000-step (100 ms) inter-pair interval. This gives
+            // regular-spiking neurons time to recover after each forced spike,
+            // while STDP traces still evolve naturally.
             advance_in_small_chunks(controller, kPairIntervalSteps - 6);
         }
 
