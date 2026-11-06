@@ -26,9 +26,6 @@ SimulationBridge::SimulationBridge(QObject* parent)
             QStringLiteral("Connected; subscribing to telemetry and spike events"));
         client_.sendRequest(QStringLiteral("subscribe_telemetry"));
         refreshConfiguration();
-        // Fetch graph statistics on demand from the exact active CSR graph.
-        // The transfer is intentionally separate from high-rate telemetry.
-        refreshConnectivity();
         // The server's spike subscription starts with a recent bounded
         // snapshot; do not separately request the oldest retained events.
     });

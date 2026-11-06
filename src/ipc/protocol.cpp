@@ -94,20 +94,21 @@ Json telemetry_json(const TelemetrySnapshot& snapshot) {
 
 Json connectivity_json(const TopologyStatistics& stats) {
     const auto distribution = [](const TopologyDistributionStats& value) {
-        return Json{{"count", value.count}, {"minimum", value.minimum},
-                    {"maximum", value.maximum}, {"mean", value.mean}};
+        return Json{{"count", std::to_string(value.count)},
+                    {"minimum", value.minimum}, {"maximum", value.maximum},
+                    {"mean", value.mean}};
     };
     return {
         {"excitatory_count", stats.excitatory_count},
         {"inhibitory_count", stats.inhibitory_count},
         {"neuron_count", static_cast<std::uint64_t>(stats.excitatory_count) + stats.inhibitory_count},
-        {"synapse_count", stats.synapse_count},
+        {"synapse_count", std::to_string(stats.synapse_count)},
         {"density", stats.density},
         {"population_edges", {
-            {"excitatory_to_excitatory", stats.excitatory_to_excitatory},
-            {"excitatory_to_inhibitory", stats.excitatory_to_inhibitory},
-            {"inhibitory_to_excitatory", stats.inhibitory_to_excitatory},
-            {"inhibitory_to_inhibitory", stats.inhibitory_to_inhibitory}
+            {"excitatory_to_excitatory", std::to_string(stats.excitatory_to_excitatory)},
+            {"excitatory_to_inhibitory", std::to_string(stats.excitatory_to_inhibitory)},
+            {"inhibitory_to_excitatory", std::to_string(stats.inhibitory_to_excitatory)},
+            {"inhibitory_to_inhibitory", std::to_string(stats.inhibitory_to_inhibitory)}
         }},
         {"outgoing_degree", distribution(stats.outgoing_degree)},
         {"incoming_degree", distribution(stats.incoming_degree)},
