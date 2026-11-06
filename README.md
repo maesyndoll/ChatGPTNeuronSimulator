@@ -10,11 +10,11 @@ Blackwell (`sm_120` by default).
 - Izhikevich CUDA neuron model with deterministic initialization.
 - Seeded random sparse connectivity stored in source-oriented CSR form, with
   delayed spike propagation through a GPU-resident current ring.
-- Optional STDP foundation: deterministic incoming-CSR index maps each target's
-  incoming synapses back to canonical outgoing-CSR edge indices; GPU weights
-  are writable and opt-in GPU pre/post trace buffers are allocated and zeroed.
-  This is infrastructure only: no learning rule or weight updates are active,
-  and the default runtime allocates none of the additional learning state.
+- Optional pair-based excitatory STDP: deterministic incoming-CSR index maps
+  each target's incoming synapses back to canonical outgoing-CSR edge indices;
+  GPU weights are writable and opt-in GPU pre/post trace buffers are allocated
+  and zeroed. Learning is disabled by default, and the default runtime allocates
+  none of the additional learning state.
 - Bounded GPU spike-event capture with host-side collection.
 - `CudaSimulationRuntime` owns GPU allocations, execution stream, stepping,
   reinitialization, graph-batched execution, and metric collection.
@@ -30,11 +30,13 @@ each event boundary before spike propagation. The learning kernels run in
 the same CUDA stream and are included in captured CUDA Graph batches; there
 are no per-step host readbacks. Inhibitory-source weights remain fixed.
 Learning is disabled by default and can be enabled through the runtime
-constructor for development and tests; STDP parameters are currently supplied
-through that constructor rather than the JSON/IPC configuration API.
-CPU-reference and GPU-kernel tests cover pair ordering, simultaneous events,
-and inhibitory-weight preservation. Checkpointing and the Qt UI remain future
-milestones. The current
+constructor; STDP parameters are currently supplied through that constructor
+rather than the JSON/IPC configuration API. CPU-reference and GPU-kernel tests
+cover pair ordering, simultaneous events, timing curves, and inhibitory-weight
+preservation. The Qt Quick dashboard and asynchronous IPC bridge already exist;
+STDP-specific controls, live plasticity analysis, and optional calibration
+workflows remain future integration milestones. Checkpointing is also planned.
+The current
 connectivity generator supports seeded random sparse networks; structured
 population-to-population connectivity is a planned extension.
 
