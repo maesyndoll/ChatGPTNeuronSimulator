@@ -110,6 +110,10 @@ public:
         std::uint64_t after_sequence = 0,
         std::size_t maximum_events = 4096) const;
     ControllerConfigurationSnapshot configuration_snapshot() const;
+    // Return a bounded graph sample for visualization clients.
+    TopologyVisualSnapshot topology_visual_snapshot(
+        std::uint32_t maximum_neurons = 256,
+        std::uint32_t maximum_edges_per_neuron = 8) const;
     // Analyze the exact CSR graph currently resident in the simulation runtime.
     TopologyStatistics connectivity_statistics() const;
 
