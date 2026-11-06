@@ -36,6 +36,20 @@ struct SpikeEventBatch {
     std::uint64_t dropped_events = 0;
 };
 
+struct TopologyVisualEdge {
+    std::uint32_t source = 0;
+    std::uint32_t target = 0;
+    float weight = 0.0f;
+};
+
+struct TopologyVisualSnapshot {
+    std::uint32_t excitatory_count = 0;
+    std::uint32_t inhibitory_count = 0;
+    std::uint64_t synapse_count = 0;
+    std::vector<std::uint32_t> neuron_ids;
+    std::vector<TopologyVisualEdge> edges;
+};
+
 struct SimulationMetrics {
     std::uint64_t completed_steps = 0;
     std::uint64_t excitatory_spikes = 0;
@@ -89,6 +103,10 @@ public:
     // Samples reflect threshold resets and the recovery increment when spiking.
     std::vector<VoltageSample> collect_voltage_samples(
         const std::vector<std::uint32_t>& neuron_ids);
+    // Return a bounded view of the GPU-resident CSR graph for visualization.
+    TopologyVisualSnapshot collect_topology_visual_snapshot(
+        std::uint32_t maximum_neurons = 256,
+        std::uint32_t maximum_edges_per_neuron = 8);
     // Copy the exact CSR graph currently resident on the GPU to host memory.
     CSRTopology collect_connectivity();
     // Exact host-side fingerprint of current neuron parameters and state.
