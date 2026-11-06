@@ -46,7 +46,7 @@ Distribution summarize(std::vector<float> values, float lower, float upper) {
 
 struct TrialResult {
     SimulationMetrics metrics;
-    Distribution ee, ei;
+    Distribution initial_ee, initial_ei, ee, ei;
     double wall_seconds = 0.0;
 };
 
@@ -54,8 +54,27 @@ TrialResult run_trial(const ModelParameters& model, StdpParameters stdp,
                       std::uint32_t steps) {
     const auto start = std::chrono::steady_clock::now();
     SimulationController controller(model, 0, 1000, steps, false, true, stdp);
-    controller.step(steps);
     TrialResult result;
+    // Summarize the seeded starting graph, then release its large host copy.
+    {
+        const auto initial_graph = controller.connectivity_snapshot();
+        std::vector<float> initial_ee, initial_ei;
+        for (std::uint32_t source = 0;
+             source < initial_graph.excitatory_count; ++source) {
+            for (std::uint32_t edge = initial_graph.row_offsets[source];
+                 edge < initial_graph.row_offsets[source + 1]; ++edge) {
+                if (initial_graph.target_indices[edge] < initial_graph.excitatory_count)
+                    initial_ee.push_back(initial_graph.weights[edge]);
+                else
+                    initial_ei.push_back(initial_graph.weights[edge]);
+            }
+        }
+        result.initial_ee = summarize(std::move(initial_ee),
+                                      stdp.minimum_weight, stdp.maximum_weight);
+        result.initial_ei = summarize(std::move(initial_ei),
+                                      stdp.minimum_weight, stdp.maximum_weight);
+    }
+    controller.step(steps);
     result.metrics = controller.telemetry();
     const auto graph = controller.connectivity_snapshot();
     std::vector<float> ee, ei;
@@ -104,8 +123,8 @@ int main(int argc, char** argv) {
         struct Candidate { const char* name; float potentiation; };
         const Candidate candidates[] = {
             {"baseline", 0.00500f},
-            {"near_balance", 0.00525f},
-            {"moderate_potentiation", 0.00550f}
+            {"equal_coefficients", 0.00525f},
+            {"potentiation_plus_5pct", 0.00550f}
         };
 
         std::ofstream output(output_path);
@@ -113,7 +132,7 @@ int main(int argc, char** argv) {
         output << std::setprecision(10)
             << "candidate,potentiation_rate,depression_rate,pre_tau_ms,post_tau_ms,"
                "steps,wall_seconds,finite_state,excitatory_rate_hz,inhibitory_rate_hz,"
-               "mean_voltage_mv,ee_count,ee_mean,ee_min,ee_p05,ee_median,ee_p95,"
+               "mean_voltage_mv,initial_ee_mean,initial_ei_mean,ee_count,ee_mean,ee_min,ee_p05,ee_median,ee_p95,"
                "ee_max,ee_at_min_fraction,ee_at_max_fraction,ei_count,ei_mean,"
                "ei_min,ei_p05,ei_median,ei_p95,ei_max,ei_at_min_fraction,"
                "ei_at_max_fraction\n";
@@ -146,7 +165,8 @@ int main(int argc, char** argv) {
                    << (result.metrics.finite_state ? 1 : 0) << ','
                    << result.metrics.excitatory_rate_hz << ','
                    << result.metrics.inhibitory_rate_hz << ','
-                   << result.metrics.mean_voltage_mv << ',';
+                   << result.metrics.mean_voltage_mv << ','
+                   << result.initial_ee.mean << ',' << result.initial_ei.mean << ',';
             write_distribution(output, result.ee);
             output << ',';
             write_distribution(output, result.ei);
