@@ -511,6 +511,101 @@ std::vector<VoltageSample> CudaSimulationRuntime::collect_voltage_samples(
     return samples;
 }
 
+TopologyVisualSnapshot CudaSimulationRuntime::collect_topology_visual_snapshot(
+    std::uint32_t maximum_neurons,
+    std::uint32_t maximum_edges_per_neuron) {
+    if (!device_state_)
+        throw std::logic_error("CUDA simulation is not initialized");
+    if (maximum_neurons == 0 || maximum_edges_per_neuron == 0)
+        throw std::invalid_argument("Topology visualization limits must be non-zero");
+
+    // Transfer the compact CSR row index and selected contiguous row ranges.
+    // Never copy the full multi-million-edge graph for visualization.
+    device_state_->stream.synchronize();
+
+    TopologyVisualSnapshot snapshot;
+    snapshot.excitatory_count = active_parameters_.simulation.excitatory_count;
+    snapshot.inhibitory_count = active_parameters_.simulation.inhibitory_count;
+    snapshot.synapse_count = device_state_->edge_count;
+
+    std::vector<std::uint32_t> row_offsets(device_state_->neuron_count + 1U);
+    SPIKING_CUDA_CHECK(cudaMemcpy(
+        row_offsets.data(), device_state_->row_offsets.get(),
+        row_offsets.size() * sizeof(std::uint32_t),
+        cudaMemcpyDeviceToHost));
+
+    const auto append_population = [&](std::uint32_t first,
+                                       std::uint32_t count,
+                                       std::uint32_t budget) {
+        if (count == 0 || budget == 0) return;
+        const std::uint32_t selected = std::min(count, budget);
+        const std::uint32_t block_width = std::min<std::uint32_t>(8U, selected);
+        const std::uint32_t blocks = (selected + block_width - 1U) / block_width;
+        for (std::uint32_t block = 0; block < blocks; ++block) {
+            const std::uint32_t block_index = block * block_width;
+            const std::uint32_t block_count =
+                std::min(block_width, selected - block_index);
+            const std::uint32_t maximum_start = count - block_count;
+            const std::uint32_t relative_start = blocks <= 1
+                ? maximum_start / 2U
+                : static_cast<std::uint32_t>(
+                    (static_cast<std::uint64_t>(block) * maximum_start) /
+                    (blocks - 1U));
+            const std::uint32_t source_start = first + relative_start;
+            const std::uint32_t source_end = source_start + block_count;
+            const std::uint32_t edge_begin = row_offsets[source_start];
+            const std::uint32_t edge_end = row_offsets[source_end];
+
+            for (std::uint32_t source = source_start;
+                 source < source_end; ++source)
+                snapshot.neuron_ids.push_back(source);
+
+            if (edge_end == edge_begin) continue;
+            std::vector<std::uint32_t> targets(edge_end - edge_begin);
+            std::vector<float> weights(edge_end - edge_begin);
+            SPIKING_CUDA_CHECK(cudaMemcpy(
+                targets.data(), device_state_->target_indices.get() + edge_begin,
+                targets.size() * sizeof(std::uint32_t), cudaMemcpyDeviceToHost));
+            SPIKING_CUDA_CHECK(cudaMemcpy(
+                weights.data(), device_state_->weights.get() + edge_begin,
+                weights.size() * sizeof(float), cudaMemcpyDeviceToHost));
+
+            for (std::uint32_t source = source_start;
+                 source < source_end; ++source) {
+                const std::uint32_t local_begin = row_offsets[source] - edge_begin;
+                const std::uint32_t degree =
+                    row_offsets[source + 1U] - row_offsets[source];
+                const std::uint32_t take =
+                    std::min(degree, maximum_edges_per_neuron);
+                for (std::uint32_t sample = 0; sample < take; ++sample) {
+                    const std::uint32_t local_edge = local_begin +
+                        (take <= 1 ? 0U :
+                         static_cast<std::uint32_t>(
+                            (static_cast<std::uint64_t>(sample) * (degree - 1U)) /
+                            (take - 1U)));
+                    snapshot.edges.push_back({
+                        source, targets[local_edge], weights[local_edge]});
+                }
+            }
+        }
+    };
+
+    const std::uint32_t excitatory = snapshot.excitatory_count;
+    const std::uint32_t inhibitory = snapshot.inhibitory_count;
+    const std::uint32_t excitatory_budget = inhibitory == 0
+        ? maximum_neurons : std::max<std::uint32_t>(1U, maximum_neurons / 2U);
+    const std::uint32_t inhibitory_budget = inhibitory == 0
+        ? 0U : maximum_neurons - excitatory_budget;
+    append_population(0U, excitatory, excitatory_budget);
+    append_population(excitatory, inhibitory, inhibitory_budget);
+
+    std::sort(snapshot.neuron_ids.begin(), snapshot.neuron_ids.end());
+    snapshot.neuron_ids.erase(
+        std::unique(snapshot.neuron_ids.begin(), snapshot.neuron_ids.end()),
+        snapshot.neuron_ids.end());
+    return snapshot;
+}
+
 CSRTopology CudaSimulationRuntime::collect_connectivity() {
     if (!device_state_)
         throw std::logic_error("CUDA simulation is not initialized");
