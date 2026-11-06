@@ -126,7 +126,7 @@ def main():
             os.nice(args.nice)
 
         process = subprocess.Popen(
-            [str(binary), "--server", "--config", str(config),
+            [str(binary), "--server", "--enable-stdp", "--config", str(config),
              "--device", str(args.device), "--socket", socket_path],
             stdout=server_log, stderr=subprocess.STDOUT,
             preexec_fn=lower_cpu_priority,
