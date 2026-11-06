@@ -1,6 +1,9 @@
 #include "runtime/simulation_controller.h"
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
+#include <fstream>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -105,7 +108,7 @@ std::pair<std::uint64_t, std::uint64_t> count_events(
 }
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
     try {
         auto parameters = make_parameters();
         StdpParameters stdp;
@@ -115,6 +118,17 @@ int main() {
         stdp.postsynaptic_tau_ms = 20.0f;
         stdp.minimum_weight = 0.001f;
         stdp.maximum_weight = 1.0f;
+        if (argc > 1) {
+            std::ifstream input(argv[1]);
+            if (!input) throw std::runtime_error(
+                std::string("Cannot open optimized STDP parameters: ") + argv[1]);
+            nlohmann::json fitted;
+            input >> fitted;
+            stdp.potentiation_rate = fitted.at("potentiation_rate").get<float>();
+            stdp.depression_rate = fitted.at("depression_rate").get<float>();
+            stdp.presynaptic_tau_ms = fitted.at("presynaptic_tau_ms").get<float>();
+            stdp.postsynaptic_tau_ms = fitted.at("postsynaptic_tau_ms").get<float>();
+        }
 
         SimulationController controller(
             parameters, 0, 1, 1000, true, true, stdp);
@@ -177,6 +191,10 @@ int main() {
         std::cout << std::fixed << std::setprecision(7)
                   << "STDP associative-recall diagnostic\n"
                   << "Simulation generation: " << config.simulation_generation << '\n'
+                  << "STDP A+/A-: " << stdp.potentiation_rate << '/'
+                  << stdp.depression_rate << '\n'
+                  << "STDP tau pre/post: " << stdp.presynaptic_tau_ms << '/'
+                  << stdp.postsynaptic_tau_ms << " ms\n"
                   << "A->B initial weight: " << initial_weight << '\n'
                   << "A->B after training: " << trained_weight << '\n'
                   << "A->B after recall: " << final_weight << '\n'
