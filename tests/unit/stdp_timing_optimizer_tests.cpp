@@ -55,7 +55,7 @@ int main() {
         };
         for (std::size_t i = 0; i < 4; ++i) {
             StdpParameters plus = truth, minus = truth;
-            const double h = i < 2 ? 1.0e-6 : 1.0e-4;
+            const double h = i < 2 ? 1.0e-4 : 1.0e-2;
             float* plus_values[4] = {
                 &plus.potentiation_rate, &plus.depression_rate,
                 &plus.presynaptic_tau_ms, &plus.postsynaptic_tau_ms
@@ -71,7 +71,7 @@ int main() {
                  predict_periodic_stdp_pair(1.5, 50.0, minus).delta_weight) /
                 (2.0 * h);
             check(near(prediction.partials[i], numerical,
-                       i < 2 ? 2.0e-5 : 2.0e-7),
+                       i < 2 ? 1.0e-5 : 1.0e-7),
                   "analytical partial does not match finite difference");
         }
 
