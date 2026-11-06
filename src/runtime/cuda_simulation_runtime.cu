@@ -16,7 +16,7 @@ namespace spiking {
 namespace {
 // 4,194,304 records × 12 bytes = 48 MiB of bounded GPU event storage.
 constexpr std::uint32_t kSpikeEventCapacity = 4U * 1024U * 1024U;
-constexpr std::uint32_t kCudaGraphBatchSteps = 100U;
+constexpr std::uint32_t kCudaGraphBatchSteps = 1000U;
 }
 
 CudaSimulationRuntime::DeviceState::~DeviceState() {
