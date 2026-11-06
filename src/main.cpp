@@ -185,7 +185,7 @@ CommandLineOptions parse_arguments(int argc, char** argv) {
         } else if (arg == "--help" || arg == "-h") {
             std::cout
                 << "Usage: spiking_model [--config FILE] [--small] [--device N] [--log FILE] [--no-log] [--enable-stdp] [--stdp-a-plus X] [--stdp-a-minus X] [--stdp-tau-pre-ms X] [--stdp-tau-post-ms X] [--stdp-min-weight X] [--stdp-max-weight X] [--connectivity-export FILE] [--connectivity-export-after FILE] [--telemetry-window-steps N] [--voltage-trace FILE --voltage-trace-neuron ID ...] [--voltage-trace-interval N]\n"
-                << "       spiking_model --server [--socket PATH] [--config FILE] [--small] [--device N]\n";
+                << "       spiking_model --server [--socket PATH] [--config FILE] [--small] [--device N] [--enable-stdp]\n";
             std::exit(0);
         } else {
             throw std::invalid_argument("unknown argument: " + arg);
