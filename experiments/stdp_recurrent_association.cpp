@@ -345,8 +345,8 @@ int main(int argc, char** argv) {
                   << (selective_weight_change ? "PASS" : "FAIL") << '\n'
                   << "Partial-cue spike recall: "
                   << (spike_recall ? "PASS" : "FAIL") << '\n'
-                  << "Trained-vs-untrained response: "
-                  << (selective_voltage ? "PASS" : "FAIL") << '\n'
+                  << "Trained-vs-untrained spike response: "
+                  << (selective_spiking_response ? "PASS" : "FAIL") << '\n'
                   << "Plasticity-disabled control: "
                   << (control_unchanged && control.recall.b_spikes == 0
                       ? "PASS" : "FAIL") << '\n'
