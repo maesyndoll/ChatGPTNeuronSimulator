@@ -92,13 +92,6 @@ if(BUILD_TESTING)
     )
     add_test(NAME stdp_timing_optimizer_tests COMMAND stdp_timing_optimizer_tests)
 
-    add_executable(stdp_timing_optimizer experiments/stdp_timing_optimizer.cpp)
-    target_include_directories(stdp_timing_optimizer PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-    target_compile_options(stdp_timing_optimizer PRIVATE
-        $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
-    )
 
     add_executable(stdp_experiment tools/stdp_experiment.cpp)
     target_include_directories(stdp_experiment PRIVATE
@@ -108,6 +101,16 @@ if(BUILD_TESTING)
         $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
     )
 endif()
+
+# The mathematical STDP timing fitter is useful independently of the
+# unit-test suite, so keep it available when BUILD_TESTING=OFF.
+add_executable(stdp_timing_optimizer experiments/stdp_timing_optimizer.cpp)
+target_include_directories(stdp_timing_optimizer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_options(stdp_timing_optimizer PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+)
 
 option(SPIKINGMODEL_ENABLE_QT_CLIENT "Build the optional Qt IPC client" OFF)
 if(SPIKINGMODEL_ENABLE_QT_CLIENT)
