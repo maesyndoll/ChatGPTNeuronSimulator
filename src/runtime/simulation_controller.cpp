@@ -137,6 +137,15 @@ CSRTopology SimulationController::connectivity_snapshot() const {
     );
 }
 
+std::vector<VoltageSample> SimulationController::collect_voltage_samples(
+    const std::vector<std::uint32_t>& neuron_ids) const {
+    return const_cast<SimulationController*>(this)->submit(
+        [neuron_ids](CudaSimulationRuntime& runtime) {
+            return runtime.collect_voltage_samples(neuron_ids);
+        }
+    );
+}
+
 ParameterUpdateResult SimulationController::apply_parameters(
     const ModelParameters& candidate) {
     return submit([candidate](CudaSimulationRuntime& runtime) {
