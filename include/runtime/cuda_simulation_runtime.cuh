@@ -84,6 +84,7 @@ public:
                            float amplitude);
     void clear_stimuli();
     SimulationMetrics collect_metrics();
+    std::vector<std::uint32_t> collect_spike_count_snapshot();
     // Read post-integration voltage and recovery state for selected neurons.
     // Samples reflect threshold resets and the recovery increment when spiking.
     std::vector<VoltageSample> collect_voltage_samples(
