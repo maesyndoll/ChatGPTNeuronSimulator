@@ -84,6 +84,22 @@ if(BUILD_TESTING)
     )
     add_test(NAME stdp_weight_analysis_tests COMMAND stdp_weight_analysis_tests)
 
+    add_executable(stdp_timing_optimizer_tests
+        tests/unit/stdp_timing_optimizer_tests.cpp
+    )
+    target_include_directories(stdp_timing_optimizer_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    add_test(NAME stdp_timing_optimizer_tests COMMAND stdp_timing_optimizer_tests)
+
+    add_executable(stdp_timing_optimizer experiments/stdp_timing_optimizer.cpp)
+    target_include_directories(stdp_timing_optimizer PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_compile_options(stdp_timing_optimizer PRIVATE
+        $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+    )
+
     add_executable(stdp_experiment tools/stdp_experiment.cpp)
     target_include_directories(stdp_experiment PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
