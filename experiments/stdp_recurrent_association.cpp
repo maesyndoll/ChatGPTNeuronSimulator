@@ -2,6 +2,7 @@
 #include "topology/topology_io.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -34,7 +35,7 @@ ModelParameters make_model() {
     model.simulation.excitatory_count = kExcitatoryCount;
     model.simulation.inhibitory_count = kInhibitoryCount;
     model.simulation.steps = 1000;
-    model.simulation.dt = 0.1f;
+    model.simulation.dt = 0.5f;
     model.simulation.threshold = -64.99999f;
     model.simulation.random_seed = 24680;
     model.simulation.initial_voltage_min = -65.0f;
