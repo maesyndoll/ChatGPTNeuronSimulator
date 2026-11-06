@@ -353,7 +353,9 @@ if(SPIKINGMODEL_ENABLE_CUDA)
         target_include_directories(stdp_associative_recall PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include
         )
-        target_link_libraries(stdp_associative_recall PRIVATE CUDA::cudart)
+        target_link_libraries(stdp_associative_recall PRIVATE
+            CUDA::cudart nlohmann_json::nlohmann_json
+        )
         set_target_properties(stdp_associative_recall PROPERTIES
             CUDA_SEPARABLE_COMPILATION ON
             CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
