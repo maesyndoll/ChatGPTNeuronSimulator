@@ -20,6 +20,8 @@
 
 namespace spiking {
 
+struct TopologyStatistics;
+
 enum class ControllerStatus {
     Ready,
     Running,
@@ -87,6 +89,8 @@ public:
         std::uint64_t after_sequence = 0,
         std::size_t maximum_events = 4096) const;
     ControllerConfigurationSnapshot configuration_snapshot() const;
+    // Analyze the exact CSR graph currently resident in the simulation runtime.
+    TopologyStatistics connectivity_statistics() const;
 
     ControllerStatus status() const;
     bool is_running() const;

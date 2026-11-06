@@ -26,6 +26,9 @@ SimulationBridge::SimulationBridge(QObject* parent)
             QStringLiteral("Connected; subscribing to telemetry and spike events"));
         client_.sendRequest(QStringLiteral("subscribe_telemetry"));
         refreshConfiguration();
+        // Fetch graph statistics on demand from the exact active CSR graph.
+        // The transfer is intentionally separate from high-rate telemetry.
+        refreshConnectivity();
         // The server's spike subscription starts with a recent bounded
         // snapshot; do not separately request the oldest retained events.
     });
@@ -42,6 +45,8 @@ SimulationBridge::SimulationBridge(QObject* parent)
         spike_events_generation_ = QStringLiteral("—");
         last_spike_event_sequence_ = 0;
         emit spikeEventsChanged();
+        connectivity_statistics_.clear();
+        emit connectivityChanged();
         setStatusMessage(QStringLiteral("Disconnected from simulation server"));
     });
 
@@ -69,6 +74,9 @@ SimulationBridge::SimulationBridge(QObject* parent)
             updateConfiguration(result);
         } else if (command == QStringLiteral("get_spike_events")) {
             updateSpikeEvents(result);
+        } else if (command == QStringLiteral("get_connectivity")) {
+            connectivity_statistics_ = result.toVariantMap();
+            emit connectivityChanged();
         } else {
             const QJsonValue configurationValue =
                 result.value(QStringLiteral("configuration"));
@@ -242,6 +250,10 @@ QString SimulationBridge::simulationGeneration() const {
             QStringLiteral("—"));
 }
 
+QVariantMap SimulationBridge::connectivityStatistics() const {
+    return connectivity_statistics_;
+}
+
 QVariantList SimulationBridge::spikeEvents() const {
     return spike_events_;
 }
@@ -330,6 +342,12 @@ void SimulationBridge::applyParameters(const QVariantMap& parameters) {
         QJsonObject{
             {QStringLiteral("parameters"), parameterObject}
         });
+}
+
+void SimulationBridge::refreshConnectivity() {
+    if (connected_) {
+        client_.sendRequest(QStringLiteral("get_connectivity"));
+    }
 }
 
 void SimulationBridge::refreshSpikeEvents() {

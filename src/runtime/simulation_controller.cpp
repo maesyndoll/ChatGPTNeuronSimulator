@@ -1,4 +1,5 @@
 #include "runtime/simulation_controller.h"
+#include "topology/topology_io.h"
 
 #include <stdexcept>
 
@@ -173,6 +174,14 @@ SpikeEventSnapshot SimulationController::spike_events_snapshot(
         }
     }
     return snapshot;
+}
+
+TopologyStatistics SimulationController::connectivity_statistics() const {
+    return const_cast<SimulationController*>(this)->submit(
+        [](CudaSimulationRuntime& runtime) {
+            return analyze_csr_topology(runtime.collect_connectivity());
+        }
+    );
 }
 
 ControllerConfigurationSnapshot

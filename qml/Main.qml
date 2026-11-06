@@ -590,6 +590,61 @@ ApplicationWindow {
             }
         }
 
+        Rectangle {
+            Layout.fillWidth: true
+            radius: 12
+            color: "#192433"
+            border.color: "#2b3a4d"
+            implicitHeight: connectomeColumn.implicitHeight + 28
+
+            ColumnLayout {
+                id: connectomeColumn
+                anchors.fill: parent
+                anchors.margins: 14
+                spacing: 8
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label {
+                        text: "CSR connectome"
+                        color: "#f0f4fa"
+                        font.pixelSize: 17
+                        font.bold: true
+                    }
+                    Item { Layout.fillWidth: true }
+                    Button {
+                        text: "Refresh graph analysis"
+                        enabled: simulation.connected
+                        onClicked: simulation.refreshConnectivity()
+                    }
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    color: "#91a2b8"
+                    wrapMode: Text.Wrap
+                    text: "Statistics are calculated from the active GPU-resident CSR graph, " +
+                          "not inferred from the requested connection probabilities."
+                }
+
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: 3
+                    columnSpacing: 18
+                    rowSpacing: 8
+                    Label { text: "Neurons: " + (simulation.connectivityStatistics.neuron_count ?? "—"); color: "#dce6f2" }
+                    Label { text: "Synapses: " + (simulation.connectivityStatistics.synapse_count ?? "—"); color: "#dce6f2" }
+                    Label { text: "Density: " + (simulation.connectivityStatistics.density === undefined ? "—" : (Number(simulation.connectivityStatistics.density) * 100).toFixed(3) + "%"); color: "#dce6f2" }
+                    Label { text: "E → E: " + (simulation.connectivityStatistics.population_edges?.excitatory_to_excitatory ?? "—"); color: "#8fc9ed" }
+                    Label { text: "E → I: " + (simulation.connectivityStatistics.population_edges?.excitatory_to_inhibitory ?? "—"); color: "#8fc9ed" }
+                    Label { text: "I → E: " + (simulation.connectivityStatistics.population_edges?.inhibitory_to_excitatory ?? "—"); color: "#e6b66b" }
+                    Label { text: "I → I: " + (simulation.connectivityStatistics.population_edges?.inhibitory_to_inhibitory ?? "—"); color: "#e6b66b" }
+                    Label { text: "Mean out-degree: " + (simulation.connectivityStatistics.outgoing_degree?.mean === undefined ? "—" : Number(simulation.connectivityStatistics.outgoing_degree.mean).toFixed(2)); color: "#dce6f2" }
+                    Label { text: "Mean in-degree: " + (simulation.connectivityStatistics.incoming_degree?.mean === undefined ? "—" : Number(simulation.connectivityStatistics.incoming_degree.mean).toFixed(2)); color: "#dce6f2" }
+                }
+            }
+        }
+
         Label {
             text: "Live telemetry"
             color: "#f0f4fa"

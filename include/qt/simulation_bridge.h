@@ -37,6 +37,9 @@ class SimulationBridge : public QObject {
     Q_PROPERTY(QString simulationGeneration READ simulationGeneration
                NOTIFY configurationChanged)
 
+    Q_PROPERTY(QVariantMap connectivityStatistics READ connectivityStatistics
+               NOTIFY connectivityChanged)
+
     Q_PROPERTY(QVariantList spikeEvents READ spikeEvents
                NOTIFY spikeEventsChanged)
     Q_PROPERTY(QString spikeEventCount READ spikeEventCount
@@ -72,6 +75,7 @@ public:
     QString parameterVersion() const;
     QString simulationGeneration() const;
 
+    QVariantMap connectivityStatistics() const;
     QVariantList spikeEvents() const;
     QString spikeEventCount() const;
     QString spikeEventsDropped() const;
@@ -87,6 +91,7 @@ public:
     Q_INVOKABLE void applyParameters(const QVariantMap& parameters);
     Q_INVOKABLE void reinitializeSimulation();
     Q_INVOKABLE void refreshSpikeEvents();
+    Q_INVOKABLE void refreshConnectivity();
 
 signals:
     void connectionChanged();
@@ -96,6 +101,7 @@ signals:
     void telemetryChanged();
     void configurationChanged();
     void spikeEventsChanged();
+    void connectivityChanged();
     void errorOccurred(const QString& message);
 
 private:
@@ -116,6 +122,7 @@ private:
     quint64 last_history_step_ = 0;
     bool has_history_step_ = false;
     QJsonObject configuration_;
+    QVariantMap connectivity_statistics_;
     QVariantList spike_events_;
     QString spike_event_count_ = QStringLiteral("0");
     QString spike_events_dropped_ = QStringLiteral("0");
