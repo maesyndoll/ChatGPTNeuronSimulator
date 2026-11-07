@@ -8,6 +8,7 @@ namespace {
 struct State {
     NeuromancerHostApiV1 host{};
     uint64_t observed_events = 0;
+    bool reported_activity = false;
 };
 
 int on_load(const NeuromancerHostApiV1* host, void** instance) {
@@ -42,7 +43,14 @@ int configure(void* opaque, const char* key, const char* value) {
 
 void on_spikes(void* opaque, const NeuromancerSpikeEventV1*, uint32_t count) {
     auto* state = static_cast<State*>(opaque);
-    if (state != nullptr) state->observed_events += count;
+    if (state != nullptr) {
+        state->observed_events += count;
+        if (!state->reported_activity && state->observed_events >= 10) {
+            state->reported_activity = true;
+            if (state->host.log) state->host.log(state->host.user_data, 1,
+                                                  "edge_policy receiving live spike events");
+        }
+    }
 }
 
 void on_unload(void* opaque) {
