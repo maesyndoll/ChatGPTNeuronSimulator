@@ -53,6 +53,9 @@ struct ConditionResult {
     double inhibitory_voltage_max = 0.0;
     float selected_voltage = 0.0f;
     float selected_recovery = 0.0f;
+    float selected_peak_voltage = -std::numeric_limits<float>::infinity();
+    std::uint64_t selected_peak_step = 0;
+    std::uint64_t selected_first_spike_step = 0;
 };
 
 ConditionResult run_condition(const std::string& name,
@@ -60,7 +63,8 @@ ConditionResult run_condition(const std::string& name,
                               const std::string& topology_path,
                               const std::vector<std::uint32_t>& stimulated_neurons,
                               std::uint32_t selected_inhibitory,
-                              float pulse_current = kPulseCurrent) {
+                              float pulse_current = kPulseCurrent,
+                              bool capture_trace = false) {
     CudaSimulationRuntime runtime(model, topology_path, 0, true, false);
     for (const auto neuron : stimulated_neurons) {
         runtime.schedule_stimulus(
@@ -95,19 +99,39 @@ ConditionResult run_condition(const std::string& name,
         if (sample.neuron_id == selected_inhibitory) {
             result.selected_voltage = sample.voltage_mv;
             result.selected_recovery = sample.recovery;
+            result.selected_peak_voltage = sample.voltage_mv;
+            result.selected_peak_step = sample.step;
         }
     }
     result.inhibitory_voltage_mean =
         sum / static_cast<double>(voltages.size());
 
-    runtime.run_steps(kSteps - (kPulseStart + kPulseDuration));
+    if (capture_trace) {
+        for (std::uint32_t step = kPulseStart + kPulseDuration;
+             step < kSteps; ++step) {
+            runtime.run_steps(1);
+            const auto trace = runtime.collect_voltage_samples(
+                std::vector<std::uint32_t>{selected_inhibitory});
+            if (trace.size() != 1U)
+                throw std::runtime_error("Selected-neuron trace sample missing");
+            if (trace.front().voltage_mv > result.selected_peak_voltage) {
+                result.selected_peak_voltage = trace.front().voltage_mv;
+                result.selected_peak_step = trace.front().step;
+            }
+        }
+    } else {
+        runtime.run_steps(kSteps - (kPulseStart + kPulseDuration));
+    }
     result.metrics = runtime.collect_metrics();
     const auto events = runtime.collect_spike_events();
     if (events.dropped_events != 0)
         throw std::runtime_error("Spike-event recorder dropped events");
     for (const auto& event : events.events) {
-        if (event.neuron_id == selected_inhibitory)
+        if (event.neuron_id == selected_inhibitory) {
             ++result.selected_inhibitory_spikes;
+            if (result.selected_first_spike_step == 0)
+                result.selected_first_spike_step = event.step;
+        }
     }
     return result;
 }
@@ -126,6 +150,8 @@ void write_result(std::ofstream& out, const ConditionResult& r,
         << r.metrics.inhibitory_spikes << ','
         << r.selected_inhibitory_spikes << ','
         << r.selected_voltage << ',' << r.selected_recovery << ','
+        << r.selected_peak_voltage << ',' << r.selected_peak_step << ','
+        << r.selected_first_spike_step << ','
         << r.inhibitory_voltage_mean << ','
         << r.inhibitory_voltage_min << ','
         << r.inhibitory_voltage_max << ','
@@ -243,6 +269,33 @@ int main(int argc, char** argv) {
             std::filesystem::remove(scaled_path);
         }
 
+        std::vector<ConditionResult> e_to_i_fine_sweep;
+        for (const float multiplier : {24.0f, 26.0f, 28.0f, 30.0f,
+                                        32.0f, 34.0f, 36.0f}) {
+            auto scaled_graph = graph;
+            for (std::uint32_t source = 0; source < e_count; ++source) {
+                for (std::uint32_t edge = scaled_graph.row_offsets[source];
+                     edge < scaled_graph.row_offsets[source + 1U]; ++edge) {
+                    if (scaled_graph.target_indices[edge] == selected_target)
+                        scaled_graph.weights[edge] *= multiplier;
+                }
+            }
+            const auto scaled_path = output_path.string() + ".trace_" +
+                std::to_string(static_cast<int>(multiplier)) + "x.csr";
+            save_csr_topology(scaled_graph, scaled_path);
+            try {
+                e_to_i_fine_sweep.push_back(run_condition(
+                    "e_to_i_trace_" +
+                        std::to_string(static_cast<int>(multiplier)) + "x",
+                    model, scaled_path, e_inputs, selected_target,
+                    kPulseCurrent, true));
+            } catch (...) {
+                std::filesystem::remove(scaled_path);
+                throw;
+            }
+            std::filesystem::remove(scaled_path);
+        }
+
         if (!output_path.parent_path().empty())
             std::filesystem::create_directories(output_path.parent_path());
         std::ofstream out(output_path);
@@ -250,8 +303,10 @@ int main(int argc, char** argv) {
         out << "condition,synapses,e_to_e,e_to_i,i_to_e,i_to_i,"
                "selected_i_neuron,e_input_sources,excitatory_spikes,"
                "inhibitory_spikes,selected_i_spikes,selected_i_voltage_mv,"
-               "selected_i_recovery,inhibitory_mean_voltage_mv,"
-               "inhibitory_min_voltage_mv,inhibitory_max_voltage_mv,finite_state\n";
+               "selected_i_recovery,selected_i_peak_voltage_mv,"
+               "selected_i_peak_step,selected_i_first_spike_step,"
+               "inhibitory_mean_voltage_mv,inhibitory_min_voltage_mv,"
+               "inhibitory_max_voltage_mv,finite_state\n";
         out << std::setprecision(10);
         write_result(out, baseline, stats, selected_target,
                      static_cast<std::uint32_t>(e_inputs.size()));
@@ -263,6 +318,9 @@ int main(int argc, char** argv) {
             write_result(out, sweep, stats, selected_target,
                          static_cast<std::uint32_t>(e_inputs.size()));
         for (const auto& sweep : e_to_i_weight_sweep)
+            write_result(out, sweep, stats, selected_target,
+                         static_cast<std::uint32_t>(e_inputs.size()));
+        for (const auto& sweep : e_to_i_fine_sweep)
             write_result(out, sweep, stats, selected_target,
                          static_cast<std::uint32_t>(e_inputs.size()));
         out.flush();
@@ -298,6 +356,7 @@ int main(int argc, char** argv) {
         print(direct_i);
         for (const auto& sweep : direct_current_sweep) print(sweep);
         for (const auto& sweep : e_to_i_weight_sweep) print(sweep);
+        for (const auto& sweep : e_to_i_fine_sweep) print(sweep);
         std::cout << "CSV: " << std::filesystem::absolute(output_path).string()
                   << '\n';
         if (!baseline.metrics.finite_state || !e_driven.metrics.finite_state ||
@@ -305,6 +364,8 @@ int main(int argc, char** argv) {
             std::any_of(direct_current_sweep.begin(), direct_current_sweep.end(),
                 [](const ConditionResult& r) { return !r.metrics.finite_state; }) ||
             std::any_of(e_to_i_weight_sweep.begin(), e_to_i_weight_sweep.end(),
+                [](const ConditionResult& r) { return !r.metrics.finite_state; }) ||
+            std::any_of(e_to_i_fine_sweep.begin(), e_to_i_fine_sweep.end(),
                 [](const ConditionResult& r) { return !r.metrics.finite_state; }))
             throw std::runtime_error("Non-finite state detected during diagnostics");
         std::cout << "PASS: diagnostic runs completed with finite neuron state.\n";
