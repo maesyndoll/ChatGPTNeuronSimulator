@@ -22,7 +22,7 @@ int main() {
     p.coupling_learning_rate = 0.001f;
     p.maximum_coupling = 0.5f;
     p.coupling_decay = 0.0001f;
-    p.temporal_association_window_steps = 39;
+    p.temporal_association_window_steps = 299;
     p.temporal_lag_learning_rate = 0.10f;
     p.minimum_temporal_confidence = 0.20f;
 
@@ -31,9 +31,9 @@ int main() {
     // delay schedule. This is a within-network timing-specificity control.
     AutonomousPopulationPhase phase(3, p);
     constexpr int train_steps = 6000;
-    constexpr int period = 40;
+    constexpr int period = 300;
     constexpr int paired_offset = 5;
-    constexpr std::array<int, 8> control_offsets{3, 11, 19, 27, 7, 23, 15, 31};
+    constexpr std::array<int, 8> control_offsets{20, 55, 90, 125, 160, 195, 230, 265};
 
     for (int t = 0; t < train_steps; ++t) {
         std::vector<std::uint32_t> spikes(3, 0U);
