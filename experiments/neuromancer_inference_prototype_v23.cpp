@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
+#include <filesystem>
 #include <iostream>
 #include <random>
 #include <stdexcept>
@@ -32,9 +33,10 @@ constexpr float kDtMs = 0.5f;
 constexpr float kSpikeThresholdMv = -65.0f;
 constexpr float kMinimumWeight = 0.01f;
 constexpr float kDiscriminativeGain = 1.5f;
-const std::string kTopologyPath = "/tmp/neuromancer_v23_model.csr";
-const std::string kManifestPath = "/tmp/neuromancer_v23_model.nmc";
-const std::string kResultsPath = "/tmp/neuromancer_v23_inference.csv";
+std::string kPackageDirectory = "neuromancer_v23_model";
+std::string kTopologyPath;
+std::string kManifestPath;
+std::string kResultsPath;
 
 struct Example {
     std::uint32_t label = 0;
@@ -224,8 +226,16 @@ void require(bool condition, const char* message) {
 }
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
     try {
+        if (argc > 2) throw std::invalid_argument("Usage: neuromancer_inference_prototype_v23 [package-directory]");
+        if (argc == 2) kPackageDirectory = argv[1];
+        std::filesystem::create_directories(kPackageDirectory);
+        const auto package = std::filesystem::absolute(kPackageDirectory).lexically_normal();
+        kTopologyPath = (package / "topology.csr").string();
+        kManifestPath = (package / "model.nmc").string();
+        kResultsPath = (package / "inference.csv").string();
+
         const auto model = make_model();
         const auto training = make_training_set();
         const auto testing = make_test_set();
