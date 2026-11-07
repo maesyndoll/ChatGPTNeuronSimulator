@@ -99,8 +99,8 @@ public:
     void clear_stimuli();
 
     // Optional GPU-side phase gate. Each neuron receives a preferred phase
-    // in radians; propagation from a spiking source is admitted only when
-    // the configured oscillator phase lies within the gate half-width.
+    // in radians; a synaptic edge is delivered only when the postsynaptic
+    // target's preferred phase lies within the gate half-width.
     void configure_phase_gate(const std::vector<float>& preferred_phases_rad,
                               float oscillator_frequency_hz,
                               float gate_half_width_rad,
