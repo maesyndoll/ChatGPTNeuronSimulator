@@ -294,6 +294,279 @@ void CudaSimulationRuntime::reinitialize_simulation() {
     external_stimuli_dirty_ = false;
 }
 
+
+void CudaSimulationRuntime::replace_topology_preserving_state(
+    const CSRTopology& topology,
+    const std::vector<std::uint32_t>& old_to_new_neurons,
+    const std::vector<std::uint32_t>& old_to_new_edges,
+    const std::vector<std::uint8_t>& new_plasticity_mask) {
+    if (!device_state_) throw std::logic_error("CUDA simulation is not initialized");
+    topology.validate();
+    auto& old = *device_state_;
+    if (old_to_new_neurons.size() != old.neuron_count ||
+        old_to_new_edges.size() != old.edge_count ||
+        new_plasticity_mask.size() != topology.synapse_count())
+        throw std::invalid_argument("Graft migration maps do not match current topology");
+
+    old.stream.synchronize();
+    const auto old_n = static_cast<std::uint32_t>(old.neuron_count);
+    const auto old_e = old.edge_count;
+    const auto new_n = topology.neuron_count();
+    const auto new_e = static_cast<std::uint32_t>(topology.synapse_count());
+
+    const auto read_float = [](const DeviceBuffer<float>& buffer, std::size_t count) {
+        std::vector<float> values(count);
+        if (count) SPIKING_CUDA_CHECK(cudaMemcpy(values.data(), buffer.get(),
+            count * sizeof(float), cudaMemcpyDeviceToHost));
+        return values;
+    };
+    const auto read_u32 = [](const DeviceBuffer<std::uint32_t>& buffer, std::size_t count) {
+        std::vector<std::uint32_t> values(count);
+        if (count) SPIKING_CUDA_CHECK(cudaMemcpy(values.data(), buffer.get(),
+            count * sizeof(std::uint32_t), cudaMemcpyDeviceToHost));
+        return values;
+    };
+    const auto read_u8 = [](const DeviceBuffer<std::uint8_t>& buffer, std::size_t count) {
+        std::vector<std::uint8_t> values(count);
+        if (count) SPIKING_CUDA_CHECK(cudaMemcpy(values.data(), buffer.get(),
+            count * sizeof(std::uint8_t), cudaMemcpyDeviceToHost));
+        return values;
+    };
+    const auto upload = [](DeviceBuffer<float>& buffer, const std::vector<float>& values) {
+        if (!values.empty()) SPIKING_CUDA_CHECK(cudaMemcpy(buffer.get(), values.data(),
+            values.size() * sizeof(float), cudaMemcpyHostToDevice));
+    };
+    const auto upload_u32 = [](DeviceBuffer<std::uint32_t>& buffer,
+                               const std::vector<std::uint32_t>& values) {
+        if (!values.empty()) SPIKING_CUDA_CHECK(cudaMemcpy(buffer.get(), values.data(),
+            values.size() * sizeof(std::uint32_t), cudaMemcpyHostToDevice));
+    };
+    const auto upload_u8 = [](DeviceBuffer<std::uint8_t>& buffer,
+                              const std::vector<std::uint8_t>& values) {
+        if (!values.empty()) SPIKING_CUDA_CHECK(cudaMemcpy(buffer.get(), values.data(),
+            values.size() * sizeof(std::uint8_t), cudaMemcpyHostToDevice));
+    };
+    const auto migrate_float = [](const std::vector<float>& source,
+                                  std::size_t source_count,
+                                  const std::vector<std::uint32_t>& mapping,
+                                  std::size_t target_count) {
+        if (source.size() != source_count || mapping.size() != source_count)
+            throw std::invalid_argument("Invalid float state migration dimensions");
+        std::vector<float> target(target_count, 0.0f);
+        for (std::size_t i = 0; i < source_count; ++i) {
+            if (mapping[i] >= target_count)
+                throw std::out_of_range("Float state migration target is out of range");
+            target[mapping[i]] = source[i];
+        }
+        return target;
+    };
+    const auto migrate_u32 = [](const std::vector<std::uint32_t>& source,
+                                const std::vector<std::uint32_t>& mapping,
+                                std::size_t target_count) {
+        std::vector<std::uint32_t> target(target_count, 0U);
+        for (std::size_t i = 0; i < source.size(); ++i) {
+            if (mapping[i] >= target_count)
+                throw std::out_of_range("Integer state migration target is out of range");
+            target[mapping[i]] = source[i];
+        }
+        return target;
+    };
+
+    const auto old_a = read_float(old.a, old_n), old_b = read_float(old.b, old_n);
+    const auto old_c = read_float(old.c, old_n), old_d = read_float(old.d, old_n);
+    const auto old_current = read_float(old.current, old_n);
+    const auto old_voltage = read_float(old.voltage, old_n);
+    const auto old_recovery = read_float(old.recovery, old_n);
+    const auto old_spikes = read_u32(old.spike_counts, old_n);
+    const auto old_preferred = read_float(old.preferred_phases, old_n);
+    const auto old_dynamic = read_float(old.dynamic_phases, old_n);
+    const auto old_external = read_float(old.external_current, old_n);
+    const auto old_weights = read_float(old.weights, old_e);
+    const auto old_lags = read_float(old.edge_phase_lags, old_e);
+    const auto old_mask = read_u8(old.edge_plasticity_mask, old_e);
+    const auto old_ring = read_float(old.synaptic_current,
+        old.neuron_count * old.ring_slots);
+
+    auto next = std::make_unique<DeviceState>(
+        new_n, topology, capture_spike_events_, enable_plasticity_state_);
+    const auto copy_topology = next->stream.get();
+    upload_u32(next->row_offsets, topology.row_offsets);
+    upload_u32(next->target_indices, topology.target_indices);
+    upload(next->weights, topology.weights);
+    upload_u32(next->delays, topology.delays);
+    upload_u8(next->edge_plasticity_mask, new_plasticity_mask);
+
+    const auto new_a = migrate_float(old_a, old_n, old_to_new_neurons, new_n);
+    const auto new_b = migrate_float(old_b, old_n, old_to_new_neurons, new_n);
+    const auto new_c = migrate_float(old_c, old_n, old_to_new_neurons, new_n);
+    const auto new_d = migrate_float(old_d, old_n, old_to_new_neurons, new_n);
+    const auto new_current = migrate_float(old_current, old_n, old_to_new_neurons, new_n);
+    const auto new_voltage = migrate_float(old_voltage, old_n, old_to_new_neurons, new_n);
+    const auto new_recovery = migrate_float(old_recovery, old_n, old_to_new_neurons, new_n);
+    const auto new_preferred = migrate_float(old_preferred, old_n, old_to_new_neurons, new_n);
+    const auto new_dynamic = migrate_float(old_dynamic, old_n, old_to_new_neurons, new_n);
+    const auto new_external = migrate_float(old_external, old_n, old_to_new_neurons, new_n);
+    const auto new_spikes = migrate_u32(old_spikes, old_to_new_neurons, new_n);
+    upload(next->a, new_a); upload(next->b, new_b); upload(next->c, new_c);
+    upload(next->d, new_d); upload(next->current, new_current);
+    upload(next->voltage, new_voltage); upload(next->recovery, new_recovery);
+    upload(next->preferred_phases, new_preferred);
+    upload(next->dynamic_phases, new_dynamic);
+    upload(next->external_current, new_external);
+    upload_u32(next->spike_counts, new_spikes);
+
+    const auto migrated_ring = remap_delayed_current_ring(
+        old_ring, old_n, old.ring_slots, new_n, next->ring_slots,
+        completed_steps_, old_to_new_neurons);
+    upload(next->synaptic_current, migrated_ring);
+
+    std::vector<float> new_lags(new_e, 0.0f);
+    for (std::uint32_t edge = 0; edge < old_e; ++edge) {
+        if (old_to_new_edges[edge] >= new_e)
+            throw std::out_of_range("Edge state migration target is out of range");
+        new_lags[old_to_new_edges[edge]] = old_lags[edge];
+    }
+    upload(next->edge_phase_lags, new_lags);
+
+    // Preserve the per-neuron STDP traces and map their identities.
+    if (old.plasticity_state_enabled && next->plasticity_state_enabled) {
+        const auto pre_trace = read_float(old.presynaptic_traces, old_n);
+        const auto post_trace = read_float(old.postsynaptic_traces, old_n);
+        upload(next->presynaptic_traces,
+               migrate_float(pre_trace, old_n, old_to_new_neurons, new_n));
+        upload(next->postsynaptic_traces,
+               migrate_float(post_trace, old_n, old_to_new_neurons, new_n));
+    }
+
+    // Preserve active spike-source queue and completed-step counter.
+    const auto active_count = [&]() {
+        std::uint32_t value = 0;
+        SPIKING_CUDA_CHECK(cudaMemcpy(&value, old.active_spike_count.get(),
+            sizeof(value), cudaMemcpyDeviceToHost));
+        return value;
+    }();
+    auto active_sources = read_u32(old.active_spike_sources, active_count);
+    for (auto& source : active_sources) source = old_to_new_neurons.at(source);
+    upload_u32(next->active_spike_sources, active_sources);
+    SPIKING_CUDA_CHECK(cudaMemcpy(next->active_spike_count.get(), &active_count,
+        sizeof(active_count), cudaMemcpyHostToDevice));
+    const auto completed = static_cast<unsigned long long>(completed_steps_);
+    SPIKING_CUDA_CHECK(cudaMemcpy(next->completed_steps_device.get(), &completed,
+        sizeof(completed), cudaMemcpyHostToDevice));
+    const std::uint32_t zero_blocks = 0;
+    SPIKING_CUDA_CHECK(cudaMemcpy(next->completed_step_blocks.get(), &zero_blocks,
+        sizeof(zero_blocks), cudaMemcpyHostToDevice));
+
+    // Remap still-pending external stimuli to the replacement neuron IDs.
+    for (auto& stimulus : external_stimuli_)
+        stimulus.neuron_id = old_to_new_neurons.at(stimulus.neuron_id);
+    if (!external_stimuli_.empty()) {
+        upload_u32(next->external_stimulus_count,
+                   {static_cast<std::uint32_t>(external_stimuli_.size())});
+        SPIKING_CUDA_CHECK(cudaMemcpy(next->external_stimuli.get(),
+            external_stimuli_.data(),
+            external_stimuli_.size() * sizeof(ExternalStimulusGPU),
+            cudaMemcpyHostToDevice));
+    }
+
+    // Recent event history remains valid after ID remapping.
+    if (capture_spike_events_ && old.capture_spike_events) {
+        unsigned long long event_count = 0;
+        SPIKING_CUDA_CHECK(cudaMemcpy(&event_count, old.spike_event_count.get(),
+            sizeof(event_count), cudaMemcpyDeviceToHost));
+        const auto retained = static_cast<std::uint32_t>(
+            std::min<unsigned long long>(event_count, kSpikeEventCapacity));
+        const auto first = event_count - retained;
+        std::vector<std::uint64_t> event_steps(retained);
+        std::vector<std::uint32_t> event_ids(retained);
+        if (retained) {
+            const auto slot = static_cast<std::uint32_t>(first % kSpikeEventCapacity);
+            const auto first_count = std::min<std::uint32_t>(
+                retained, kSpikeEventCapacity - slot);
+            SPIKING_CUDA_CHECK(cudaMemcpy(event_steps.data(),
+                old.spike_event_steps.get() + slot,
+                first_count * sizeof(std::uint64_t), cudaMemcpyDeviceToHost));
+            SPIKING_CUDA_CHECK(cudaMemcpy(event_ids.data(),
+                old.spike_event_neurons.get() + slot,
+                first_count * sizeof(std::uint32_t), cudaMemcpyDeviceToHost));
+            if (first_count < retained) {
+                SPIKING_CUDA_CHECK(cudaMemcpy(event_steps.data() + first_count,
+                    old.spike_event_steps.get(),
+                    (retained - first_count) * sizeof(std::uint64_t), cudaMemcpyDeviceToHost));
+                SPIKING_CUDA_CHECK(cudaMemcpy(event_ids.data() + first_count,
+                    old.spike_event_neurons.get(),
+                    (retained - first_count) * sizeof(std::uint32_t), cudaMemcpyDeviceToHost));
+            }
+            for (auto& id : event_ids) id = old_to_new_neurons.at(id);
+            const auto new_start = static_cast<std::uint32_t>(first % kSpikeEventCapacity);
+            const auto nfirst = std::min<std::uint32_t>(retained, kSpikeEventCapacity-new_start);
+            SPIKING_CUDA_CHECK(cudaMemcpy(next->spike_event_steps.get()+new_start,
+                event_steps.data(), nfirst*sizeof(std::uint64_t), cudaMemcpyHostToDevice));
+            SPIKING_CUDA_CHECK(cudaMemcpy(next->spike_event_neurons.get()+new_start,
+                event_ids.data(), nfirst*sizeof(std::uint32_t), cudaMemcpyHostToDevice));
+            if (nfirst < retained) {
+                SPIKING_CUDA_CHECK(cudaMemcpy(next->spike_event_steps.get(),
+                    event_steps.data()+nfirst, (retained-nfirst)*sizeof(std::uint64_t), cudaMemcpyHostToDevice));
+                SPIKING_CUDA_CHECK(cudaMemcpy(next->spike_event_neurons.get(),
+                    event_ids.data()+nfirst, (retained-nfirst)*sizeof(std::uint32_t), cudaMemcpyHostToDevice));
+            }
+        }
+        SPIKING_CUDA_CHECK(cudaMemcpy(next->spike_event_count.get(), &event_count,
+            sizeof(event_count), cudaMemcpyHostToDevice));
+    }
+
+    next->stream.synchronize();
+    device_state_.swap(next);
+    active_parameters_.simulation.excitatory_count = topology.excitatory_count;
+    active_parameters_.simulation.inhibitory_count = topology.inhibitory_count;
+    active_parameters_.topology.minimum_delay = topology.minimum_delay;
+    active_parameters_.topology.maximum_delay = topology.maximum_delay;
+    parameter_manager_.set_runtime_topology_dimensions(
+        topology.excitatory_count, topology.inhibitory_count,
+        topology.minimum_delay, topology.maximum_delay);
+    (void)copy_topology;
+}
+
+void CudaSimulationRuntime::attach_graft_topology(
+    const CSRTopology& graft, bool plasticity_enabled) {
+    if (graft_attached_)
+        throw std::logic_error("Only one data graft may be attached in this graft lifecycle version");
+    if (parameter_manager_.has_pending_reinitialization())
+        throw std::logic_error("Apply pending initialization settings before grafting");
+    const auto base = collect_connectivity();
+    const auto base_mask = collect_synapse_plasticity_mask();
+    const auto merged = merge_graft_topology(base, graft, base_mask, plasticity_enabled);
+    pre_graft_topology_ = base;
+    pre_graft_plasticity_mask_ = base_mask;
+    pre_graft_neuron_map_ = merged.base_neuron_map;
+    pre_graft_edge_map_ = merged.base_edge_map;
+    pre_graft_excitatory_count_ = base.excitatory_count;
+    pre_graft_inhibitory_count_ = base.inhibitory_count;
+    replace_topology_preserving_state(
+        merged.topology, merged.base_neuron_map, merged.base_edge_map,
+        merged.plasticity_mask);
+    graft_attached_ = true;
+}
+
+void CudaSimulationRuntime::detach_graft_topology() {
+    if (!graft_attached_)
+        throw std::logic_error("No data graft is attached");
+    const auto current = collect_connectivity();
+    std::vector<std::uint32_t> neuron_map(current.neuron_count(), UINT32_MAX);
+    std::vector<std::uint32_t> edge_map(current.synapse_count(), UINT32_MAX);
+    for (std::size_t i = 0; i < pre_graft_neuron_map_.size(); ++i)
+        neuron_map[pre_graft_neuron_map_[i]] = static_cast<std::uint32_t>(i);
+    for (std::size_t i = 0; i < pre_graft_edge_map_.size(); ++i)
+        edge_map[pre_graft_edge_map_[i]] = static_cast<std::uint32_t>(i);
+    replace_topology_preserving_state(
+        pre_graft_topology_, neuron_map, edge_map, pre_graft_plasticity_mask_);
+    graft_attached_ = false;
+    pre_graft_topology_ = CSRTopology{};
+    pre_graft_plasticity_mask_.clear();
+    pre_graft_neuron_map_.clear();
+    pre_graft_edge_map_.clear();
+}
+
 void CudaSimulationRuntime::schedule_stimulus(
     std::uint32_t neuron_id,
     std::uint64_t start_step,
