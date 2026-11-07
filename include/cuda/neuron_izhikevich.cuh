@@ -67,6 +67,10 @@ struct SynapseParametersGPU {
     std::uint32_t excitatory_count = 0;
     bool phase_gate_inhibitory_only = false;
     bool phase_gate_excitatory_only = false;
+    // Optional endogenous per-neuron phases and learned per-edge phase lags.
+    const float* dynamic_neuron_phases = nullptr;
+    const float* edge_phase_lags = nullptr;
+    bool dynamic_phase_gate_enabled = false;
 };
 
 void initialize_neurons(
