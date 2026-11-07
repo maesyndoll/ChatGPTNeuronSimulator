@@ -311,6 +311,32 @@ Json handle_request(SimulationController& controller, const Json& request) {
                 controller.self_observation_snapshot()));
         }
 
+
+        if (command == "get_topology_proposal") {
+            const auto topology = controller.connectivity_snapshot();
+            const auto spikes = controller.spike_events_snapshot(0, 4096);
+            std::vector<ObservedSpike> recent;
+            recent.reserve(spikes.events.size());
+            std::vector<std::uint64_t> activity(topology.neuron_count(), 0);
+            for (const auto& event : spikes.events) {
+                recent.push_back({event.step, event.neuron_id});
+                if (event.neuron_id < activity.size()) ++activity[event.neuron_id];
+            }
+            TopologyAdvisorOptions options;
+            const auto proposal = propose_topology_update(
+                topology, recent, activity, options);
+            return success_response(request_id, {
+                {"base_graph_fingerprint", std::to_string(proposal.base_graph_fingerprint)},
+                {"candidate_graph_fingerprint", std::to_string(proposal.candidate_graph_fingerprint)},
+                {"proposed_added_edges", proposal.proposed_added_edges},
+                {"proposed_pruned_edges", proposal.proposed_pruned_edges},
+                {"candidate_synapse_count", std::to_string(proposal.candidate.synapse_count())},
+                {"source_unchanged", true},
+                {"applied", false},
+                {"evidence_spikes", recent.size()}
+            });
+        }
+
         if (command == "get_spike_events") {
             std::uint64_t after_sequence = 0;
             if (payload.contains("after_sequence")) {
