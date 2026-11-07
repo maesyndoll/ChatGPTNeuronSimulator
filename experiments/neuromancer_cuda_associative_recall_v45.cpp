@@ -83,8 +83,6 @@ EdgeStats edge_stats(const CSRTopology& g, std::uint32_t source_pop,
                      std::uint32_t target_pop) {
     EdgeStats out;
     double sum = 0.0;
-    double sum = 0.0;
-    std::uint64_t count = 0;
     for (std::uint32_t s = source_pop * K; s < (source_pop + 1) * K; ++s) {
         for (auto e = g.row_offsets[s]; e < g.row_offsets[s + 1]; ++e) {
             if (population(g.target_indices[e]) == target_pop) {
