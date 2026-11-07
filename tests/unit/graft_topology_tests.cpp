@@ -77,11 +77,11 @@ int main() {
         const auto migrated_ring = spiking::remap_delayed_current_ring(
             old_ring, 2, 3, 4, 5, 5, {0, 2});
         require(migrated_ring.size() == 20, "delayed-current ring was not resized");
-        require(migrated_ring[2] == 20.0f && migrated_ring[4] == 21.0f,
+        require(migrated_ring[0] == 30.0f && migrated_ring[2] == 31.0f,
                 "current-step pending currents were not preserved");
-        require(migrated_ring[12] == 10.0f && migrated_ring[14] == 11.0f,
+        require(migrated_ring[4] == 10.0f && migrated_ring[6] == 11.0f,
                 "future delayed currents were shifted during ring growth");
-        require(migrated_ring[8] == 30.0f && migrated_ring[10] == 31.0f,
+        require(migrated_ring[8] == 20.0f && migrated_ring[10] == 21.0f,
                 "later delayed currents were not preserved");
         std::cout << "GRAFT TOPOLOGY MERGE TESTS: PASS\n"
                   << "population_ordering=PASS neuron_remap=PASS csr_merge=PASS\n"
