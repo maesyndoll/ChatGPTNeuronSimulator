@@ -246,6 +246,7 @@ int main(int argc, char** argv) {
                                 << c.peak_i << ',' << c.peak_i_step << ','
                                 << c.peak_both << ',' << c.peak_both_step << ','
                                 << c.peak_interaction << ',' << c.peak_interaction_step << ','
+                                << c.peak_interaction_pre_spike << ',' << c.peak_interaction_pre_spike_step << ','
                                 << c.final_interaction << ','
                                 << c.both.e_spikes << ',' << c.both.i_spikes << ','
                                 << c.e.target_spikes << ',' << c.i.target_spikes << ','
