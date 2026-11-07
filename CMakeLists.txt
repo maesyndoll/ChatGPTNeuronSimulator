@@ -422,6 +422,29 @@ if(SPIKINGMODEL_ENABLE_CUDA)
              COMMAND neuromancer_random_topology_association_v18)
     set_tests_properties(neuromancer_random_topology_association_v18 PROPERTIES TIMEOUT 180)
 
+    # V27: non-plastic E/I diagnostics on an existing saved CSR topology.
+    # Compares spontaneous activity, E-driven inhibitory recruitment, and
+    # direct inhibitory stimulation without changing the supplied model.
+    add_executable(neuromancer_ei_diagnostics_v27
+        experiments/neuromancer_ei_diagnostics_v27.cpp
+        src/cuda/neuron_izhikevich.cu
+        src/runtime/cuda_simulation_runtime.cu
+        src/topology/topology_generator.cpp
+        src/topology/topology_io.cpp
+    )
+    target_include_directories(neuromancer_ei_diagnostics_v27 PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(neuromancer_ei_diagnostics_v27 PRIVATE CUDA::cudart)
+    target_compile_options(neuromancer_ei_diagnostics_v27 PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+    )
+    set_target_properties(neuromancer_ei_diagnostics_v27 PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+    )
+
     # V26: overnight continual-learning experiment with online STDP,
     # periodic learned-CSR checkpoints, held-out frozen-weight evaluation.
     add_executable(neuromancer_overnight_v26
