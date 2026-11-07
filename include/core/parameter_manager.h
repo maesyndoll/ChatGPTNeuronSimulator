@@ -69,6 +69,23 @@ public:
         return active_;
     }
 
+    void set_runtime_topology_dimensions(std::uint32_t excitatory_count,
+                                         std::uint32_t inhibitory_count,
+                                         std::uint32_t minimum_delay,
+                                         std::uint32_t maximum_delay) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        active_.simulation.excitatory_count = excitatory_count;
+        active_.simulation.inhibitory_count = inhibitory_count;
+        requested_.simulation.excitatory_count = excitatory_count;
+        requested_.simulation.inhibitory_count = inhibitory_count;
+        active_.topology.minimum_delay = minimum_delay;
+        active_.topology.maximum_delay = maximum_delay;
+        requested_.topology.minimum_delay = minimum_delay;
+        requested_.topology.maximum_delay = maximum_delay;
+        ++parameter_version_;
+        ++simulation_generation_;
+    }
+
     ModelParameters active_parameters() const {
         std::lock_guard<std::mutex> lock(mutex_);
         return active_;
