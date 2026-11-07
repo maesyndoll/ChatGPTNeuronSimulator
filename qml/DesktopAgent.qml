@@ -284,7 +284,7 @@ ApplicationWindow {
                     }
 
                     Label {
-                        text: "ACTION OUTPUT"
+                        text: "POINTER ACTUATOR"
                         color: "#70efc5"
                         font.pixelSize: 11
                         font.bold: true
@@ -293,9 +293,28 @@ ApplicationWindow {
                     Label {
                         Layout.fillWidth: true
                         wrapMode: Text.Wrap
-                        text: "Visual stimulation enabled. Mouse and keyboard actuation remain disabled. Sending a frame schedules brief current pulses to neurons 0–63; it does not yet mean the network recognizes objects."
+                        text: "Pointer movement is now available as a manual actuator test. It is not yet driven by neural decisions. Click once to move to the screen center."
                         color: mutedColor
                         font.pixelSize: 12
+                    }
+                    Button {
+                        Layout.fillWidth: true
+                        text: "Move mouse to screen center"
+                        onClicked: desktopCapture.movePointerToNormalized(0.5, 0.5)
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        text: desktopCapture.pointerActionStatus
+                        color: "#70efc5"
+                        font.pixelSize: 11
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        text: "Visual input: paused simulation only. The 8×8 luminance grid maps to neurons 0–63; it is not semantic vision."
+                        color: mutedColor
+                        font.pixelSize: 11
                     }
 
                     Item { Layout.fillHeight: true }
@@ -321,7 +340,7 @@ ApplicationWindow {
                 font.pixelSize: 11
             }
             Label {
-                text: "100 ms capture interval"
+                text: "250 ms capture interval · 4 FPS"
                 color: "#71839a"
                 font.pixelSize: 11
             }
