@@ -43,7 +43,7 @@ CSRTopology make_graph(int seed) {
         } else if (s < 2 * kAssembly) {
             const auto i = s - kAssembly;
             const auto c = 2 * kAssembly +
-                ((i + static_cast<std::uint32_t>(2 * seed)) % kAssembly);
+                ((i + static_cast<std::uint32_t>(seed)) % kAssembly);
             g.target_indices.push_back(c);
             g.weights.push_back(0.005f);
             g.delays.push_back(1U);
