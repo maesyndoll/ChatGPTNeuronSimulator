@@ -344,6 +344,47 @@ Json handle_request(SimulationController& controller, const Json& request) {
                 update_result_json(controller.reset_parameters_to_defaults()));
         }
 
+
+        if (command == "attach_graft") {
+            if (!payload.contains("package_path") ||
+                !payload.at("package_path").is_string() ||
+                payload.at("package_path").get<std::string>().empty())
+                throw std::invalid_argument("attach_graft requires a non-empty package_path");
+            bool plasticity_enabled = false;
+            if (payload.contains("plasticity_enabled")) {
+                if (!payload.at("plasticity_enabled").is_boolean())
+                    throw std::invalid_argument("plasticity_enabled must be boolean");
+                plasticity_enabled = payload.at("plasticity_enabled").get<bool>();
+            }
+            const auto info = controller.attach_graft_package(
+                payload.at("package_path").get<std::string>(), plasticity_enabled);
+            return success_response(request_id, {
+                {"attached", true}, {"id", info.id}, {"name", info.name},
+                {"excitatory_count", info.excitatory_count},
+                {"inhibitory_count", info.inhibitory_count},
+                {"synapse_count", info.synapse_count},
+                {"status", status_name(controller.status())},
+                {"configuration", configuration_json(controller.configuration_snapshot())},
+                {"telemetry", telemetry_json(controller.telemetry_snapshot())}
+            });
+        }
+
+        if (command == "detach_graft") {
+            controller.detach_graft_package();
+            return success_response(request_id, {
+                {"attached", false},
+                {"status", status_name(controller.status())},
+                {"configuration", configuration_json(controller.configuration_snapshot())},
+                {"telemetry", telemetry_json(controller.telemetry_snapshot())}
+            });
+        }
+
+        if (command == "get_graft_status") {
+            return success_response(request_id, {
+                {"attached", controller.graft_attached()}
+            });
+        }
+
         if (command == "reinitialize") {
             controller.reinitialize_simulation();
             return success_response(request_id, {
