@@ -98,17 +98,6 @@ __global__ void propagate_spikes_kernel(
         const std::uint32_t source =
             state.active_spike_sources[queue_index];
 
-        if (synapses.phase_gate_enabled) {
-            constexpr float tau = 6.28318530717958647692f;
-            const float phase = fmodf(
-                synapses.phase_offset_rad +
-                    static_cast<float>(completed) * synapses.phase_increment_rad,
-                tau);
-            const float error = remainderf(
-                phase - synapses.preferred_phases[source], tau);
-            if (fabsf(error) > synapses.gate_half_width_rad) continue;
-        }
-
         const std::uint32_t begin = synapses.row_offsets[source];
         const std::uint32_t end = synapses.row_offsets[source + 1];
 
@@ -116,6 +105,16 @@ __global__ void propagate_spikes_kernel(
              edge < end;
              edge += blockDim.x) {
             const std::uint32_t target = synapses.target_indices[edge];
+            if (synapses.phase_gate_enabled) {
+                constexpr float tau = 6.28318530717958647692f;
+                const float phase = fmodf(
+                    synapses.phase_offset_rad +
+                        static_cast<float>(completed) * synapses.phase_increment_rad,
+                    tau);
+                const float error = remainderf(
+                    phase - synapses.preferred_phases[target], tau);
+                if (fabsf(error) > synapses.gate_half_width_rad) continue;
+            }
             const std::uint32_t delay = synapses.delays[edge];
 
             // Preserve the established one-based delivery timing:
