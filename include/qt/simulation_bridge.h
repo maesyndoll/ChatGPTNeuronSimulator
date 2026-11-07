@@ -96,6 +96,7 @@ public:
     Q_INVOKABLE void refreshSpikeEvents();
     Q_INVOKABLE void refreshConnectivity();
     Q_INVOKABLE void refreshTopologyVisual();
+    Q_INVOKABLE void sendVisualGrid(const QVariantList& intensities);
 
 signals:
     void connectionChanged();
