@@ -78,19 +78,28 @@ CSRTopology make_random_graph(std::uint32_t seed) {
     return g;
 }
 
-double mean_between(const CSRTopology& g, std::uint32_t source_pop,
-                    std::uint32_t target_pop) {
+struct EdgeStats { std::uint64_t count = 0; double mean = 0.0; float maximum = 0.0f; };
+EdgeStats edge_stats(const CSRTopology& g, std::uint32_t source_pop,
+                     std::uint32_t target_pop) {
+    EdgeStats out;
+    double sum = 0.0;
     double sum = 0.0;
     std::uint64_t count = 0;
     for (std::uint32_t s = source_pop * K; s < (source_pop + 1) * K; ++s) {
         for (auto e = g.row_offsets[s]; e < g.row_offsets[s + 1]; ++e) {
             if (population(g.target_indices[e]) == target_pop) {
                 sum += g.weights[e];
-                ++count;
+                out.maximum = std::max(out.maximum, g.weights[e]);
+                ++out.count;
             }
         }
     }
-    return count ? sum / static_cast<double>(count) : 0.0;
+    out.mean = out.count ? sum / static_cast<double>(out.count) : 0.0;
+    return out;
+}
+double mean_between(const CSRTopology& g, std::uint32_t source_pop,
+                    std::uint32_t target_pop) {
+    return edge_stats(g, source_pop, target_pop).mean;
 }
 
 void stimulate(CudaSimulationRuntime& runtime, std::uint32_t begin,
@@ -112,6 +121,8 @@ struct TrainingResult {
     std::vector<float> edge_lags;
     std::vector<float> activity;
     StructuralPlasticityReport structural;
+    std::array<std::array<std::uint64_t, 3>, 3> final_edge_counts{};
+    std::array<std::array<std::uint64_t, 3>, 3> initial_edge_counts{};
 };
 
 TrainingResult train(const std::filesystem::path& dir) {
@@ -130,6 +141,8 @@ TrainingResult train(const std::filesystem::path& dir) {
     TrainingResult out;
     for (std::uint32_t p = 0; p < 3; ++p) {
         out.initial_means[p] = mean_between(initial, p, (p + 1) % 3);
+        for (std::uint32_t q = 0; q < 3; ++q)
+            out.initial_edge_counts[p][q] = edge_stats(initial, p, q).count;
     }
     out.activity.assign(N, 0.0f);
     AutonomousPhaseParameters pp;
@@ -238,6 +251,8 @@ struct RecallResult {
     float recall = 0.0f;
     float jaccard = 0.0f;
     std::uint64_t dropped = 0;
+    float max_b_voltage = -1000.0f;
+    float max_c_voltage = -1000.0f;
     bool finite = true;
 };
 
@@ -252,10 +267,19 @@ RecallResult recall(const std::filesystem::path& topology_path,
     RecallResult out;
     std::array<bool, K> b_active{}, c_active{};
     std::array<bool, E> any_active{};
+    std::vector<std::uint32_t> downstream_ids;
+    for (std::uint32_t id = K; id < E; ++id) downstream_ids.push_back(id);
     const auto start = runtime.completed_steps() + 1;
     stimulate(runtime, 0, CUE_SIZE, start); // partial A cue only
     for (std::uint32_t step = 0; step < RECALL_STEPS; ++step) {
         runtime.run_steps(1);
+        const auto samples = runtime.collect_voltage_samples(downstream_ids);
+        for (const auto& sample : samples) {
+            if (sample.neuron_id < 2 * K)
+                out.max_b_voltage = std::max(out.max_b_voltage, sample.voltage_mv);
+            else
+                out.max_c_voltage = std::max(out.max_c_voltage, sample.voltage_mv);
+        }
         const auto batch = runtime.collect_spike_events();
         out.dropped += batch.dropped_events;
         for (const auto& event : batch.events) {
@@ -368,6 +392,8 @@ int main(int argc, char** argv) {
                       << " precision=" << item->precision
                       << " recall=" << item->recall
                       << " jaccard=" << item->jaccard
+                      << " max_B_voltage=" << item->max_b_voltage
+                      << " max_C_voltage=" << item->max_c_voltage
                       << " dropped=" << item->dropped
                       << " finite=" << (item->finite ? "PASS" : "FAIL") << '\n';
         }
