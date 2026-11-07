@@ -1150,3 +1150,26 @@ set_target_properties(neuromancer_dynamic_phase_runtime_v42 PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
     CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
 )
+
+# V42 controlled CUDA phase-transfer controls: ungated, aligned, and
+# misaligned conditions share identical topology and source stimulation.
+add_executable(neuromancer_phase_transfer_controls_v42
+    experiments/neuromancer_phase_transfer_controls_v42.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_phase_transfer_controls_v42 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_phase_transfer_controls_v42 PRIVATE CUDA::cudart)
+set_target_properties(neuromancer_phase_transfer_controls_v42 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_phase_transfer_controls_v42
+             COMMAND neuromancer_phase_transfer_controls_v42)
+    set_tests_properties(neuromancer_phase_transfer_controls_v42 PROPERTIES TIMEOUT 180)
+endif()
