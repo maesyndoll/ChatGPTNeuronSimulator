@@ -521,6 +521,50 @@ ApplicationWindow {
                     font.pixelSize: 10
                     elide: Text.ElideRight
                 }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label { text: "TOPOLOGY ADVISOR"; color: "#d9bd83"; font.pixelSize: 10; font.bold: true; font.letterSpacing: 0.8 }
+                    Item { Layout.fillWidth: true }
+                    Button {
+                        text: "Propose topology"
+                        enabled: simulation.connected
+                        onClicked: simulation.refreshTopologyProposal()
+                    }
+                }
+                Label {
+                    Layout.fillWidth: true
+                    visible: Object.keys(simulation.topologyProposal).length > 0
+                    text: "CANDIDATE  +" + (simulation.topologyProposal.proposed_added_edges || 0) +
+                          " edges  /  -" + (simulation.topologyProposal.proposed_pruned_edges || 0) +
+                          " pruned  ·  evidence spikes " + (simulation.topologyProposal.evidence_spikes || 0) +
+                          "  ·  candidate synapses " + (simulation.topologyProposal.candidate_synapse_count || "—")
+                    color: "#d8e4e8"; font.pixelSize: 10; wrapMode: Text.Wrap
+                }
+                Label {
+                    Layout.fillWidth: true
+                    visible: Object.keys(simulation.topologyProposal).length > 0
+                    text: {
+                        var edges = simulation.topologyProposal.added_edges || []
+                        if (edges.length === 0) return "No new connections proposed from the retained spike evidence."
+                        var lines = []
+                        for (var i = 0; i < Math.min(edges.length, 12); ++i) {
+                            var edge = edges[i]
+                            lines.push(edge.source + " → " + edge.target +
+                                       "  w " + Number(edge.weight).toFixed(3) +
+                                       "  d " + edge.delay)
+                        }
+                        return lines.join("     ·     ")
+                    }
+                    color: "#8db6c4"; font.pixelSize: 10; wrapMode: Text.Wrap
+                }
+                Label {
+                    Layout.fillWidth: true
+                    visible: Object.keys(simulation.topologyProposal).length > 0
+                    text: "BASE " + String(simulation.topologyProposal.base_graph_fingerprint || "—").slice(0, 12) +
+                          "  →  CANDIDATE " + String(simulation.topologyProposal.candidate_graph_fingerprint || "—").slice(0, 12) +
+                          "  ·  LIVE GRAPH UNCHANGED"
+                    color: "#79bca9"; font.pixelSize: 9
+                }
             }
         }
 
