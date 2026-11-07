@@ -4,6 +4,7 @@
 #include <QImage>
 #include <QQuickImageProvider>
 #include <QTimer>
+#include <QVariantList>
 
 class DesktopCapture final : public QObject {
     Q_OBJECT
@@ -14,6 +15,7 @@ class DesktopCapture final : public QObject {
     Q_PROPERTY(int cursorY READ cursorY NOTIFY frameChanged)
     Q_PROPERTY(bool capturing READ capturing NOTIFY captureStatusChanged)
     Q_PROPERTY(QString captureStatus READ captureStatus NOTIFY captureStatusChanged)
+    Q_PROPERTY(QVariantList visualGrid READ visualGrid NOTIFY frameChanged)
 
 public:
     explicit DesktopCapture(QObject* parent = nullptr);
@@ -26,6 +28,7 @@ public:
     bool capturing() const noexcept;
     QString captureStatus() const;
     QImage image() const;
+    QVariantList visualGrid() const;
 
     Q_INVOKABLE void start();
     Q_INVOKABLE void stop();
@@ -41,6 +44,7 @@ private slots:
 private:
     QTimer timer_;
     QImage image_;
+    QVariantList visual_grid_;
     qulonglong frame_sequence_ = 0;
     int screen_width_ = 0;
     int screen_height_ = 0;
