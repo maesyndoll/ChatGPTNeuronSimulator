@@ -90,7 +90,7 @@ CSRTopology make_initial_topology(std::uint32_t seed) {
             else if (source < kExcitatory && target >= kExcitatory) probability = 0.010f;
             else if (source >= kExcitatory && target < kExcitatory) probability = 0.020f;
             else probability = 0.010f;
-            if (unit(rng) < probability) row_weights[target] = 0.02f;
+            if (unit(rng) < probability)\n                row_weights[target] = source < kExcitatory ? 0.02f : -0.02f;
         }
 
         // A small, explicit input-to-readout candidate set makes the learning
@@ -100,7 +100,7 @@ CSRTopology make_initial_topology(std::uint32_t seed) {
             row_weights[kOutputB] = 0.02f;
         }
         for (std::uint32_t target = 0; target < kTotal; ++target) {
-            if (row_weights[target] <= 0.0f) continue;
+            if (row_weights[target] == 0.0f) continue;
             graph.target_indices.push_back(target);
             graph.weights.push_back(row_weights[target]);
             graph.delays.push_back(1U);
