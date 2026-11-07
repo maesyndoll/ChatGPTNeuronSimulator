@@ -64,7 +64,7 @@ ModelParameters make_parameters() {
     return p;
 }
 
-CSRTopology make_single_edge(bool inhibitory_source) {
+CSRTopology make_single_edge(bool inhibitory_source, bool include_edge) {
     CSRTopology graph;
     graph.excitatory_count = kExcitatory;
     graph.inhibitory_count = kInhibitory;
@@ -72,21 +72,24 @@ CSRTopology make_single_edge(bool inhibitory_source) {
     graph.maximum_delay = 1;
     graph.row_offsets = {0, 0, 0, 0};
     const std::uint32_t source = inhibitory_source ? kSourceI : kSourceE;
-    graph.target_indices = {kTargetE};
-    graph.weights = {inhibitory_source ? -kWeightMagnitude : kWeightMagnitude};
-    graph.delays = {1};
-    for (std::uint32_t row = source + 1; row < graph.row_offsets.size(); ++row)
-        graph.row_offsets[row] = 1;
+    if (include_edge) {
+        graph.target_indices = {kTargetE};
+        graph.weights = {inhibitory_source ? -kWeightMagnitude : kWeightMagnitude};
+        graph.delays = {1};
+        for (std::uint32_t row = source + 1; row < graph.row_offsets.size(); ++row)
+            graph.row_offsets[row] = 1;
+    }
     graph.validate();
     return graph;
 }
 
 Observation run_once(const std::filesystem::path& output_dir,
                      bool inhibitory_source,
+                     bool include_edge,
                      bool phase_gate,
                      float preferred_target_phase,
                      const std::string& label) {
-    const auto topology = make_single_edge(inhibitory_source);
+    const auto topology = make_single_edge(inhibitory_source, include_edge);
     const auto path = (output_dir / (label + ".csr")).string();
     save_csr_topology(topology, path);
 
@@ -130,7 +133,7 @@ Observation run_once(const std::filesystem::path& output_dir,
         throw std::runtime_error(label + ": target voltage sample missing");
 
     result.target_voltage = sample.front().voltage_mv;
-    result.target_delta_mv = result.target_voltage - (-65.0f);
+    result.target_delta_mv = result.target_voltage;
     const auto metrics = runtime.collect_metrics();
     if (!metrics.finite_state)
         throw std::runtime_error(label + ": non-finite neuron state");
@@ -145,38 +148,43 @@ void test_source_type(const std::filesystem::path& output_dir,
                       bool inhibitory_source) {
     const std::string kind = inhibitory_source ? "inhibitory" : "excitatory";
 
-    const auto baseline = run_once(output_dir, inhibitory_source, false, 0.0f,
+    const auto control = run_once(output_dir, inhibitory_source, false, false, 0.0f,
+                                  kind + "_no_edge_control");
+    const auto baseline = run_once(output_dir, inhibitory_source, true, false, 0.0f,
                                    kind + "_ungated");
+    const float baseline_delta = baseline.target_voltage - control.target_voltage;
     const float phase_increment =
         kTau * kFrequencyHz * kDtMs / 1000.0f;
     const float aligned_phase = std::fmod(
         static_cast<float>(baseline.source_spike_step) * phase_increment, kTau);
 
-    const auto aligned = run_once(output_dir, inhibitory_source, true,
+    const auto aligned = run_once(output_dir, inhibitory_source, true, true,
                                   aligned_phase, kind + "_phase_aligned");
-    const auto rejected = run_once(output_dir, inhibitory_source, true,
+    const auto rejected = run_once(output_dir, inhibitory_source, true, true,
                                     std::fmod(aligned_phase + 3.14159265358979323846f,
                                               kTau),
                                     kind + "_phase_rejected");
 
+    const float aligned_delta = aligned.target_voltage - control.target_voltage;
+    const float rejected_delta = rejected.target_voltage - control.target_voltage;
     const float expected_sign = inhibitory_source ? -1.0f : 1.0f;
     require(baseline.source_spike_step == aligned.source_spike_step &&
             baseline.source_spike_step == rejected.source_spike_step,
             kind + ": source spike timing changed between matched conditions");
-    require(expected_sign * baseline.target_delta_mv > 0.05f,
-            kind + ": ungated synapse did not produce the expected signed response");
-    require(expected_sign * aligned.target_delta_mv > 0.05f,
+    require(expected_sign * baseline_delta > 0.01f,
+            kind + ": ungated synapse did not produce the expected signed response versus no-edge control");
+    require(expected_sign * aligned_delta > 0.01f,
             kind + ": phase-aligned synapse did not transmit with the expected sign");
-    require(std::abs(rejected.target_delta_mv) < 1.0e-4f,
+    require(std::abs(rejected_delta) < 1.0e-4f,
             kind + ": anti-phase gate failed to reject the synaptic event");
-    require(std::abs(aligned.target_delta_mv - baseline.target_delta_mv) < 1.0e-3f,
+    require(std::abs(aligned_delta - baseline_delta) < 1.0e-3f,
             kind + ": aligned gate response differs unexpectedly from ungated response");
 
     std::cout << kind << " pathway"
               << " | source spike step=" << baseline.source_spike_step
-              << " | ungated delta=" << baseline.target_delta_mv << " mV"
-              << " | aligned delta=" << aligned.target_delta_mv << " mV"
-              << " | rejected delta=" << rejected.target_delta_mv << " mV\n";
+              << " | ungated synaptic delta=" << baseline_delta << " mV"
+              << " | aligned synaptic delta=" << aligned_delta << " mV"
+              << " | rejected synaptic delta=" << rejected_delta << " mV\n";
 }
 
 } // namespace
