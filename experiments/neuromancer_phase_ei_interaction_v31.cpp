@@ -34,16 +34,6 @@ constexpr std::uint32_t kRunSteps = 140;
 
 enum class Edges { None, Excitatory, Inhibitory, Both };
 
-const char* edge_name(Edges edges) {
-    switch (edges) {
-        case Edges::None: return "none";
-        case Edges::Excitatory: return "e_only";
-        case Edges::Inhibitory: return "i_only";
-        case Edges::Both: return "e_plus_i";
-    }
-    return "invalid";
-}
-
 struct Observation {
     float target_voltage = 0.0f;
     std::uint64_t e_spikes = 0;
@@ -51,6 +41,7 @@ struct Observation {
     std::uint64_t target_spikes = 0;
     std::uint64_t e_source_step = 0;
     std::uint64_t i_source_step = 0;
+    std::vector<float> target_trace;
     bool finite = false;
 };
 
@@ -139,22 +130,25 @@ Observation run_trial(const std::filesystem::path& directory,
                                   kPulseDuration, kPulseCurrent);
     }
 
-    runtime.run_steps(kRunSteps);
-    const auto voltage = runtime.collect_voltage_samples({kTarget});
-    if (voltage.size() != 1)
-        throw std::runtime_error(label + ": missing target voltage sample");
-
-    const auto metrics = runtime.collect_metrics();
     Observation result;
-    result.target_voltage = voltage.front().voltage_mv;
+    result.target_trace.reserve(kRunSteps);
+    for (std::uint32_t step = 0; step < kRunSteps; ++step) {
+        runtime.run_steps(1);
+        const auto voltage = runtime.collect_voltage_samples({kTarget});
+        if (voltage.size() != 1)
+            throw std::runtime_error(label + ": missing target voltage sample");
+        result.target_trace.push_back(voltage.front().voltage_mv);
+    }
+    const auto metrics = runtime.collect_metrics();
+    result.target_voltage = result.target_trace.back();
     const auto events = runtime.collect_spike_events();
     for (const auto& event : events.events) {
         if (event.neuron_id == kExcitatorySource) {
             ++result.e_spikes;
-            result.e_source_step = event.step;
+            if (result.e_spikes == 1) result.e_source_step = event.step;
         } else if (event.neuron_id == kInhibitorySource) {
             ++result.i_spikes;
-            result.i_source_step = event.step;
+            if (result.i_spikes == 1) result.i_source_step = event.step;
         } else if (event.neuron_id == kTarget) {
             ++result.target_spikes;
         }
@@ -174,6 +168,8 @@ struct Condition {
     double delta_i = 0.0;
     double delta_both = 0.0;
     double interaction = 0.0;
+    double peak_e = 0.0, peak_i = 0.0, peak_both = 0.0, peak_interaction = 0.0;
+    std::uint32_t peak_e_step = 0, peak_i_step = 0, peak_both_step = 0, peak_interaction_step = 0;
 };
 
 Condition run_condition(const std::filesystem::path& directory,
@@ -197,6 +193,16 @@ Condition run_condition(const std::filesystem::path& directory,
     c.delta_i = c.i.target_voltage - c.none.target_voltage;
     c.delta_both = c.both.target_voltage - c.none.target_voltage;
     c.interaction = c.delta_both - c.delta_e - c.delta_i;
+    for (std::uint32_t step = 0; step < kRunSteps; ++step) {
+        const double de = c.e.target_trace[step] - c.none.target_trace[step];
+        const double di = c.i.target_trace[step] - c.none.target_trace[step];
+        const double db = c.both.target_trace[step] - c.none.target_trace[step];
+        const double inter = db - de - di;
+        if (std::abs(de) > std::abs(c.peak_e)) { c.peak_e = de; c.peak_e_step = step + 1; }
+        if (std::abs(di) > std::abs(c.peak_i)) { c.peak_i = di; c.peak_i_step = step + 1; }
+        if (std::abs(db) > std::abs(c.peak_both)) { c.peak_both = db; c.peak_both_step = step + 1; }
+        if (std::abs(inter) > std::abs(c.peak_interaction)) { c.peak_interaction = inter; c.peak_interaction_step = step + 1; }
+    }
     return c;
 }
 
