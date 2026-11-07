@@ -8,6 +8,7 @@
 #include <QStringList>
 #include <QVariant>
 #include <cmath>
+#include <limits>
 #include <filesystem>
 
 #include <unistd.h>
@@ -575,6 +576,51 @@ void SimulationBridge::sendVisualGrid(const QVariantList& intensities) {
                         QJsonObject{{QStringLiteral("stimuli"), stimuli}});
     setStatusMessage(QStringLiteral("Submitted %1 active visual cells to neurons 0–63")
                          .arg(activeCells));
+}
+
+void SimulationBridge::sendStimulusPulse(
+    int neuronId, double amplitude, int durationSteps) {
+    if (!connected_) {
+        setErrorMessage(QStringLiteral("Cannot send stimulus: backend disconnected"));
+        return;
+    }
+    if (simulation_status_.compare(QStringLiteral("running"), Qt::CaseInsensitive) == 0) {
+        setErrorMessage(QStringLiteral("Pause the simulation before scheduling a controlled pulse"));
+        return;
+    }
+    if (neuronId < 0 || durationSteps <= 0 ||
+        !std::isfinite(amplitude) || amplitude < 0.0 || amplitude > 100.0) {
+        setErrorMessage(QStringLiteral("Pulse requires neuron >= 0, duration > 0, and amplitude in [0, 100]"));
+        return;
+    }
+
+    bool stepOk = false;
+    const quint64 completed = telemetry_.value(QStringLiteral("completed_steps"))
+        .toString().toULongLong(&stepOk);
+    if (!stepOk || completed >= static_cast<quint64>(std::numeric_limits<qint64>::max())) {
+        setErrorMessage(QStringLiteral("Waiting for a valid simulation step counter"));
+        return;
+    }
+
+    const auto neuronCount = connectivity_statistics_
+        .value(QStringLiteral("neuron_count")).toULongLong();
+    if (neuronCount > 0 && static_cast<quint64>(neuronId) >= neuronCount) {
+        setErrorMessage(QStringLiteral("Selected neuron is outside the current network"));
+        return;
+    }
+
+    const QJsonObject stimulus{
+        {QStringLiteral("neuron_id"), neuronId},
+        {QStringLiteral("start_step"), static_cast<qint64>(completed + 1)},
+        {QStringLiteral("duration_steps"), durationSteps},
+        {QStringLiteral("amplitude"), amplitude}
+    };
+    client_.sendRequest(
+        QStringLiteral("schedule_stimuli"),
+        QJsonObject{{QStringLiteral("stimuli"), QJsonArray{stimulus}}});
+    setStatusMessage(
+        QStringLiteral("Controlled pulse queued for neuron %1 at step %2")
+            .arg(neuronId).arg(completed + 1));
 }
 
 void SimulationBridge::reinitializeSimulation() {
