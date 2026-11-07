@@ -1631,3 +1631,24 @@ if(BUILD_TESTING)
     target_link_libraries(graft_topology_tests PRIVATE neuromancer_graft_topology)
     add_test(NAME graft_topology_tests COMMAND graft_topology_tests)
 endif()
+
+
+# Read-only self-observation of the live connectome snapshot.
+add_library(neuromancer_neural_self_observer STATIC
+    src/runtime/neural_self_observer.cpp
+)
+target_include_directories(neuromancer_neural_self_observer PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_options(neuromancer_neural_self_observer PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+)
+if(BUILD_TESTING)
+    add_executable(neural_self_observer_tests
+        tests/unit/neural_self_observer_tests.cpp
+    )
+    target_link_libraries(neural_self_observer_tests PRIVATE
+        neuromancer_neural_self_observer
+    )
+    add_test(NAME neural_self_observer_tests COMMAND neural_self_observer_tests)
+endif()
