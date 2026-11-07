@@ -176,12 +176,12 @@ void save_manifest() {
         << "output_neurons " << kOutputA << ' ' << kOutputB << "\n"
         << "dt_ms " << kDtMs << "\n"
         << "spike_threshold_mv " << kSpikeThresholdMv << "\n"
-        << "simulation_steps 100\\n"
-        << "stimulus_start_step " << kStimulusStart << "\\n"
-        << "stimulus_duration_steps " << kStimulusDuration << "\\n"
-        << "input_current " << kInputCurrent << "\\n"
-        << "active_feature_threshold 0.5\\n"
-        << "topology_file topology.csr\\n"
+        << "simulation_steps 100\n"
+        << "stimulus_start_step " << kStimulusStart << "\n"
+        << "stimulus_duration_steps " << kStimulusDuration << "\n"
+        << "input_current " << kInputCurrent << "\n"
+        << "active_feature_threshold 0.5\n"
+        << "topology_file topology.csr\n"
         << "readout supervised_class_conditional_feature_frequency\n";
 }
 
