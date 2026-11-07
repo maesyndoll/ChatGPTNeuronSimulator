@@ -117,7 +117,7 @@ class NeuralChooser {
    if(counts[i]>counts[best]||(counts[i]==counts[best]&&moves[i].q>moves[best].q))best=(int)i;
   }
   int q_best=0;for(std::size_t i=1;i<moves.size()&&i<MAX_ACTIONS;++i)if(moves[i].q>moves[q_best].q)q_best=(int)i;
-  int spike_second=0,spike_top_ties=0;for(std::size_t i=0;i<moves.size()&&i<MAX_ACTIONS;++i){if(counts[i]>spike_second&&counts[i]<counts[best]){} if((int)i!=best)spike_second=std::max(spike_second,counts[i]);if(counts[i]==counts[best])++spike_top_ties;}
+  int spike_second=0,spike_top_ties=0;for(std::size_t i=0;i<moves.size()&&i<MAX_ACTIONS;++i){if((int)i!=best)spike_second=std::max(spike_second,counts[i]);if(counts[i]==counts[best])++spike_top_ties;}
   int selected_q_rank=1;for(std::size_t i=0;i<moves.size()&&i<MAX_ACTIONS;++i)if(moves[i].q>moves[best].q)++selected_q_rank;
   const int top_spikes=counts[best],spike_margin=top_spikes-spike_second;
   const double utility_regret=moves[q_best].utility-moves[best].utility;
