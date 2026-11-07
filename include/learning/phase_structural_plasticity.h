@@ -103,11 +103,16 @@ public:
         // time) to a circular estimate. Randomly varying delays cancel in
         // the resultant vector instead of being mistaken for a stable lag.
         if (learn) {
-            for (std::uint32_t source = 0; source < n; ++source) {
-                if (population_spikes[source] == 0U ||
-                    last_spike_step_[source] == invalid_step()) continue;
-                for (std::uint32_t target = 0; target < n; ++target) {
-                    if (source == target || population_spikes[target] == 0U) continue;
+            // A source event is stored when it occurs; association is
+            // evaluated later, when a target event arrives. The previous
+            // implementation incorrectly required source and target to spike
+            // on the same integration step, making delayed associations
+            // impossible to learn.
+            for (std::uint32_t target = 0; target < n; ++target) {
+                if (population_spikes[target] == 0U) continue;
+                for (std::uint32_t source = 0; source < n; ++source) {
+                    if (source == target ||
+                        last_spike_step_[source] == invalid_step()) continue;
                     const auto elapsed = steps_ - last_spike_step_[source];
                     if (elapsed == 0U ||
                         elapsed > parameters_.temporal_association_window_steps) continue;
