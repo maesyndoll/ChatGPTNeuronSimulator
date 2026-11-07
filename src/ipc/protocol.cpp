@@ -7,6 +7,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace spiking::ipc {
 namespace {
@@ -381,41 +382,32 @@ Json handle_request(SimulationController& controller, const Json& request) {
         }
 
         if (command == "schedule_stimuli") {
-            if (!payload.contains("stimuli") || !payload.at("stimuli").is_array()) {
-                throw std::invalid_argument("schedule_stimuli requires an array payload.stimuli");
-            }
+            if (!payload.contains("stimuli") || !payload.at("stimuli").is_array())
+                throw std::invalid_argument("schedule_stimuli requires payload.stimuli array");
             const auto& input = payload.at("stimuli");
-            if (input.size() > 256) {
-                throw std::invalid_argument("schedule_stimuli accepts at most 256 events");
-            }
+            if (input.size() > 64)
+                throw std::invalid_argument("schedule_stimuli accepts at most 64 visual cells");
 
             std::vector<ExternalStimulus> stimuli;
             stimuli.reserve(input.size());
             for (const auto& item : input) {
-                if (!item.is_object() ||
-                    !item.contains("neuron_id") ||
-                    !item.contains("start_step") ||
-                    !item.contains("duration_steps") ||
-                    !item.contains("amplitude")) {
-                    throw std::invalid_argument(
-                        "each stimulus requires neuron_id, start_step, duration_steps, and amplitude");
-                }
-                const auto neuron_id = read_positive_u32(
-                    item.at("neuron_id").get<std::uint64_t>() + 1, "neuron_id_plus_one") - 1;
-                const auto start_step = item.at("start_step").get<std::uint64_t>();
-                const auto duration = read_positive_u32(
-                    item.at("duration_steps"), "duration_steps");
+                if (!item.is_object() || !item.contains("neuron_id") ||
+                    !item.contains("start_step") || !item.contains("duration_steps") ||
+                    !item.contains("amplitude"))
+                    throw std::invalid_argument("each stimulus requires neuron_id, start_step, duration_steps, amplitude");
+                const auto id_value = item.at("neuron_id").get<std::int64_t>();
+                if (id_value < 0 || static_cast<std::uint64_t>(id_value) >
+                    std::numeric_limits<std::uint32_t>::max())
+                    throw std::invalid_argument("neuron_id is outside uint32 range");
+                const auto start_value = item.at("start_step").get<std::uint64_t>();
+                const auto duration = read_positive_u32(item.at("duration_steps"), "duration_steps");
                 const float amplitude = item.at("amplitude").get<float>();
-                if (!std::isfinite(amplitude) || amplitude < 0.0f || amplitude > 100.0f) {
+                if (!std::isfinite(amplitude) || amplitude < 0.0f || amplitude > 100.0f)
                     throw std::invalid_argument("stimulus amplitude must be finite and in [0, 100]");
-                }
-                stimuli.push_back({neuron_id, start_step, duration, amplitude});
+                stimuli.push_back({static_cast<std::uint32_t>(id_value), start_value, duration, amplitude});
             }
             controller.schedule_stimuli(stimuli);
-            return success_response(request_id, {
-                {"scheduled", stimuli.size()},
-                {"status", status_name(controller.status())}
-            });
+            return success_response(request_id, {{"scheduled", stimuli.size()}});
         }
 
         return error_response(
