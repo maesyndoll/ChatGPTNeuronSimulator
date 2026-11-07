@@ -230,6 +230,10 @@ struct RecallResult {
     std::uint32_t c_unique = 0;
     std::uint32_t b_false_positive = 0;
     std::uint32_t c_false_positive = 0;
+    std::uint32_t false_positive_neurons = 0;
+    float precision = 0.0f;
+    float recall = 0.0f;
+    float jaccard = 0.0f;
     std::uint64_t dropped = 0;
     bool finite = true;
 };
@@ -244,6 +248,7 @@ RecallResult recall(const std::filesystem::path& topology_path,
 
     RecallResult out;
     std::array<bool, K> b_active{}, c_active{};
+    std::array<bool, E> any_active{};
     const auto start = runtime.completed_steps() + 1;
     stimulate(runtime, 0, CUE_SIZE, start); // partial A cue only
     for (std::uint32_t step = 0; step < RECALL_STEPS; ++step) {
@@ -251,6 +256,7 @@ RecallResult recall(const std::filesystem::path& topology_path,
         const auto batch = runtime.collect_spike_events();
         out.dropped += batch.dropped_events;
         for (const auto& event : batch.events) {
+            if (event.neuron_id < E) any_active[event.neuron_id] = true;
             if (event.neuron_id < CUE_SIZE) ++out.source_spikes;
             if (event.neuron_id >= K && event.neuron_id < 2 * K) {
                 ++out.b_spikes;
@@ -267,6 +273,16 @@ RecallResult recall(const std::filesystem::path& topology_path,
         std::count(b_active.begin(), b_active.end(), true));
     out.c_unique = static_cast<std::uint32_t>(
         std::count(c_active.begin(), c_active.end(), true));
+    for (std::uint32_t id = 0; id < E; ++id) {
+        const bool expected = id < CUE_SIZE || (id >= K && id < 3 * K);
+        if (any_active[id] && !expected) ++out.false_positive_neurons;
+    }
+    const auto true_positive = out.b_unique + out.c_unique;
+    out.precision = static_cast<float>(true_positive) /
+        static_cast<float>(std::max(1U, true_positive + out.false_positive_neurons));
+    out.recall = static_cast<float>(true_positive) / static_cast<float>(2 * K);
+    out.jaccard = static_cast<float>(true_positive) /
+        static_cast<float>(2 * K + out.false_positive_neurons);
     // The target assemblies are the expected identities; report all recruited
     // units outside them separately rather than silently counting them as recall.
     const auto metrics = runtime.collect_metrics();
@@ -311,11 +327,13 @@ int main(int argc, char** argv) {
 
         std::ofstream csv(dir / "v45_summary.csv");
         if (!csv) throw std::runtime_error("Cannot create V45 summary CSV");
-        csv << "condition,source_spikes,b_spikes,b_unique,c_spikes,c_unique,dropped,finite\n";
+        csv << "condition,source_spikes,b_spikes,b_unique,c_spikes,c_unique,false_positive_neurons,precision,recall,jaccard,dropped,finite\n";
         auto write = [&](const char* name, const RecallResult& r) {
             csv << name << ',' << r.source_spikes << ',' << r.b_spikes << ','
                 << r.b_unique << ',' << r.c_spikes << ',' << r.c_unique << ','
-                << r.dropped << ',' << (r.finite ? 1 : 0) << '\n';
+                << r.false_positive_neurons << ',' << r.precision << ','
+                << r.recall << ',' << r.jaccard << ',' << r.dropped << ','
+                << (r.finite ? 1 : 0) << '\n';
         };
         write("ungated", ungated);
         write("learned_phase_gated", gated);
@@ -343,6 +361,10 @@ int main(int argc, char** argv) {
                       << " B_unique=" << item->b_unique << "/32"
                       << " C_spikes=" << item->c_spikes
                       << " C_unique=" << item->c_unique << "/32"
+                      << " false_positive_neurons=" << item->false_positive_neurons
+                      << " precision=" << item->precision
+                      << " recall=" << item->recall
+                      << " jaccard=" << item->jaccard
                       << " dropped=" << item->dropped
                       << " finite=" << (item->finite ? "PASS" : "FAIL") << '\n';
         }
