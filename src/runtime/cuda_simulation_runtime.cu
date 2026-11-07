@@ -42,6 +42,7 @@ CudaSimulationRuntime::DeviceState::DeviceState(
       row_offsets(topology.row_offsets.size()),
       target_indices(topology.target_indices.size()),
       weights(topology.weights.size()),
+      edge_plasticity_mask(topology.weights.size()),
       delays(topology.delays.size()), preferred_phases(count),
       dynamic_phases(count), edge_phase_lags(topology.weights.size()),
       plasticity_state_enabled(enable_learning_state),
@@ -211,6 +212,15 @@ CudaSimulationRuntime::build_device_state(
         SPIKING_CUDA_CHECK(cudaMemcpyAsync(
             next->delays.get(), topology.delays.data(),
             topology.delays.size() * sizeof(std::uint32_t),
+            cudaMemcpyHostToDevice, stream));
+    }
+
+    if (!topology.weights.empty()) {
+        const std::vector<std::uint8_t> default_plasticity_mask(
+            topology.weights.size(), static_cast<std::uint8_t>(1));
+        SPIKING_CUDA_CHECK(cudaMemcpyAsync(
+            next->edge_plasticity_mask.get(), default_plasticity_mask.data(),
+            default_plasticity_mask.size() * sizeof(std::uint8_t),
             cudaMemcpyHostToDevice, stream));
     }
 
@@ -510,6 +520,7 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
             state.active_spike_sources, state.active_spike_count,
             device_state_->row_offsets.get(), device_state_->target_indices.get(),
             device_state_->weights.get(),
+            device_state_->edge_plasticity_mask.get(),
             device_state_->incoming_row_offsets.get(),
             device_state_->incoming_sources.get(),
             device_state_->incoming_edge_indices.get(),
@@ -537,6 +548,7 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
                     graph_state.active_spike_sources, graph_state.active_spike_count,
                     device_state_->row_offsets.get(), device_state_->target_indices.get(),
                     device_state_->weights.get(),
+                    device_state_->edge_plasticity_mask.get(),
                     device_state_->incoming_row_offsets.get(),
                     device_state_->incoming_sources.get(),
                     device_state_->incoming_edge_indices.get(),
@@ -840,6 +852,31 @@ SimulationMetrics CudaSimulationRuntime::collect_metrics() {
     return metrics;
 }
 
+
+std::vector<std::uint8_t> CudaSimulationRuntime::collect_synapse_plasticity_mask() {
+    if (!device_state_) throw std::logic_error("CUDA simulation is not initialized");
+    device_state_->stream.synchronize();
+    std::vector<std::uint8_t> mask(device_state_->edge_count, 1U);
+    if (!mask.empty()) {
+        SPIKING_CUDA_CHECK(cudaMemcpy(mask.data(), device_state_->edge_plasticity_mask.get(),
+            mask.size() * sizeof(std::uint8_t), cudaMemcpyDeviceToHost));
+    }
+    return mask;
+}
+
+void CudaSimulationRuntime::set_synapse_plasticity_mask(
+    const std::vector<std::uint8_t>& mask) {
+    if (!device_state_) throw std::logic_error("CUDA simulation is not initialized");
+    if (mask.size() != device_state_->edge_count)
+        throw std::invalid_argument("Synapse plasticity mask must match CSR edge count");
+    for (const auto value : mask)
+        if (value > 1U) throw std::invalid_argument("Plasticity mask values must be 0 or 1");
+    device_state_->stream.synchronize();
+    if (!mask.empty()) {
+        SPIKING_CUDA_CHECK(cudaMemcpy(device_state_->edge_plasticity_mask.get(),
+            mask.data(), mask.size() * sizeof(std::uint8_t), cudaMemcpyHostToDevice));
+    }
+}
 
 std::uint64_t CudaSimulationRuntime::state_fingerprint() {
     if (!device_state_) throw std::logic_error("CUDA simulation is not initialized");
