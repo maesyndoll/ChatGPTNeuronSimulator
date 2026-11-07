@@ -59,11 +59,12 @@ ConditionResult run_condition(const std::string& name,
                               const ModelParameters& model,
                               const std::string& topology_path,
                               const std::vector<std::uint32_t>& stimulated_neurons,
-                              std::uint32_t selected_inhibitory) {
+                              std::uint32_t selected_inhibitory,
+                              float pulse_current = kPulseCurrent) {
     CudaSimulationRuntime runtime(model, topology_path, 0, true, false);
     for (const auto neuron : stimulated_neurons) {
         runtime.schedule_stimulus(
-            neuron, kPulseStart, kPulseDuration, kPulseCurrent);
+            neuron, kPulseStart, kPulseDuration, pulse_current);
     }
     // Capture the inhibitory membrane response immediately after the
     // four-step stimulus, before the remaining quiet interval can erase it.
@@ -172,6 +173,24 @@ int main(int argc, char** argv) {
         if (e_inputs.empty())
             throw std::runtime_error("No E-to-I synapses exist in the supplied topology");
 
+        double e_to_i_weight_sum = 0.0;
+        float e_to_i_weight_min = std::numeric_limits<float>::infinity();
+        float e_to_i_weight_max = -std::numeric_limits<float>::infinity();
+        std::uint64_t e_to_i_weight_count = 0;
+        for (std::uint32_t source = 0; source < e_count; ++source) {
+            for (std::uint32_t edge = graph.row_offsets[source];
+                 edge < graph.row_offsets[source + 1U]; ++edge) {
+                if (graph.target_indices[edge] < e_count) continue;
+                const float weight = graph.weights[edge];
+                e_to_i_weight_sum += weight;
+                e_to_i_weight_min = std::min(e_to_i_weight_min, weight);
+                e_to_i_weight_max = std::max(e_to_i_weight_max, weight);
+                ++e_to_i_weight_count;
+            }
+        }
+        const double e_to_i_weight_mean = e_to_i_weight_count == 0 ? 0.0 :
+            e_to_i_weight_sum / static_cast<double>(e_to_i_weight_count);
+
         const auto model = make_model(graph);
         const std::vector<std::uint32_t> no_stimulus;
         const auto baseline = run_condition(
@@ -181,6 +200,16 @@ int main(int argc, char** argv) {
         const auto direct_i = run_condition(
             "direct_i_excitability", model, topology_path,
             std::vector<std::uint32_t>{selected_target}, selected_target);
+
+        std::vector<ConditionResult> direct_current_sweep;
+        for (const float amplitude : {5.0f, 10.0f, 20.0f, 40.0f,
+                                      80.0f, 160.0f, 320.0f, 500.0f}) {
+            direct_current_sweep.push_back(run_condition(
+                "direct_i_current_" + std::to_string(static_cast<int>(amplitude)),
+                model, topology_path,
+                std::vector<std::uint32_t>{selected_target},
+                selected_target, amplitude));
+        }
 
         if (!output_path.parent_path().empty())
             std::filesystem::create_directories(output_path.parent_path());
@@ -198,6 +227,9 @@ int main(int argc, char** argv) {
                      static_cast<std::uint32_t>(e_inputs.size()));
         write_result(out, direct_i, stats, selected_target,
                      static_cast<std::uint32_t>(e_inputs.size()));
+        for (const auto& sweep : direct_current_sweep)
+            write_result(out, sweep, stats, selected_target,
+                         static_cast<std::uint32_t>(e_inputs.size()));
         out.flush();
         if (!out) throw std::runtime_error("Failed writing diagnostic CSV");
 
@@ -210,7 +242,10 @@ int main(int argc, char** argv) {
                   << " I->E: " << stats.inhibitory_to_excitatory
                   << " I->I: " << stats.inhibitory_to_inhibitory << '\n'
                   << "Selected I neuron: " << selected_target
-                  << " with " << e_inputs.size() << " E afferents\n";
+                  << " with " << e_inputs.size() << " E afferents\n"
+                  << "E->I weight mean=" << e_to_i_weight_mean
+                  << " min=" << e_to_i_weight_min
+                  << " max=" << e_to_i_weight_max << '\n';
         const auto print = [](const ConditionResult& r) {
             std::cout << r.name
                       << ": E_spikes=" << r.metrics.excitatory_spikes
@@ -226,10 +261,13 @@ int main(int argc, char** argv) {
         print(baseline);
         print(e_driven);
         print(direct_i);
+        for (const auto& sweep : direct_current_sweep) print(sweep);
         std::cout << "CSV: " << std::filesystem::absolute(output_path).string()
                   << '\n';
         if (!baseline.metrics.finite_state || !e_driven.metrics.finite_state ||
-            !direct_i.metrics.finite_state)
+            !direct_i.metrics.finite_state ||
+            std::any_of(direct_current_sweep.begin(), direct_current_sweep.end(),
+                [](const ConditionResult& r) { return !r.metrics.finite_state; }))
             throw std::runtime_error("Non-finite state detected during diagnostics");
         std::cout << "PASS: diagnostic runs completed with finite neuron state.\n";
         return 0;
