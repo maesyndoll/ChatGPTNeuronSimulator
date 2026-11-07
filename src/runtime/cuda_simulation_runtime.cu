@@ -367,6 +367,57 @@ void CudaSimulationRuntime::disable_phase_gate() noexcept {
     phase_gate_enabled_ = false;
     phase_gate_inhibitory_only_ = false;
     phase_gate_excitatory_only_ = false;
+    dynamic_phase_gate_enabled_ = false;
+}
+
+void CudaSimulationRuntime::configure_dynamic_phase_gate(
+    const std::vector<float>& neuron_phases_rad,
+    const std::vector<float>& edge_phase_lags_rad,
+    float gate_half_width_rad) {
+    if (!device_state_) throw std::logic_error("CUDA simulation is not initialized");
+    if (neuron_phases_rad.size() != device_state_->neuron_count ||
+        edge_phase_lags_rad.size() != device_state_->edge_count)
+        throw std::invalid_argument("Dynamic phase arrays do not match neuron/edge counts");
+    if (!std::isfinite(gate_half_width_rad) || gate_half_width_rad < 0.0f ||
+        gate_half_width_rad > 3.14159265358979323846f)
+        throw std::invalid_argument("Invalid dynamic phase gate width");
+    for (float value : neuron_phases_rad)
+        if (!std::isfinite(value)) throw std::invalid_argument("Non-finite neuron phase");
+    for (float value : edge_phase_lags_rad)
+        if (!std::isfinite(value)) throw std::invalid_argument("Non-finite edge phase lag");
+    device_state_->stream.synchronize();
+    SPIKING_CUDA_CHECK(cudaMemcpy(device_state_->dynamic_phases.get(),
+        neuron_phases_rad.data(), neuron_phases_rad.size() * sizeof(float),
+        cudaMemcpyHostToDevice));
+    if (!edge_phase_lags_rad.empty())
+        SPIKING_CUDA_CHECK(cudaMemcpy(device_state_->edge_phase_lags.get(),
+            edge_phase_lags_rad.data(), edge_phase_lags_rad.size() * sizeof(float),
+            cudaMemcpyHostToDevice));
+    phase_gate_half_width_rad_ = gate_half_width_rad;
+    dynamic_phase_gate_enabled_ = true;
+    phase_gate_enabled_ = false;
+}
+
+void CudaSimulationRuntime::update_dynamic_phase_state(
+    const std::vector<float>& neuron_phases_rad,
+    const std::vector<float>& edge_phase_lags_rad) {
+    if (!device_state_ || !dynamic_phase_gate_enabled_)
+        throw std::logic_error("Dynamic phase gate is not configured");
+    if (neuron_phases_rad.size() != device_state_->neuron_count ||
+        edge_phase_lags_rad.size() != device_state_->edge_count)
+        throw std::invalid_argument("Dynamic phase arrays do not match neuron/edge counts");
+    for (float value : neuron_phases_rad)
+        if (!std::isfinite(value)) throw std::invalid_argument("Non-finite neuron phase");
+    for (float value : edge_phase_lags_rad)
+        if (!std::isfinite(value)) throw std::invalid_argument("Non-finite edge phase lag");
+    device_state_->stream.synchronize();
+    SPIKING_CUDA_CHECK(cudaMemcpy(device_state_->dynamic_phases.get(),
+        neuron_phases_rad.data(), neuron_phases_rad.size() * sizeof(float),
+        cudaMemcpyHostToDevice));
+    if (!edge_phase_lags_rad.empty())
+        SPIKING_CUDA_CHECK(cudaMemcpy(device_state_->edge_phase_lags.get(),
+            edge_phase_lags_rad.data(), edge_phase_lags_rad.size() * sizeof(float),
+            cudaMemcpyHostToDevice));
 }
 
 void CudaSimulationRuntime::clear_stimuli() {
@@ -447,7 +498,10 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
             : 0.0f,
         phase_offset_rad_, phase_gate_half_width_rad_, phase_gate_enabled_,
         p.excitatory_count, phase_gate_inhibitory_only_,
-        phase_gate_excitatory_only_
+        phase_gate_excitatory_only_,
+        dynamic_phase_gate_enabled_ ? device_state_->dynamic_phases.get() : nullptr,
+        dynamic_phase_gate_enabled_ ? device_state_->edge_phase_lags.get() : nullptr,
+        dynamic_phase_gate_enabled_
     };
 
     const auto apply_learning = [&]() {
