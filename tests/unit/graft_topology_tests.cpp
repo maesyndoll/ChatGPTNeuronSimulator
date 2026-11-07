@@ -60,6 +60,9 @@ int main() {
                 "frozen graft weights were not retained");
         require(merged.topology.delays[1] == 3,
                 "graft delay metadata was not retained");
+        require(merged.base_edge_map == std::vector<std::uint32_t>({0, 2}) &&
+                merged.graft_edge_map == std::vector<std::uint32_t>({1, 3}),
+                "edge remapping was not returned for state migration");
         const auto open = spiking::merge_graft_topology(base, graft, {0, 1}, true);
         require(open.plasticity_mask == std::vector<std::uint8_t>({0, 1, 1, 1}),
                 "mixed plasticity policy was not retained");
