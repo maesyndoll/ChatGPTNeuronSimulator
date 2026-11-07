@@ -264,6 +264,31 @@ if(SPIKINGMODEL_ENABLE_CUDA)
     )
     add_test(NAME neuromancer_phase_runtime COMMAND neuromancer_phase_runtime)
 
+    # V9: real recurrent recruitment with an optional GPU-side postsynaptic
+    # phase gate. V8 remains an independent, unchanged baseline target.
+    add_executable(neuromancer_recurrent_phase_v9
+        experiments/neuromancer_recurrent_phase_v9.cpp
+        src/cuda/neuron_izhikevich.cu
+        src/runtime/cuda_simulation_runtime.cu
+        src/topology/topology_generator.cpp
+        src/topology/topology_io.cpp
+    )
+    target_include_directories(neuromancer_recurrent_phase_v9 PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(neuromancer_recurrent_phase_v9 PRIVATE CUDA::cudart)
+    target_compile_options(neuromancer_recurrent_phase_v9 PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+    )
+    set_target_properties(neuromancer_recurrent_phase_v9 PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+    )
+    add_test(NAME neuromancer_recurrent_phase_v9
+             COMMAND neuromancer_recurrent_phase_v9)
+    set_tests_properties(neuromancer_recurrent_phase_v9 PROPERTIES TIMEOUT 120)
+
     if(BUILD_TESTING)
         add_executable(stdp_cuda_tests
             tests/cuda/stdp_cuda_tests.cpp
