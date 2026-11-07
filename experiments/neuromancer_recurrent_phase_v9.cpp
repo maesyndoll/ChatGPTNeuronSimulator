@@ -54,6 +54,10 @@ ModelParameters parameters() {
     p.simulation.inhibitory_current_max = 0.0f;
     p.topology.minimum_delay = 1;
     p.topology.maximum_delay = 1;
+    // Keep the authoritative parameter defaults internally consistent after
+    // narrowing this assay to a fixed one-step synaptic delay.
+    p.topology.fibonacci_delays = {1};
+    p.topology.fibonacci_weights = {1.0};
     return p;
 }
 
