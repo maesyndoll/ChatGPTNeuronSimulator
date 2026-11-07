@@ -214,7 +214,8 @@ int main(int argc, char** argv) {
         // Change only the selected inhibitory neuron's E->I afferent weights
         // in temporary topology copies. The original V26 model is untouched.
         std::vector<ConditionResult> e_to_i_weight_sweep;
-        for (const float multiplier : {1.0f, 2.0f, 4.0f, 8.0f, 16.0f}) {
+        for (const float multiplier : {1.0f, 2.0f, 4.0f, 8.0f, 16.0f,
+                                        24.0f, 32.0f, 48.0f, 64.0f}) {
             if (multiplier == 1.0f) {
                 e_to_i_weight_sweep.push_back(e_driven);
                 continue;
