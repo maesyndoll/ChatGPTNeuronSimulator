@@ -1174,6 +1174,29 @@ if(BUILD_TESTING)
     set_tests_properties(neuromancer_phase_transfer_controls_v42 PROPERTIES TIMEOUT 180)
 endif()
 
+# V42 end-to-end test: learn a temporal lag, freeze it, then apply that
+# measured lag to the CUDA synaptic phase gate.
+add_executable(neuromancer_learned_phase_cuda_transfer_v42
+    experiments/neuromancer_learned_phase_cuda_transfer_v42.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_learned_phase_cuda_transfer_v42 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_learned_phase_cuda_transfer_v42 PRIVATE CUDA::cudart)
+set_target_properties(neuromancer_learned_phase_cuda_transfer_v42 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_learned_phase_cuda_transfer_v42
+             COMMAND neuromancer_learned_phase_cuda_transfer_v42)
+    set_tests_properties(neuromancer_learned_phase_cuda_transfer_v42 PROPERTIES TIMEOUT 180)
+endif()
+
 # V42 endogenous phase learning, negative-control, and frozen-retention diagnostic.
 add_executable(neuromancer_autonomous_phase_learning_v42
     experiments/neuromancer_autonomous_phase_learning_v42.cpp
