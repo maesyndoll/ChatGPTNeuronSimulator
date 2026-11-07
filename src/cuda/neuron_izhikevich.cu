@@ -111,7 +111,14 @@ __global__ void propagate_spikes_kernel(
                 (synapses.phase_gate_inhibitory_only && source_is_inhibitory) ||
                 (synapses.phase_gate_excitatory_only && !source_is_inhibitory);
             const bool apply_phase_gate = synapses.phase_gate_enabled && selected_source;
-            if (apply_phase_gate) {
+            if (synapses.dynamic_phase_gate_enabled) {
+                constexpr float tau = 6.28318530717958647692f;
+                const float relative_phase = remainderf(
+                    synapses.dynamic_neuron_phases[source] -
+                    synapses.dynamic_neuron_phases[target] -
+                    synapses.edge_phase_lags[edge], tau);
+                if (fabsf(relative_phase) > synapses.gate_half_width_rad) continue;
+            } else if (apply_phase_gate) {
                 constexpr float tau = 6.28318530717958647692f;
                 const float phase = fmodf(
                     synapses.phase_offset_rad +
