@@ -58,6 +58,12 @@ struct SynapseParametersGPU {
     std::uint32_t edge_count = 0;
     float* pending_current = nullptr;
     std::uint32_t ring_slots = 0;
+    // Optional source-phase gate evaluated on the GPU at propagation time.
+    const float* preferred_phases = nullptr;
+    float phase_increment_rad = 0.0f;
+    float phase_offset_rad = 0.0f;
+    float gate_half_width_rad = 0.0f;
+    bool phase_gate_enabled = false;
 };
 
 void initialize_neurons(
