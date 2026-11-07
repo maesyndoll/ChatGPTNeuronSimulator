@@ -12,6 +12,8 @@ struct GraftTopologyMerge {
     std::vector<std::uint8_t> plasticity_mask;
     std::vector<std::uint32_t> base_neuron_map;
     std::vector<std::uint32_t> graft_neuron_map;
+    std::vector<std::uint32_t> base_edge_map;
+    std::vector<std::uint32_t> graft_edge_map;
 };
 
 // Existing edges retain their supplied plasticity policy (or default open).
