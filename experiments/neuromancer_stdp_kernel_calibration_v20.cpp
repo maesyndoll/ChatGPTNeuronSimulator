@@ -5,6 +5,7 @@
 #include "topology/topology_io.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -27,10 +28,10 @@ constexpr float kDtMs = 0.5f;
 constexpr float kInitialWeight = 0.5f;
 constexpr std::uint32_t kPulseStart = 50;
 constexpr std::uint32_t kMaxAbsLagSteps = 20;
-constexpr std::vector<int> kLagSteps{
+constexpr std::array<int, 18> kLagSteps{{
     -20, -16, -12, -8, -6, -4, -3, -2, -1,
       1,   2,   3,  4,  6,  8, 12, 16, 20
-};
+}};
 
 ModelParameters make_model() {
     ModelParameters p;
