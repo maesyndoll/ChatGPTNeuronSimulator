@@ -75,7 +75,8 @@ __global__ void initialize_kernel(
 __global__ void propagate_spikes_kernel(
     NeuronStateGPU state,
     SynapseParametersGPU synapses,
-    std::uint32_t neuron_count
+    std::uint32_t neuron_count,
+    PhaseGateParametersGPU phase_gate
 ) {
     // The count is produced by the preceding neuron kernel. Kernel launches
     // on the runtime stream are ordered, so the queue is complete here.
@@ -88,6 +89,13 @@ __global__ void propagate_spikes_kernel(
     __syncthreads();
     const std::uint32_t active_count = active_count_shared;
     const unsigned long long completed = completed_shared;
+    float spike_phase = phase_gate.reference_phase_rad;
+    if (phase_gate.enabled) {
+        const unsigned long long elapsed_steps = completed > 0ULL ? completed - 1ULL : 0ULL;
+        spike_phase += static_cast<float>(elapsed_steps) * phase_gate.dt_ms *
+                       phase_gate.angular_frequency_rad_per_ms;
+        spike_phase = fmodf(spike_phase, 6.28318530717958647692f);
+    }
 
     // A fixed worker grid avoids reading the queue count back to the CPU.
     // Each block handles one or more active sources; its threads cooperate
@@ -106,6 +114,16 @@ __global__ void propagate_spikes_kernel(
              edge += blockDim.x) {
             const std::uint32_t target = synapses.target_indices[edge];
             const std::uint32_t delay = synapses.delays[edge];
+
+            // A target's externally supplied phase preference acts as its
+            // temporal address. Edges to targets outside the current phase
+            // window are not scheduled into the synaptic-current ring.
+            if (phase_gate.enabled) {
+                const float delta = remainderf(
+                    spike_phase - phase_gate.preferred_phase_rad[target],
+                    6.28318530717958647692f);
+                if (fabsf(delta) > phase_gate.half_width_rad) continue;
+            }
 
             // Preserve the established one-based delivery timing:
             // a spike at step s with delay d is consumed at step s + d.
@@ -383,7 +401,8 @@ void propagate_spikes(
     NeuronStateGPU state,
     SynapseParametersGPU synapses,
     std::uint32_t neuron_count,
-    cudaStream_t stream
+    cudaStream_t stream,
+    PhaseGateParametersGPU phase_gate
 ) {
     if (synapses.edge_count == 0) return;
     if (synapses.ring_slots == 0 || synapses.pending_current == nullptr)
@@ -391,6 +410,13 @@ void propagate_spikes(
     if (state.active_spike_count == nullptr ||
         state.active_spike_sources == nullptr)
         throw std::invalid_argument("Invalid active-spike queue");
+    if (phase_gate.enabled &&
+        (phase_gate.preferred_phase_rad == nullptr ||
+         !(phase_gate.dt_ms > 0.0f) ||
+         !(phase_gate.angular_frequency_rad_per_ms > 0.0f) ||
+         !(phase_gate.half_width_rad >= 0.0f) ||
+         phase_gate.half_width_rad > 3.14159265358979323846f))
+        throw std::invalid_argument("Invalid CUDA phase-gate configuration");
 
     constexpr int threads = 128;
     constexpr std::uint32_t maximum_worker_blocks = 1024U;
@@ -400,7 +426,7 @@ void propagate_spikes(
             : maximum_worker_blocks;
 
     propagate_spikes_kernel<<<blocks, threads, 0, stream>>>(
-        state, synapses, neuron_count
+        state, synapses, neuron_count, phase_gate
     );
     SPIKING_CUDA_CHECK(cudaGetLastError());
 }
