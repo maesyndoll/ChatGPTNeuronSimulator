@@ -1576,6 +1576,11 @@ target_compile_options(neuromancer_graft_package PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
 )
 
+# The live backend uses the package inspector when attaching grafts.
+if(TARGET spiking_model)
+    target_link_libraries(spiking_model PRIVATE neuromancer_graft_package)
+endif()
+
 add_executable(neuromancer_graft_inspect
     tools/neuromancer_graft_inspect.cpp
 )
