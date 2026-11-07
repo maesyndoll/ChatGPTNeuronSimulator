@@ -422,6 +422,7 @@ void CudaSimulationRuntime::replace_topology_preserving_state(
         active_parameters_.simulation.inhibitory_current_min,
         active_parameters_.simulation.inhibitory_current_max,
         next->stream.get());
+    next->stream.synchronize();
     upload_u32(next->row_offsets, topology.row_offsets);
     upload_u32(next->target_indices, topology.target_indices);
     upload(next->weights, topology.weights);
