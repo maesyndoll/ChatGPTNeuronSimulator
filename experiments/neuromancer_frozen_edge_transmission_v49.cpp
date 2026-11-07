@@ -46,15 +46,14 @@ CSRTopology make_graph(bool include_edges) {
     g.inhibitory_count = I;
     g.minimum_delay = g.maximum_delay = 1;
     g.row_offsets.assign(N + 1, 0);
-    if (include_edges) {
-        for (std::uint32_t s = 0; s < K; ++s) {
+    for (std::uint32_t s = 0; s < N; ++s) {
+        if (include_edges && s < K) {
             g.target_indices.push_back(K + s);
             g.weights.push_back(EDGE_WEIGHT);
             g.delays.push_back(1);
         }
-    }
-    for (std::uint32_t s = 0; s < N; ++s)
         g.row_offsets[s + 1] = static_cast<std::uint32_t>(g.target_indices.size());
+    }
     g.validate();
     return g;
 }
