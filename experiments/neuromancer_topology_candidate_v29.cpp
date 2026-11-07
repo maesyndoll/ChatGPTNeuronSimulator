@@ -161,8 +161,9 @@ json structural_update(CSRTopology& g,float prune_below,float growth_fraction,
     std::set<std::uint64_t> occupied;
     for(std::uint32_t s=0;s<N;++s) for(std::uint32_t e=g.row_offsets[s];e<g.row_offsets[s+1];++e) {
       const auto t=g.target_indices[e]; const float w=g.weights[e];
+      occupied.insert(edge_key(s,t));
       if(std::abs(w)<prune_below){++pruned;continue;}
-      rows[s].push_back({t,{w,g.delays[e]}}); occupied.insert(edge_key(s,t));
+      rows[s].push_back({t,{w,g.delays[e]}});
     }
     std::uint64_t requested=static_cast<std::uint64_t>(std::llround(g.synapse_count()*growth_fraction));
     std::uint64_t grown=0;
