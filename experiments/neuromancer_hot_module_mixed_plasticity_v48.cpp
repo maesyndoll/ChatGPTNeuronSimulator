@@ -164,6 +164,18 @@ int main(int argc, char** argv) {
         const bool frozen_weight_still_stable =
             std::fabs(final_graph.weights.at(1) - frozen_after) < 1.0e-6f;
 
+        // Independently verify that phase gating changes transmission, not weight state.
+        const std::vector<float> aligned_phases(N, 0.0f);
+        const std::vector<float> edge_lags(2, 0.0f);
+        runtime.configure_dynamic_phase_gate(aligned_phases, edge_lags, 0.2f);
+        const bool phase_aligned_transmits = spike_seen(runtime, 1, 0, 24);
+        auto misaligned_phases = aligned_phases;
+        misaligned_phases[1] = 3.14159265358979323846f;
+        runtime.update_dynamic_phase_state(misaligned_phases, edge_lags);
+        const bool phase_misaligned_suppresses =
+            !spike_seen(runtime, 1, 0, 24);
+        runtime.disable_phase_gate();
+
         std::cout << "edge0_mode=open initial_weight=" << open_before
                   << " trained_weight=" << open_after << '\n'
                   << "edge1_mode=frozen initial_weight=" << frozen_before
@@ -173,12 +185,15 @@ int main(int argc, char** argv) {
                   << "frozen_edge_transmission_after_detach=" << (frozen_transmits ? "PASS" : "FAIL") << '\n'
                   << "open_edge_transmission_after_detach=" << (open_transmits ? "PASS" : "FAIL") << '\n'
                   << "frozen_weight_persisted_after_detach=" << (frozen_weight_still_stable ? "PASS" : "FAIL") << '\n'
+                  << "phase_aligned_transmission=" << (phase_aligned_transmits ? "PASS" : "FAIL") << '\n'
+                  << "phase_misaligned_suppression=" << (phase_misaligned_suppresses ? "PASS" : "FAIL") << '\n'
                   << "completed_steps=" << runtime.completed_steps() << '\n'
                   << "artifacts=" << topology_path.string() << '\n'
                   << "LIMITATION=V48 proves dynamically loaded host module lifecycle and per-edge CUDA STDP enable/freeze policy on a persistent runtime. Module unload is invoked between synchronized run batches; this is not concurrent lock-free hot replacement or GPU-resident plugin execution.\n";
 
         return open_changed && frozen_unchanged && frozen_transmits &&
-               open_transmits && frozen_weight_still_stable ? 0 : 3;
+               open_transmits && frozen_weight_still_stable &&
+               phase_aligned_transmits && phase_misaligned_suppresses ? 0 : 3;
     } catch (const std::exception& error) {
         std::cerr << "V48 failed: " << error.what() << '\n';
         return 1;
