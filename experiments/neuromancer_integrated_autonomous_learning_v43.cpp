@@ -129,7 +129,7 @@ Trial run_reference(std::uint32_t seed,bool stdp_on,bool structure_on,bool phase
     for(int epoch=0;epoch<12;++epoch){
         for(std::uint32_t i=0;i<K;++i){
             std::uint32_t a=i,b=mapped(i,seed,1),c=mapped(i,seed,2);
-            if(shuffled)b=mapped((i+1)%K,seed,1);
+            if(shuffled)b=mapped((i+static_cast<std::uint32_t>(epoch))%K,seed,1);
             std::array<std::pair<std::uint32_t,int>,3> sequence{{{a,0},{b,5},{c,10}}};
             for(auto item:sequence){
                 for(int gap=0;gap<item.second-(step%1000==999?0:0);++gap){ // explicit silent event boundaries
