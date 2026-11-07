@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime/cuda_simulation_runtime.cuh"
+#include "runtime/graft_package.h"
 #include "topology/topology_io.h"
 
 #include <atomic>
@@ -103,6 +104,10 @@ public:
     ParameterUpdateResult apply_parameters(const ModelParameters& candidate);
     ParameterUpdateResult reset_parameters_to_defaults();
     void reinitialize_simulation();
+    GraftPackageInfo attach_graft_package(const std::string& package_path,
+                                          bool plasticity_enabled = false);
+    void detach_graft_package();
+    bool graft_attached() const;
 
     SimulationMetrics telemetry() const;
     TelemetrySnapshot telemetry_snapshot() const;
