@@ -175,7 +175,7 @@ json structural_update(CSRTopology& g,float prune_below,float growth_fraction,
 }
 int main(int argc,char**argv) {
  try {
-  if(argc!=3) throw std::runtime_error("usage: neuromancer_csr_stdp_candidate_v28 config.json result.json");
+  if(argc!=3) throw std::runtime_error("usage: neuromancer_topology_candidate_v29 config.json result.json");
   std::ifstream in(argv[1]); json c; in>>c;
   const auto seed=c.at("seed").get<std::uint32_t>();
   auto p=model_for(c,seed); auto g=make_topology(p,c);
@@ -208,7 +208,6 @@ int main(int argc,char**argv) {
     aggregate.excitatory_rate_hz=m_epoch.excitatory_rate_hz;
     aggregate.inhibitory_rate_hz=m_epoch.inhibitory_rate_hz;
     aggregate.finite_state=aggregate.finite_state&&m_epoch.finite_state;
-    auto transitions=transition_matrix(previous,learned);
     json update={{"pruned",0},{"grown",0},{"synapses_after",learned.synapse_count()},
                 {"inhibitory_recruitment_triggered",false}};
     if(structural && epoch<2) {
@@ -217,11 +216,11 @@ int main(int argc,char**argv) {
       total_pruned+=update["pruned"].get<std::uint64_t>();
       total_grown+=update["grown"].get<std::uint64_t>();
     }
+    auto transitions=transition_matrix(previous,learned);
     save_csr_topology(learned,topology_path);
     epoch_history.push_back({{"epoch",epoch+1},{"e_spikes",m_epoch.excitatory_spikes},
       {"i_spikes",m_epoch.inhibitory_spikes},{"synapses_before_update",previous.synapse_count()},
-      {"synapses_after_stdp",transitions["born"].get<std::uint64_t>()+
-        (previous.synapse_count()-transitions["dead"].get<std::uint64_t>())},
+      {"synapses_after_update",learned.synapse_count()},
       {"edge_markov",transitions},{"structural_update",update}});
     previous=load_csr_topology(topology_path);
   }
@@ -248,5 +247,5 @@ int main(int argc,char**argv) {
   std::ofstream o(argv[2]); o<<out.dump(2)<<'\n';
   std::cout<<out.dump()<<'\n';
   return (!m.finite_state||after.dropped)?2:0;
- } catch(const std::exception&e){std::cerr<<"V28 candidate error: "<<e.what()<<'\n';return 1;}
+ } catch(const std::exception&e){std::cerr<<"V29 candidate error: "<<e.what()<<'\n';return 1;}
 }
