@@ -96,18 +96,35 @@ def main():
         post["finite_all"]=all(r["finite_state"] for r in rows)
         post["all_seeds_classwise_pass"]=all(r["class0_correct"]>=12 and r["class1_correct"]>=12 for r in rows)
         # Pool edge-state transitions with a symmetric Dirichlet(1) prior.
-        matrices=np.zeros((3,3),dtype=np.int64); born=dead=pruned=grown=0
+        matrices=np.zeros((3,3),dtype=np.int64)
+        module_matrices={k:np.zeros((3,3),dtype=np.int64) for k in ("EE","EI","IE","II")}
+        module_born={k:0 for k in module_matrices}; module_dead={k:0 for k in module_matrices}
+        born=dead=pruned=grown=0
         for r in rows:
             for ep in r.get("epoch_history",[]):
                 mat=np.asarray(ep["edge_markov"]["transition_counts"],dtype=np.int64)
                 matrices+=mat; born+=int(ep["edge_markov"]["born"]); dead+=int(ep["edge_markov"]["dead"])
+                for module,stats in ep["edge_markov"]["module_transitions"].items():
+                    module_matrices[module]+=np.asarray(stats["transition_counts"],dtype=np.int64)
+                    module_born[module]+=int(stats["born"]); module_dead[module]+=int(stats["dead"])
                 pruned+=int(ep["structural_update"]["pruned"]); grown+=int(ep["structural_update"]["grown"])
         row_post=[]
         for i in range(3):
             alpha=matrices[i].astype(float)+1.0
             row_post.append({"alpha":[float(x) for x in alpha],
                              "posterior_mean":[float(x) for x in alpha/alpha.sum()]})
+        module_post={}
+        for module,counts in module_matrices.items():
+            rows_post=[]
+            for i in range(3):
+                alpha=counts[i].astype(float)+1.0
+                rows_post.append({"alpha":[float(x) for x in alpha],
+                                  "posterior_mean":[float(x) for x in alpha/alpha.sum()]})
+            module_post[module]={"transition_counts":counts.tolist(),
+                                 "dirichlet_posterior_rows":rows_post,
+                                 "born":module_born[module],"dead":module_dead[module]}
         post["edge_markov"]={"state_labels":["weak","medium","strong"],
+                             "modules":module_post,
                              "transition_counts":matrices.tolist(),
                              "dirichlet_posterior_rows":row_post,
                              "born":born,"dead":dead,"pruned":pruned,"grown":grown}
