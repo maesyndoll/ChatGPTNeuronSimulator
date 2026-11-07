@@ -279,6 +279,8 @@ ParameterUpdateResult CudaSimulationRuntime::reset_parameters_to_defaults() {
 }
 
 void CudaSimulationRuntime::reinitialize_simulation() {
+    if (graft_attached_)
+        throw std::logic_error("Detach the active graft before simulation reinitialization");
     // Prepare and initialize replacement GPU state before committing the new
     // active configuration. If allocation or initialization fails, the old
     // simulation and the manager's active snapshot remain intact.
@@ -391,6 +393,12 @@ void CudaSimulationRuntime::replace_topology_preserving_state(
 
     auto next = std::make_unique<DeviceState>(
         new_n, topology, capture_spike_events_, enable_plasticity_state_);
+    SPIKING_CUDA_CHECK(cudaMemset(next->active_spike_count.get(), 0, sizeof(std::uint32_t)));
+    SPIKING_CUDA_CHECK(cudaMemset(next->completed_steps_device.get(), 0, sizeof(unsigned long long)));
+    SPIKING_CUDA_CHECK(cudaMemset(next->completed_step_blocks.get(), 0, sizeof(std::uint32_t)));
+    SPIKING_CUDA_CHECK(cudaMemset(next->external_stimulus_count.get(), 0, sizeof(std::uint32_t)));
+    if (capture_spike_events_)
+        SPIKING_CUDA_CHECK(cudaMemset(next->spike_event_count.get(), 0, sizeof(unsigned long long)));
     initialize_neurons(
         next->neuron_parameters(), next->neuron_state(),
         topology.excitatory_count, topology.inhibitory_count,
@@ -490,62 +498,13 @@ void CudaSimulationRuntime::replace_topology_preserving_state(
             cudaMemcpyHostToDevice));
     }
 
-    // Recent event history remains valid after ID remapping.
-    if (capture_spike_events_ && old.capture_spike_events) {
-        unsigned long long event_count = 0;
-        SPIKING_CUDA_CHECK(cudaMemcpy(&event_count, old.spike_event_count.get(),
-            sizeof(event_count), cudaMemcpyDeviceToHost));
-        const auto retained = static_cast<std::uint32_t>(
-            std::min<unsigned long long>(event_count, kSpikeEventCapacity));
-        const auto first = event_count - retained;
-        std::vector<std::uint64_t> event_steps(retained);
-        std::vector<std::uint32_t> event_ids(retained);
-        if (retained) {
-            const auto slot = static_cast<std::uint32_t>(first % kSpikeEventCapacity);
-            const auto first_count = std::min<std::uint32_t>(
-                retained, kSpikeEventCapacity - slot);
-            SPIKING_CUDA_CHECK(cudaMemcpy(event_steps.data(),
-                old.spike_event_steps.get() + slot,
-                first_count * sizeof(std::uint64_t), cudaMemcpyDeviceToHost));
-            SPIKING_CUDA_CHECK(cudaMemcpy(event_ids.data(),
-                old.spike_event_neurons.get() + slot,
-                first_count * sizeof(std::uint32_t), cudaMemcpyDeviceToHost));
-            if (first_count < retained) {
-                SPIKING_CUDA_CHECK(cudaMemcpy(event_steps.data() + first_count,
-                    old.spike_event_steps.get(),
-                    (retained - first_count) * sizeof(std::uint64_t), cudaMemcpyDeviceToHost));
-                SPIKING_CUDA_CHECK(cudaMemcpy(event_ids.data() + first_count,
-                    old.spike_event_neurons.get(),
-                    (retained - first_count) * sizeof(std::uint32_t), cudaMemcpyDeviceToHost));
-            }
-            std::vector<std::uint64_t> kept_steps;
-            std::vector<std::uint32_t> kept_ids;
-            kept_steps.reserve(retained); kept_ids.reserve(retained);
-            for (std::size_t i = 0; i < event_ids.size(); ++i) {
-                const auto mapped = old_to_new_neurons.at(event_ids[i]);
-                if (mapped != UINT32_MAX) {
-                    kept_steps.push_back(event_steps[i]);
-                    kept_ids.push_back(mapped);
-                }
-            }
-            event_steps.swap(kept_steps); event_ids.swap(kept_ids);
-            const auto kept = static_cast<std::uint32_t>(event_ids.size());
-            const auto new_start = static_cast<std::uint32_t>(first % kSpikeEventCapacity);
-            const auto nfirst = std::min<std::uint32_t>(kept, kSpikeEventCapacity-new_start);
-            SPIKING_CUDA_CHECK(cudaMemcpy(next->spike_event_steps.get()+new_start,
-                event_steps.data(), nfirst*sizeof(std::uint64_t), cudaMemcpyHostToDevice));
-            SPIKING_CUDA_CHECK(cudaMemcpy(next->spike_event_neurons.get()+new_start,
-                event_ids.data(), nfirst*sizeof(std::uint32_t), cudaMemcpyHostToDevice));
-            if (nfirst < retained) {
-                SPIKING_CUDA_CHECK(cudaMemcpy(next->spike_event_steps.get(),
-                    event_steps.data()+nfirst, (kept-nfirst)*sizeof(std::uint64_t), cudaMemcpyHostToDevice));
-                SPIKING_CUDA_CHECK(cudaMemcpy(next->spike_event_neurons.get(),
-                    event_ids.data()+nfirst, (kept-nfirst)*sizeof(std::uint32_t), cudaMemcpyHostToDevice));
-            }
-        }
-        SPIKING_CUDA_CHECK(cudaMemcpy(next->spike_event_count.get(), &event_count,
-            sizeof(event_count), cudaMemcpyHostToDevice));
-    }
+    // Spike-event history is generation-scoped. Reset only this diagnostic
+    // ring; neuron counters and the live network state remain preserved.
+    if (capture_spike_events_)
+        SPIKING_CUDA_CHECK(cudaMemset(next->spike_event_count.get(), 0,
+            sizeof(unsigned long long)));
+    spike_event_read_cursor_ = 0;
+    external_stimuli_dirty_ = false;
 
     next->stream.synchronize();
     device_state_.swap(next);
