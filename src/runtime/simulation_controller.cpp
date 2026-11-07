@@ -1,6 +1,7 @@
 #include "runtime/simulation_controller.h"
 #include "topology/topology_io.h"
 #include "runtime/graft_package.h"
+#include "runtime/neural_self_observer.h"
 
 #include <stdexcept>
 
@@ -277,6 +278,26 @@ TopologyStatistics SimulationController::connectivity_statistics() const {
     return const_cast<SimulationController*>(this)->submit(
         [](CudaSimulationRuntime& runtime) {
             return analyze_csr_topology(runtime.collect_connectivity());
+        }
+    );
+}
+
+SelfObservationReport SimulationController::self_observation_snapshot(
+    float weak_weight_threshold,
+    std::size_t maximum_ranked_neurons) const {
+    return const_cast<SimulationController*>(this)->submit(
+        [weak_weight_threshold, maximum_ranked_neurons]
+        (CudaSimulationRuntime& runtime) {
+            const auto topology = runtime.collect_connectivity();
+            const auto counts = runtime.collect_spike_count_snapshot();
+            std::vector<std::uint64_t> activity;
+            activity.reserve(counts.size());
+            for (const auto count : counts) {
+                activity.push_back(count);
+            }
+            return observe_connectome(
+                topology, activity, weak_weight_threshold,
+                maximum_ranked_neurons);
         }
     );
 }
