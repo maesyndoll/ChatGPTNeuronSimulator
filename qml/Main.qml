@@ -393,13 +393,37 @@ ApplicationWindow {
                 anchors.fill: parent
                 anchors.margins: 10
                 spacing: 22
-                ColumnLayout { spacing: 2; Label { text: "SIMULATION"; color: "#587789"; font.pixelSize: 9 }; Label { text: simulation.simulationStatus.toUpperCase(); color: "#dceaf0"; font.pixelSize: 13; font.bold: true } }
+                ColumnLayout {
+                    spacing: 2
+                    Label { text: "SIMULATION"; color: "#587789"; font.pixelSize: 9 }
+                    Label { text: simulation.simulationStatus.toUpperCase(); color: "#dceaf0"; font.pixelSize: 13; font.bold: true }
+                }
                 Rectangle { width: 1; Layout.fillHeight: true; color: "#243a49" }
-                ColumnLayout { spacing: 2; Label { text: "NEURONS"; color: "#587789"; font.pixelSize: 9 }; Label { text: simulation.connectivityStatistics.neuron_count===undefined?"—":String(simulation.connectivityStatistics.neuron_count); color: "#dceaf0"; font.pixelSize: 13; font.bold: true } }
-                ColumnLayout { spacing: 2; Label { text: "CSR SYNAPSES"; color: "#587789"; font.pixelSize: 9 }; Label { text: simulation.connectivityStatistics.synapse_count===undefined?"—":String(simulation.connectivityStatistics.synapse_count); color: "#dceaf0"; font.pixelSize: 13; font.bold: true } }
-                ColumnLayout { spacing: 2; Label { text: "COMPLETED STEPS"; color: "#587789"; font.pixelSize: 9 }; Label { text: simulation.completedSteps; color: "#dceaf0"; font.pixelSize: 13; font.bold: true } }
-                ColumnLayout { spacing: 2; Label { text: "E / I RATE"; color: "#587789"; font.pixelSize: 9 }; Label { text: simulation.excitatoryRateHz.toFixed(2)+" / "+simulation.inhibitoryRateHz.toFixed(2)+" Hz"; color: "#dceaf0"; font.pixelSize: 13; font.bold: true } }
-                ColumnLayout { spacing: 2; Label { text: "MEAN VOLTAGE"; color: "#587789"; font.pixelSize: 9 }; Label { text: simulation.meanVoltageMv.toFixed(2)+" mV"; color: "#dceaf0"; font.pixelSize: 13; font.bold: true } }
+                ColumnLayout {
+                    spacing: 2
+                    Label { text: "NEURONS"; color: "#587789"; font.pixelSize: 9 }
+                    Label { text: simulation.connectivityStatistics.neuron_count===undefined?"—":String(simulation.connectivityStatistics.neuron_count); color: "#dceaf0"; font.pixelSize: 13; font.bold: true }
+                }
+                ColumnLayout {
+                    spacing: 2
+                    Label { text: "CSR SYNAPSES"; color: "#587789"; font.pixelSize: 9 }
+                    Label { text: simulation.connectivityStatistics.synapse_count===undefined?"—":String(simulation.connectivityStatistics.synapse_count); color: "#dceaf0"; font.pixelSize: 13; font.bold: true }
+                }
+                ColumnLayout {
+                    spacing: 2
+                    Label { text: "COMPLETED STEPS"; color: "#587789"; font.pixelSize: 9 }
+                    Label { text: simulation.completedSteps; color: "#dceaf0"; font.pixelSize: 13; font.bold: true }
+                }
+                ColumnLayout {
+                    spacing: 2
+                    Label { text: "E / I RATE"; color: "#587789"; font.pixelSize: 9 }
+                    Label { text: simulation.excitatoryRateHz.toFixed(2)+" / "+simulation.inhibitoryRateHz.toFixed(2)+" Hz"; color: "#dceaf0"; font.pixelSize: 13; font.bold: true }
+                }
+                ColumnLayout {
+                    spacing: 2
+                    Label { text: "MEAN VOLTAGE"; color: "#587789"; font.pixelSize: 9 }
+                    Label { text: simulation.meanVoltageMv.toFixed(2)+" mV"; color: "#dceaf0"; font.pixelSize: 13; font.bold: true }
+                }
                 Item { Layout.fillWidth: true }
                 Button { text: window.graftExpanded?"Hide graft bay":"Graft bay"; onClicked: window.graftExpanded=!window.graftExpanded }
             }
