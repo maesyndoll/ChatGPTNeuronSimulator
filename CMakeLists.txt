@@ -422,6 +422,32 @@ if(SPIKINGMODEL_ENABLE_CUDA)
              COMMAND neuromancer_random_topology_association_v18)
     set_tests_properties(neuromancer_random_topology_association_v18 PROPERTIES TIMEOUT 180)
 
+    # V26: overnight continual-learning experiment with online STDP,
+    # periodic learned-CSR checkpoints, held-out frozen-weight evaluation.
+    add_executable(neuromancer_overnight_v26
+        experiments/neuromancer_overnight_v26.cpp
+        src/cuda/neuron_izhikevich.cu
+        src/runtime/cuda_simulation_runtime.cu
+        src/topology/topology_generator.cpp
+        src/topology/topology_io.cpp
+    )
+    target_include_directories(neuromancer_overnight_v26 PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(neuromancer_overnight_v26 PRIVATE CUDA::cudart)
+    target_compile_options(neuromancer_overnight_v26 PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+    )
+    set_target_properties(neuromancer_overnight_v26 PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+    )
+    add_test(NAME neuromancer_overnight_v26_smoke
+             COMMAND neuromancer_overnight_v26 --smoke-test
+                     ${CMAKE_CURRENT_BINARY_DIR}/neuromancer_v26_smoke)
+    set_tests_properties(neuromancer_overnight_v26_smoke PROPERTIES TIMEOUT 600)
+
     # V24: reusable inference API and command-line runner.
     add_library(neuromancer_inference
         src/neuromancer/inference_engine.cpp
