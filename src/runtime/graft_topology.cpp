@@ -4,6 +4,7 @@
 #include <limits>
 #include <stdexcept>
 #include <utility>
+#include <cmath>
 
 namespace spiking {
 namespace {
@@ -112,6 +113,39 @@ GraftTopologyMerge merge_graft_topology(
     }
     merged.validate();
     return result;
+}
+
+
+std::vector<float> remap_delayed_current_ring(
+    const std::vector<float>& old_ring, std::uint32_t old_neuron_count,
+    std::uint32_t old_ring_slots, std::uint32_t new_neuron_count,
+    std::uint32_t new_ring_slots, std::uint64_t completed_steps,
+    const std::vector<std::uint32_t>& old_to_new_neuron_map) {
+    if (old_neuron_count == 0 || new_neuron_count == 0 ||
+        old_ring_slots == 0 || new_ring_slots < old_ring_slots ||
+        old_to_new_neuron_map.size() != old_neuron_count ||
+        old_ring.size() != static_cast<std::size_t>(old_neuron_count) * old_ring_slots)
+        throw std::invalid_argument("Invalid delayed-current ring dimensions or neuron map");
+    for (const auto id : old_to_new_neuron_map)
+        if (id >= new_neuron_count)
+            throw std::out_of_range("Delayed-current neuron map target is out of range");
+    std::vector<float> next(
+        static_cast<std::size_t>(new_neuron_count) * new_ring_slots, 0.0f);
+    const auto old_current = static_cast<std::uint32_t>(completed_steps % old_ring_slots);
+    const auto new_current = static_cast<std::uint32_t>(completed_steps % new_ring_slots);
+    for (std::uint32_t old_slot = 0; old_slot < old_ring_slots; ++old_slot) {
+        const auto offset = (old_slot + old_ring_slots - old_current) % old_ring_slots;
+        const auto new_slot = (new_current + offset) % new_ring_slots;
+        for (std::uint32_t old_id = 0; old_id < old_neuron_count; ++old_id) {
+            const float value = old_ring[static_cast<std::size_t>(old_slot) *
+                                         old_neuron_count + old_id];
+            if (!std::isfinite(value))
+                throw std::invalid_argument("Delayed-current ring contains non-finite current");
+            next[static_cast<std::size_t>(new_slot) * new_neuron_count +
+                 old_to_new_neuron_map[old_id]] = value;
+        }
+    }
+    return next;
 }
 
 } // namespace spiking
