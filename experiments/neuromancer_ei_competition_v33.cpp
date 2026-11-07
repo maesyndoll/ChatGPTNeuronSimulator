@@ -43,9 +43,11 @@ struct Observation {
 
 struct Condition {
     Observation none, e, i, both;
-    double peak_e = 0, peak_i = 0, peak_both = 0, peak_interaction = 0;\n    double peak_interaction_pre_spike = 0;
+    double peak_e = 0, peak_i = 0, peak_both = 0, peak_interaction = 0;
+    double peak_interaction_pre_spike = 0;
     std::uint32_t peak_e_step = 0, peak_i_step = 0;
-    std::uint32_t peak_both_step = 0, peak_interaction_step = 0;\n    std::uint32_t peak_interaction_pre_spike_step = 0;
+    std::uint32_t peak_both_step = 0, peak_interaction_step = 0;
+    std::uint32_t peak_interaction_pre_spike_step = 0;
     double final_e = 0, final_i = 0, final_both = 0, final_interaction = 0;
 };
 
