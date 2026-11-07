@@ -119,8 +119,8 @@ Trial run_reference(std::uint32_t seed,bool stdp_on,bool structure_on,bool phase
     std::vector<std::uint32_t> src(g.synapse_count()),dst(g.synapse_count());
     for(std::uint32_t s=0;s<N;++s)for(auto e=g.row_offsets[s];e<g.row_offsets[s+1];++e){src[e]=s;dst[e]=g.target_indices[e];}
     StdpTraces traces;traces.presynaptic.assign(N,0);traces.postsynaptic.assign(N,0);
-    StdpParameters sp;sp.potentiation_rate=.045f;sp.depression_rate=.012f;sp.maximum_weight=.95f;
-    AutonomousPhaseParameters pp;pp.dt_ms=.5f;pp.intrinsic_frequency_hz=8;pp.temporal_association_window_steps=20;
+    StdpParameters sp;sp.potentiation_rate=.045f;sp.depression_rate=.012f;sp.presynaptic_tau_ms=3.0f;sp.postsynaptic_tau_ms=3.0f;sp.maximum_weight=.95f;
+    AutonomousPhaseParameters pp;pp.dt_ms=.5f;pp.intrinsic_frequency_hz=8;pp.temporal_association_window_steps=7;
     pp.temporal_lag_learning_rate=.12f;pp.minimum_temporal_confidence=.20f;
     AutonomousPopulationPhase phase(3,pp);
     std::array<std::uint64_t,N> last{};last.fill(UINT64_MAX);
@@ -130,7 +130,7 @@ Trial run_reference(std::uint32_t seed,bool stdp_on,bool structure_on,bool phase
         for(std::uint32_t i=0;i<K;++i){
             std::uint32_t a=i,b=mapped(i,seed,1),c=mapped(i,seed,2);
             if(shuffled)b=mapped((i+static_cast<std::uint32_t>(epoch))%K,seed,1);
-            std::array<std::pair<std::uint32_t,int>,3> sequence{{{a,0},{b,5},{c,10}}};
+            std::array<std::pair<std::uint32_t,int>,3> sequence{{{a,0},{b,5},{c,5}}};
             for(auto item:sequence){
                 for(int gap=0;gap<item.second-(step%1000==999?0:0);++gap){ // explicit silent event boundaries
                     std::fill(events.begin(),events.end(),0);
@@ -141,7 +141,7 @@ Trial run_reference(std::uint32_t seed,bool stdp_on,bool structure_on,bool phase
                 if(stdp_on)apply_pair_stdp_step(g.weights,src,dst,N,E,events,traces,.5f,sp);
                 std::vector<std::uint32_t> ps(3,0);ps[pop(item.first)]=1;phase.step(ps,phase_on);
                 if(last[item.first]!=UINT64_MAX){
-                    for(std::uint32_t s=0;s<N;++s) if(last[s]!=UINT64_MAX && step-last[s]<=20 && s!=item.first && pop(s)+1==pop(item.first))
+                    for(std::uint32_t s=0;s<N;++s) if(last[s]!=UINT64_MAX && step-last[s]<=7 && s!=item.first && pop(s)+1==pop(item.first))
                         scores[s*N+item.first]=std::min(1.0f,scores[s*N+item.first]+.12f);
                 }
                 last[item.first]=step;++step;
