@@ -250,3 +250,36 @@ compares two full-size runs: topology arrays are compared exactly by
 `topology_tests`, the initial neuron parameter and state arrays are compared
 through an exact state fingerprint, and final spike counts/mean voltage are
 compared with tight tolerances.
+
+
+## Measurement note: matched controls for subthreshold voltage effects
+
+The V30 CSR phase-gated E/I transmission assay exposed an important measurement
+caveat in some earlier diagnostic experiments. An absolute voltage difference
+from an assumed resting value can combine synaptic input with the neuron's
+intrinsic membrane evolution. It should not, by itself, be interpreted as the
+synapse's isolated contribution.
+
+For future claims about subthreshold synaptic effects, use matched runs with
+identical neuron initialization, stimulation, timing, and runtime settings,
+differing only in the presence or absence of the tested CSR edge. Estimate the
+synaptic contribution as:
+
+`V_with_edge - V_matched_no_edge_control`
+
+The corrected V30 assay demonstrated this control for one-step E and I
+transmission: +0.413574 mV for the excitatory edge and -0.411072 mV for the
+inhibitory edge; phase-rejected transmission measured 0 mV relative to the
+matched control in both cases. This validates the tested signed transmission
+and gate behavior under that assay's conditions. It does not establish
+autonomous oscillation, learned per-edge phase offsets, or nonlinear E/I phase
+coupling.
+
+This caveat applies to interpretation of earlier absolute subthreshold-voltage
+diagnostics where a matched no-input control was not used. It does not, by
+itself, invalidate network-level classification, held-out accuracy, shuffled-
+label controls, spike-count observations, or topology measurements. Those
+results should remain tied to their own measured endpoints and experimental
+controls. Earlier diagnostic voltage magnitudes are retained as historical
+measurements and should not be treated as isolated synaptic-effect estimates
+unless independently verified with matched controls.
