@@ -1291,3 +1291,31 @@ if(BUILD_TESTING)
              COMMAND neuromancer_integrated_autonomous_learning_v43)
     set_tests_properties(neuromancer_integrated_autonomous_learning_v43 PROPERTIES TIMEOUT 240)
 endif()
+
+
+# V44: learn temporal phase from live CUDA spike events, freeze learning,
+# then causally test whether the learned lag controls CUDA transmission.
+add_executable(neuromancer_learned_cuda_phase_causality_v44
+    experiments/neuromancer_learned_cuda_phase_causality_v44.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_learned_cuda_phase_causality_v44 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_learned_cuda_phase_causality_v44 PRIVATE CUDA::cudart)
+target_compile_options(neuromancer_learned_cuda_phase_causality_v44 PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+)
+set_target_properties(neuromancer_learned_cuda_phase_causality_v44 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_learned_cuda_phase_causality_v44
+             COMMAND neuromancer_learned_cuda_phase_causality_v44)
+    set_tests_properties(neuromancer_learned_cuda_phase_causality_v44 PROPERTIES TIMEOUT 240)
+endif()
