@@ -133,6 +133,7 @@ SimulationBridge::SimulationBridge(QObject* parent)
             refreshConfiguration();
             refreshTopologyVisual();
             refreshConnectivity();
+            refreshSelfObservation();
             refreshGraftStatus();
             if (command == QStringLiteral("attach_graft")) {
                 graft_inspection_.insert(QStringLiteral("attached"), true);
