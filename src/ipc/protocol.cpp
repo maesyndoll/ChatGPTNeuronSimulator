@@ -384,6 +384,8 @@ Json handle_request(SimulationController& controller, const Json& request) {
         if (command == "schedule_stimuli") {
             if (!payload.contains("stimuli") || !payload.at("stimuli").is_array())
                 throw std::invalid_argument("schedule_stimuli requires payload.stimuli array");
+            if (controller.is_running())
+                throw std::invalid_argument("pause the simulation before submitting a visual frame");
             const auto& input = payload.at("stimuli");
             if (input.size() > 64)
                 throw std::invalid_argument("schedule_stimuli accepts at most 64 visual cells");
