@@ -24,4 +24,11 @@ GraftTopologyMerge merge_graft_topology(
     const std::vector<std::uint8_t>& base_plasticity_mask = {},
     bool graft_plasticity_enabled = false);
 
+// Preserve queued synaptic currents by future-step offset when ring capacity changes.
+std::vector<float> remap_delayed_current_ring(
+    const std::vector<float>& old_ring, std::uint32_t old_neuron_count,
+    std::uint32_t old_ring_slots, std::uint32_t new_neuron_count,
+    std::uint32_t new_ring_slots, std::uint64_t completed_steps,
+    const std::vector<std::uint32_t>& old_to_new_neuron_map);
+
 } // namespace spiking
