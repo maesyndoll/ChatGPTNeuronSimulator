@@ -68,13 +68,21 @@ int host_set_edge_plasticity(void* opaque, std::uint32_t first,
     return 0;
 }
 
-void train_pair(CudaSimulationRuntime& runtime, std::uint32_t pre,
-                std::uint32_t post, std::uint32_t episodes) {
+void train_pair(CudaSimulationRuntime& runtime, RuntimeModuleManager& modules,
+                std::uint32_t pre, std::uint32_t post, std::uint32_t episodes) {
     for (std::uint32_t episode = 0; episode < episodes; ++episode) {
         const auto start = runtime.completed_steps() + 1U;
         runtime.schedule_stimulus(pre, start, 4, 500.0f);
         runtime.schedule_stimulus(post, start + 2U, 4, 500.0f);
         runtime.run_steps(12);
+        const auto batch = runtime.collect_spike_events();
+        std::vector<NeuromancerSpikeEventV1> events;
+        events.reserve(batch.events.size());
+        for (const auto& event : batch.events)
+            events.push_back({event.step, event.neuron_id});
+        modules.dispatch_spikes(events.data(), static_cast<std::uint32_t>(events.size()));
+        if (batch.dropped_events != 0)
+            throw std::runtime_error("Spike event ring overflow during training");
     }
 }
 
@@ -129,8 +137,8 @@ int main(int argc, char** argv) {
         // Edge 0 remains open; edge 1 is frozen. Both remain transmissive.
         modules.configure("edge_range", "1:1:0");
         const auto initial = runtime.collect_connectivity();
-        train_pair(runtime, 0, 1, 30);
-        train_pair(runtime, 2, 3, 30);
+        train_pair(runtime, modules, 0, 1, 30);
+        train_pair(runtime, modules, 2, 3, 30);
         const auto trained = runtime.collect_connectivity();
 
         const float open_before = initial.weights.at(0);
