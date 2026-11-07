@@ -70,6 +70,19 @@ int main() {
         try { (void)spiking::merge_graft_topology(base, graft, {1}); }
         catch (const std::invalid_argument&) { rejected = true; }
         require(rejected, "wrong-sized base plasticity mask accepted");
+
+        const std::vector<float> old_ring = {
+            10.0f, 11.0f, 20.0f, 21.0f, 30.0f, 31.0f
+        };
+        const auto migrated_ring = spiking::remap_delayed_current_ring(
+            old_ring, 2, 3, 4, 5, 5, {0, 2});
+        require(migrated_ring.size() == 20, "delayed-current ring was not resized");
+        require(migrated_ring[2] == 20.0f && migrated_ring[4] == 21.0f,
+                "current-step pending currents were not preserved");
+        require(migrated_ring[12] == 10.0f && migrated_ring[14] == 11.0f,
+                "future delayed currents were shifted during ring growth");
+        require(migrated_ring[8] == 30.0f && migrated_ring[10] == 31.0f,
+                "later delayed currents were not preserved");
         std::cout << "GRAFT TOPOLOGY MERGE TESTS: PASS\n"
                   << "population_ordering=PASS neuron_remap=PASS csr_merge=PASS\n"
                   << "frozen_transmission_policy=PASS mixed_plasticity=PASS\n";
