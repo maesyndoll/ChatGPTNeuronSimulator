@@ -157,6 +157,7 @@ private:
     QTimer topology_visual_timer_;
     QTimer self_observation_timer_;
     bool topology_visual_request_pending_ = false;
+    bool self_observation_request_pending_ = false;
     QVariantList spike_events_;
     QString spike_event_count_ = QStringLiteral("0");
     QString spike_events_dropped_ = QStringLiteral("0");
