@@ -1592,6 +1592,30 @@ if(BUILD_TESTING)
     add_test(NAME graft_package_tests COMMAND graft_package_tests)
 endif()
 
+
+# Persistent modular neural memory: versioned CSR topology plus resumable state.
+add_library(neuromancer_neural_memory STATIC
+    src/runtime/neural_memory_store.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_neural_memory PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_neural_memory PUBLIC
+    nlohmann_json::nlohmann_json
+)
+target_compile_options(neuromancer_neural_memory PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+)
+
+if(BUILD_TESTING)
+    add_executable(neural_memory_store_tests
+        tests/unit/neural_memory_store_tests.cpp
+    )
+    target_link_libraries(neural_memory_store_tests PRIVATE neuromancer_neural_memory)
+    add_test(NAME neural_memory_store_tests COMMAND neural_memory_store_tests)
+endif()
+
 # Graft topology merge: deterministic CSR composition and per-edge plasticity policy.
 add_library(neuromancer_graft_topology STATIC
     src/runtime/graft_topology.cpp
