@@ -71,6 +71,7 @@ void pairwise_structure(CSRTopology& g,const std::vector<float>& pair_score,
         if(score>.20f) w=std::min(.95f,w+.08f*score);
         else w=std::max(0.0f,w-.035f);
         if(w<.025f && ages[e]>=2){++m.deaths;continue;}
+        w=std::max(w,0.001f);
         rows[s].push_back({t,w}); next_age[s].push_back(ages[e]+1);
     }
     // Pair-specific growth: only recurrently observed directed spike pairs qualify.
@@ -135,7 +136,7 @@ Trial run_reference(std::uint32_t seed,bool stdp_on,bool structure_on,bool phase
                 if(stdp_on)apply_pair_stdp_step(g.weights,src,dst,N,E,events,traces,.5f,sp);
                 std::vector<std::uint32_t> ps(3,0);ps[pop(item.first)]=1;phase.step(ps,phase_on);
                 if(last[item.first]!=UINT64_MAX){
-                    for(std::uint32_t s=0;s<N;++s) if(last[s]!=UINT64_MAX && step-last[s]<=20 && s!=item.first)
+                    for(std::uint32_t s=0;s<N;++s) if(last[s]!=UINT64_MAX && step-last[s]<=20 && s!=item.first && pop(s)+1==pop(item.first))
                         scores[s*N+item.first]=std::min(1.0f,scores[s*N+item.first]+.12f);
                 }
                 last[item.first]=step;++step;
@@ -164,14 +165,14 @@ Trial run_reference(std::uint32_t seed,bool stdp_on,bool structure_on,bool phase
         for(std::uint32_t s=source_pop*K;s<(source_pop+1)*K;++s)if(active[s])
             for(auto e=g.row_offsets[s];e<g.row_offsets[s+1];++e)
                 drive[g.target_indices[e]]+=g.weights[e];
-        for(std::uint32_t t=0;t<N;++t)if(drive[t]>=.16f)active[t]=true;
+        for(std::uint32_t t=0;t<N;++t)if(drive[t]>=.10f)active[t]=true;
     };
     propagate(0);for(std::uint32_t i=K;i<2*K;++i)if(active[i])++out.m.b_recall;
     propagate(1);for(std::uint32_t i=2*K;i<3*K;++i)if(active[i])++out.m.c_recall;
     std::array<bool,N> control{};control[0]=control[1]=true;
     for(std::uint32_t s=0;s<K;++s)if(control[s])
         for(auto e=g.row_offsets[s];e<g.row_offsets[s+1];++e)
-            if(g.weights[e]>=.16f)control[g.target_indices[e]]=true;
+            if(g.weights[e]>=.10f)control[g.target_indices[e]]=true;
     for(std::uint32_t i=2*K;i<3*K;++i)if(control[i])++out.m.ac_recall;
     out.m.precision=static_cast<float>(out.m.b_recall+out.m.c_recall)/(std::max(1u,out.m.b_recall+out.m.c_recall+out.m.ac_recall));
     out.m.recall=static_cast<float>(out.m.b_recall+out.m.c_recall)/8.0f;
@@ -246,7 +247,7 @@ int main(int argc,char**argv){
             auto t=run_reference(seed,ci!=1,ci!=2,ci!=3,ci==4);
             auto&m=t.m;ab+=t.weight_ab_delta;bc+=t.weight_bc_delta;conf+=m.phase_conf;
             birth+=m.births;death+=m.deaths;ret+=m.b_recall+m.c_recall;
-            trials<<seed<<','<<names[ci]<<','<<t.initial_edges<<','<<m.final_edges<<','
+            trials<<seed<<','<<names[ci]<<','<<t.initial_edges<<','<<t.final_edges<<','
                 <<t.weight_ab_delta<<','<<t.weight_bc_delta<<','<<m.phase_lag<<','
                 <<m.phase_conf<<','<<m.control_conf<<','<<m.b_recall<<','<<m.c_recall<<','
                 <<m.ac_recall<<','<<m.precision<<','<<m.recall<<','<<m.jaccard<<','<<m.csr<<'\n';
