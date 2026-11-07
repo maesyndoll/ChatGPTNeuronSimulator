@@ -10,7 +10,7 @@
 
 DesktopCapture::DesktopCapture(QObject* parent)
     : QObject(parent) {
-    timer_.setInterval(100);
+    timer_.setInterval(500); // 2 Hz input sampling; the dashboard is a neural monitor, not a video player.
     connect(&timer_, &QTimer::timeout,
             this, &DesktopCapture::captureFrame);
 }
