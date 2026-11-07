@@ -1228,3 +1228,21 @@ if(BUILD_TESTING)
              COMMAND neuromancer_integrated_learning_gate_v42)
     set_tests_properties(neuromancer_integrated_learning_gate_v42 PROPERTIES TIMEOUT 120)
 endif()
+
+
+# V42 isolated feasibility assay for autonomous population phase learning and
+# activity-dependent CSR structural synaptic plasticity (host-side primitives).
+add_executable(neuromancer_phase_structural_feasibility_v42
+    experiments/neuromancer_phase_structural_feasibility_v42.cpp
+)
+target_include_directories(neuromancer_phase_structural_feasibility_v42 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_options(neuromancer_phase_structural_feasibility_v42 PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_phase_structural_feasibility_v42
+             COMMAND neuromancer_phase_structural_feasibility_v42)
+    set_tests_properties(neuromancer_phase_structural_feasibility_v42 PROPERTIES TIMEOUT 60)
+endif()
