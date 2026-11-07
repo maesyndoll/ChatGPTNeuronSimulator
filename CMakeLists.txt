@@ -422,6 +422,30 @@ if(SPIKINGMODEL_ENABLE_CUDA)
              COMMAND neuromancer_random_topology_association_v18)
     set_tests_properties(neuromancer_random_topology_association_v18 PROPERTIES TIMEOUT 180)
 
+    # V22: matched disconnected-target control and event-aligned synaptic transfer curve.
+    add_executable(neuromancer_transmission_audit_v22
+        experiments/neuromancer_transmission_audit_v22.cpp
+        src/cuda/neuron_izhikevich.cu
+        src/runtime/cuda_simulation_runtime.cu
+        src/topology/topology_generator.cpp
+        src/topology/topology_io.cpp
+    )
+    target_include_directories(neuromancer_transmission_audit_v22 PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(neuromancer_transmission_audit_v22 PRIVATE CUDA::cudart)
+    target_compile_options(neuromancer_transmission_audit_v22 PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+    )
+    set_target_properties(neuromancer_transmission_audit_v22 PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+    )
+    add_test(NAME neuromancer_transmission_audit_v22
+             COMMAND neuromancer_transmission_audit_v22)
+    set_tests_properties(neuromancer_transmission_audit_v22 PROPERTIES TIMEOUT 180)
+
     # V21: external-current and isolated synaptic impulse-response identification.
     add_executable(neuromancer_neuron_dynamics_identification_v21
         experiments/neuromancer_neuron_dynamics_identification_v21.cpp
