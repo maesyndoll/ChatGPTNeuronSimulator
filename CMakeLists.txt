@@ -1348,3 +1348,31 @@ if(BUILD_TESTING)
              COMMAND neuromancer_cuda_associative_recall_v45)
     set_tests_properties(neuromancer_cuda_associative_recall_v45 PROPERTIES TIMEOUT 300)
 endif()
+
+
+# V46: staged positive/negative controls for single-synapse CUDA transmission,
+# assembly recruitment, and an engineered A->B->C propagation chain.
+add_executable(neuromancer_cuda_transmission_diagnostics_v46
+    experiments/neuromancer_cuda_transmission_diagnostics_v46.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_cuda_transmission_diagnostics_v46 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_cuda_transmission_diagnostics_v46 PRIVATE CUDA::cudart)
+target_compile_options(neuromancer_cuda_transmission_diagnostics_v46 PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+)
+set_target_properties(neuromancer_cuda_transmission_diagnostics_v46 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_cuda_transmission_diagnostics_v46
+             COMMAND neuromancer_cuda_transmission_diagnostics_v46)
+    set_tests_properties(neuromancer_cuda_transmission_diagnostics_v46 PROPERTIES TIMEOUT 300)
+endif()
