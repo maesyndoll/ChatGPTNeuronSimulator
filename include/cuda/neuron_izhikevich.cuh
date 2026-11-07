@@ -66,6 +66,7 @@ struct SynapseParametersGPU {
     bool phase_gate_enabled = false;
     std::uint32_t excitatory_count = 0;
     bool phase_gate_inhibitory_only = false;
+    bool phase_gate_excitatory_only = false;
 };
 
 void initialize_neurons(
