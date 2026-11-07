@@ -135,6 +135,9 @@ public:
         std::uint32_t maximum_edges_per_neuron = 8);
     // Copy the exact CSR graph currently resident on the GPU to host memory.
     CSRTopology collect_connectivity();
+    // Per-edge STDP policy. Zero freezes the weight while preserving transmission.
+    std::vector<std::uint8_t> collect_synapse_plasticity_mask();
+    void set_synapse_plasticity_mask(const std::vector<std::uint8_t>& mask);
     // Exact host-side fingerprint of current neuron parameters and state.
     std::uint64_t state_fingerprint();
     SpikeEventBatch collect_spike_events();
@@ -184,6 +187,7 @@ private:
         DeviceBuffer<std::uint32_t> row_offsets;
         DeviceBuffer<std::uint32_t> target_indices;
         DeviceBuffer<float> weights;
+        DeviceBuffer<std::uint8_t> edge_plasticity_mask;
         DeviceBuffer<std::uint32_t> delays;
         DeviceBuffer<float> preferred_phases;
         DeviceBuffer<float> dynamic_phases;
