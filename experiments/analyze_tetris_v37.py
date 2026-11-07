@@ -8,10 +8,10 @@ rows=list(csv.DictReader(p.open(newline="")))
 if not rows: raise SystemExit("CSV contains no rows")
 agents=sorted({r["agent"] for r in rows})
 print(f"Games: {len(rows)}")
-print("agent       n  mean_score  mean_lines  mean_pieces  topouts")
+print("agent       n  mean_score  mean_lines  mean_pieces  topouts  active_decisions  action_spikes")
 for a in agents:
  g=[r for r in rows if r["agent"]==a]
- print(f"{a:11s} {len(g):2d} {statistics.mean(int(x['score']) for x in g):10.1f} {statistics.mean(int(x['lines']) for x in g):11.2f} {statistics.mean(int(x['pieces']) for x in g):12.1f} {sum(int(x['topout']) for x in g):8d}")
+ print(f"{a:11s} {len(g):2d} {statistics.mean(int(x['score']) for x in g):10.1f} {statistics.mean(int(x['lines']) for x in g):11.2f} {statistics.mean(int(x['pieces']) for x in g):12.1f} {sum(int(x['topout']) for x in g):8d} {sum(int(x['neural_active_decisions']) for x in g):16d} {sum(int(x['neural_action_spikes']) for x in g):13d}")
 print("\nMatched-seed comparison (Neuromancer minus each baseline):")
 by={(r["agent"],r["seed"]):r for r in rows}
 for base in ("random","heuristic"):
