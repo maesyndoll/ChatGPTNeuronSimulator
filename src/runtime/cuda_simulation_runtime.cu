@@ -47,6 +47,7 @@ CudaSimulationRuntime::DeviceState::DeviceState(
       external_current(count),
       external_stimuli(kMaxExternalStimuli),
       external_stimulus_count(1),
+      preferred_phase_rad(count),
       neuron_count(count),
       edge_count(static_cast<std::uint32_t>(topology.weights.size())),
       ring_slots(topology.maximum_delay + 1U),
@@ -192,6 +193,13 @@ CudaSimulationRuntime::build_device_state(
         total, topology, capture_spike_events, enable_plasticity_state);
 
     const auto stream = next->stream.get();
+    if (!preferred_phase_rad_.empty()) {
+        if (preferred_phase_rad_.size() != total)
+            throw std::invalid_argument("Phase preference count does not match neuron count");
+        SPIKING_CUDA_CHECK(cudaMemcpyAsync(
+            next->preferred_phase_rad.get(), preferred_phase_rad_.data(),
+            total * sizeof(float), cudaMemcpyHostToDevice, stream));
+    }
     if (!topology.row_offsets.empty()) {
         SPIKING_CUDA_CHECK(cudaMemcpyAsync(
             next->row_offsets.get(), topology.row_offsets.data(),
@@ -306,6 +314,42 @@ void CudaSimulationRuntime::schedule_stimulus(
     external_stimuli_dirty_ = true;
 }
 
+void CudaSimulationRuntime::configure_phase_routing(
+    const std::vector<float>& preferred_phase_rad,
+    float oscillator_period_ms,
+    float reference_phase_rad,
+    float half_width_rad) {
+    if (!device_state_)
+        throw std::logic_error("CUDA simulation is not initialized");
+    if (preferred_phase_rad.size() != device_state_->neuron_count)
+        throw std::invalid_argument("Phase preference count must equal neuron count");
+    if (!std::isfinite(oscillator_period_ms) || oscillator_period_ms <= 0.0f ||
+        !std::isfinite(reference_phase_rad) ||
+        !std::isfinite(half_width_rad) || half_width_rad < 0.0f ||
+        half_width_rad > 3.14159265358979323846f)
+        throw std::invalid_argument("Invalid phase-routing parameters");
+    for (const float phase : preferred_phase_rad) {
+        if (!std::isfinite(phase) || phase < 0.0f ||
+            phase >= 6.28318530717958647692f)
+            throw std::invalid_argument("Preferred phases must be in [0, 2*pi)");
+    }
+    device_state_->stream.synchronize();
+    SPIKING_CUDA_CHECK(cudaMemcpy(
+        device_state_->preferred_phase_rad.get(), preferred_phase_rad.data(),
+        preferred_phase_rad.size() * sizeof(float), cudaMemcpyHostToDevice));
+    preferred_phase_rad_ = preferred_phase_rad;
+    phase_oscillator_period_ms_ = oscillator_period_ms;
+    phase_reference_rad_ = reference_phase_rad;
+    phase_gate_half_width_rad_ = half_width_rad;
+}
+
+void CudaSimulationRuntime::disable_phase_routing() noexcept {
+    preferred_phase_rad_.clear();
+    phase_oscillator_period_ms_ = 0.0f;
+    phase_reference_rad_ = 0.0f;
+    phase_gate_half_width_rad_ = 0.0f;
+}
+
 void CudaSimulationRuntime::clear_stimuli() {
     if (!device_state_)
         throw std::logic_error("CUDA simulation is not initialized");
@@ -379,6 +423,15 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
         device_state_->edge_count, device_state_->synaptic_current.get(),
         device_state_->ring_slots
     };
+    const PhaseGateParametersGPU phase_gate{
+        device_state_->preferred_phase_rad.get(),
+        p.dt,
+        phase_oscillator_period_ms_ > 0.0f
+            ? 6.28318530717958647692f / phase_oscillator_period_ms_ : 0.0f,
+        phase_reference_rad_,
+        phase_gate_half_width_rad_,
+        !preferred_phase_rad_.empty()
+    };
 
     const auto apply_learning = [&]() {
         if (!device_state_->plasticity_state_enabled) return;
@@ -420,7 +473,7 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
                     device_state_->postsynaptic_traces.get(),
                     count, p.excitatory_count, p.dt, gpu_stdp, stream);
             }
-            propagate_spikes(graph_state, synapses, count, stream);
+            propagate_spikes(graph_state, synapses, count, stream, phase_gate);
             SPIKING_CUDA_CHECK(cudaMemsetAsync(
                 device_state_->active_spike_count.get(), 0,
                 sizeof(std::uint32_t), stream));
@@ -452,7 +505,7 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
             state.completed_steps,
             device_state_->external_current.get(), stream);
         apply_learning();
-        propagate_spikes(state, synapses, count, stream);
+        propagate_spikes(state, synapses, count, stream, phase_gate);
         SPIKING_CUDA_CHECK(cudaMemsetAsync(
             device_state_->active_spike_count.get(), 0,
             sizeof(std::uint32_t), stream));
