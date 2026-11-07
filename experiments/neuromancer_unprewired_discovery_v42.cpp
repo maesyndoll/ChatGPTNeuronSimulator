@@ -198,23 +198,27 @@ Result run_seed(std::uint32_t seed) {
     st.resource_per_excitatory_neuron=1.0f;
     ActivityStructuralPlasticity structural(st);
     std::vector<std::uint32_t> ages(g.synapse_count(),0);
-    // Repeated pair-specific activity epochs permit growth of correlated
-    // source->target edges and pruning of inactive candidates.
+    // Each structural update represents one full activity epoch. The
+    // co-active A/B and B/C assemblies drive candidate growth; inactive
+    // pathways are repeatedly depressed and become eligible for pruning.
     for(int epoch=0;epoch<6;++epoch) {
+        std::vector<float> activity(kN,0.0f);
         for(std::uint32_t i=0;i<kAssembly;++i) {
-            std::vector<float> activity(kN,0.0f);
             activity[i]=1.0f;
             activity[mapped(i,seed,1)]=1.0f;
-            auto rep=structural.apply(g,activity,ages,true);
-            r.births+=rep.births; r.deaths+=rep.deaths;
-            ages=std::move(rep.next_edge_ages);
-            std::fill(activity.begin(),activity.end(),0.0f);
+        }
+        auto rep=structural.apply(g,activity,ages,true);
+        r.births+=rep.births; r.deaths+=rep.deaths;
+        ages=std::move(rep.next_edge_ages);
+
+        std::fill(activity.begin(),activity.end(),0.0f);
+        for(std::uint32_t i=0;i<kAssembly;++i) {
             activity[mapped(i,seed,1)]=1.0f;
             activity[mapped(i,seed,2)]=1.0f;
-            rep=structural.apply(g,activity,ages,true);
-            r.births+=rep.births; r.deaths+=rep.deaths;
-            ages=std::move(rep.next_edge_ages);
         }
+        rep=structural.apply(g,activity,ages,true);
+        r.births+=rep.births; r.deaths+=rep.deaths;
+        ages=std::move(rep.next_edge_ages);
     }
 
     // Frozen graph recall: cue two of sixteen A units; only graph weights
