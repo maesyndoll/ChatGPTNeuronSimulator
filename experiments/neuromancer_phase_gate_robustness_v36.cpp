@@ -143,7 +143,7 @@ void configure_gate(CudaSimulationRuntime& runtime, const GateMode& gate) {
             preferred, gFrequencyHz, gHalfWidthRad, 0.0f);
     } else {
         runtime.configure_excitatory_phase_gate(
-            preferred, kFrequencyHz, kHalfWidthRad, 0.0f);
+            preferred, gFrequencyHz, gHalfWidthRad, 0.0f);
     }
 }
 
@@ -359,7 +359,7 @@ int main(int argc, char** argv) {
                   << "Stimulus offsets: -3, -1.5, 0, +1.5, +3 ms; four varied initial-condition seeds.\n"
                   << "Reports recruitment, spike-free E/I interaction, and inhibitory-only voltage effect.\n"
                   << "Wrote " << (out_dir / "inhibitory_phase_robustness_v36.csv").string() << '\n'
-                  << "LIMIT: single-target controlled assay; external 10 Hz oscillator; no learned phase coupling.\n";
+                  << "LIMIT: single-target controlled assay; externally imposed oscillator; no learned phase coupling.\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "V36 phase-gate robustness experiment failed: " << e.what() << '\n';
