@@ -1246,3 +1246,21 @@ if(BUILD_TESTING)
              COMMAND neuromancer_phase_structural_feasibility_v42)
     set_tests_properties(neuromancer_phase_structural_feasibility_v42 PROPERTIES TIMEOUT 60)
 endif()
+
+
+# V42 random, initially unprewired association discovery with phase and
+# activity-dependent structural synaptic plasticity (host-side reference).
+add_executable(neuromancer_unprewired_discovery_v42
+    experiments/neuromancer_unprewired_discovery_v42.cpp
+)
+target_include_directories(neuromancer_unprewired_discovery_v42 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_options(neuromancer_unprewired_discovery_v42 PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_unprewired_discovery_v42
+             COMMAND neuromancer_unprewired_discovery_v42)
+    set_tests_properties(neuromancer_unprewired_discovery_v42 PROPERTIES TIMEOUT 120)
+endif()
