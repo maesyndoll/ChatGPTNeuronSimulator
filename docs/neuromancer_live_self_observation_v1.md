@@ -43,3 +43,8 @@ The self-observer now also exposes a deterministic, bounded candidate builder:
 IPC command `get_topology_proposal` runs the advisor over the most recent retained spike events and returns proposal counts, fingerprints, evidence count, and explicit `applied=false`.
 
 This is not autonomous topology improvement yet. The endpoint is a proposal diagnostic, not a graph writer or live patch mechanism. The next required stage is a controlled evaluator that compares baseline and candidate behavior on matched input, then persists an accepted candidate as a versioned neural-memory module. Only after that should safe-point graph replacement be enabled.
+
+
+## Dashboard topology proposal inspection
+
+The Neural Observatory Self-model panel now exposes a manual **Propose topology** action. It requests the proposal-only IPC endpoint and displays the bounded candidate edge additions (source, target, weight, delay), evidence spike count, candidate synapse count, and base/candidate graph fingerprints. The endpoint reports `source_unchanged=true` and `applied=false`; it does not mutate the live CSR graph, prune live edges, or persist the candidate. The proposal is a simple temporal co-activity heuristic over the retained spike-event window, not a validated learning rule or a claim of improved inference. Evaluate candidates against matched baseline stimuli before considering any application.
