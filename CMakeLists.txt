@@ -1173,3 +1173,16 @@ if(BUILD_TESTING)
              COMMAND neuromancer_phase_transfer_controls_v42)
     set_tests_properties(neuromancer_phase_transfer_controls_v42 PROPERTIES TIMEOUT 180)
 endif()
+
+# V42 endogenous phase learning, negative-control, and frozen-retention diagnostic.
+add_executable(neuromancer_autonomous_phase_learning_v42
+    experiments/neuromancer_autonomous_phase_learning_v42.cpp
+)
+target_include_directories(neuromancer_autonomous_phase_learning_v42 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_autonomous_phase_learning_v42
+             COMMAND neuromancer_autonomous_phase_learning_v42)
+    set_tests_properties(neuromancer_autonomous_phase_learning_v42 PROPERTIES TIMEOUT 60)
+endif()
