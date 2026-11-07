@@ -255,6 +255,7 @@ if(SPIKINGMODEL_ENABLE_CUDA)
         src/runtime/cuda_simulation_runtime.cu
         src/runtime/graft_topology.cpp
         src/runtime/simulation_controller.cpp
+        src/runtime/neural_self_observer.cpp
         src/topology/topology_generator.cpp
         src/topology/topology_io.cpp
         src/ipc/parameter_json.cpp
