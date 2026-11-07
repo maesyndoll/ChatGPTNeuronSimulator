@@ -119,6 +119,31 @@ Json connectivity_json(const TopologyStatistics& stats) {
     };
 }
 
+Json self_observation_json(const SelfObservationReport& report) {
+    Json ranked = Json::array();
+    for (const auto& neuron : report.highest_degree_neurons) {
+        ranked.push_back({
+            {"neuron_id", neuron.neuron_id},
+            {"outgoing_degree", neuron.outgoing_degree},
+            {"incoming_degree", neuron.incoming_degree},
+            {"activity_count", std::to_string(neuron.activity_count)}
+        });
+    }
+    return {
+        {"graph_fingerprint", std::to_string(report.graph_fingerprint)},
+        {"neuron_count", report.neuron_count},
+        {"synapse_count", std::to_string(report.synapse_count)},
+        {"mean_outgoing_degree", report.mean_outgoing_degree},
+        {"mean_incoming_degree", report.mean_incoming_degree},
+        {"isolated_neurons", report.isolated_neurons},
+        {"high_degree_neurons", report.high_degree_neurons},
+        {"inactive_neurons", report.inactive_neurons},
+        {"reciprocal_pairs", std::to_string(report.reciprocal_pairs)},
+        {"weak_edges", std::to_string(report.weak_edges)},
+        {"ranked_neurons", std::move(ranked)}
+    };
+}
+
 Json topology_visual_json(const TopologyVisualSnapshot& snapshot) {
     Json neuron_ids = Json::array();
     for (const auto neuron_id : snapshot.neuron_ids)
@@ -279,6 +304,11 @@ Json handle_request(SimulationController& controller, const Json& request) {
         if (command == "get_topology_visual") {
             return success_response(request_id, topology_visual_json(
                 controller.topology_visual_snapshot(256U, 8U)));
+        }
+
+        if (command == "get_self_observation") {
+            return success_response(request_id, self_observation_json(
+                controller.self_observation_snapshot()));
         }
 
         if (command == "get_spike_events") {
