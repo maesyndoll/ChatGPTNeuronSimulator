@@ -110,7 +110,8 @@ int main(int argc,char**argv) {
   stdp.minimum_weight=0.001f; stdp.maximum_weight=1.0f;
   auto before=evaluate(topology_path,p,seed);
   CudaSimulationRuntime train(p,topology_path,0,false,true,stdp);
-  const std::string control=c.value("control", "candidate");\n  for(std::uint32_t epoch=0;epoch<(control=="untrained"?0U:3U);++epoch) {
+  const std::string control=c.value("control", "candidate");
+  for(std::uint32_t epoch=0;epoch<(control=="untrained"?0U:3U);++epoch) {
     std::vector<Example> examples;
     for(std::uint32_t label=0;label<2;++label) for(std::uint32_t j=0;j<16;++j) examples.push_back(example(label,j,seed+17));
     std::mt19937 order(seed+epoch); std::shuffle(examples.begin(),examples.end(),order);
