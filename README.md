@@ -125,6 +125,31 @@ ctest --test-dir build-cuda --output-on-failure
 ./build-cuda/spiking_model --small
 ```
 
+## Neuromancer CUDA phase-timing assay (V8)
+
+The `neuromancer_phase_runtime` target is an integration experiment that
+runs on the actual CUDA Izhikevich runtime, with a sparse E/I CSR graph,
+delayed propagation, scheduled external-current pulses, and recorded spike
+timestamps. It compares three phase-coded assemblies plus asynchronous
+background activity against a control that preserves each cycle's event-time
+histogram but shuffles those times across neuron IDs.
+
+Build and run it on a compatible NVIDIA/CUDA system:
+
+```bash
+cmake -S . -B build-cuda -DSPIKINGMODEL_ENABLE_CUDA=ON \\
+  -DCMAKE_CUDA_ARCHITECTURES=120 -DBUILD_TESTING=ON
+cmake --build build-cuda --target neuromancer_phase_runtime --parallel
+./build-cuda/neuromancer_phase_runtime
+```
+
+The phase address is computed from each recorded spike timestamp relative to
+an externally imposed 10 Hz reference. The address calculation receives no
+assembly membership labels; labels are used only afterward to score precision,
+recall, and rejection. This validates temporal phase separation through the
+spiking backend, not learned phase addresses, autonomous oscillators, or
+associative inference. STDP is disabled in this assay to isolate timing.
+
 ## Experiment configurations and automatic results log
 
 The standalone executable loads JSON parameter files without recompiling.
