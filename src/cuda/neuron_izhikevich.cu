@@ -468,7 +468,8 @@ void apply_stdp(
     if (weights != nullptr && outgoing_targets != nullptr) {
         stdp_depression_kernel<<<neuron_blocks, threads, 0, stream>>>(
             active_spike_sources, active_spike_count, outgoing_row_offsets,
-            outgoing_targets, weights, postsynaptic_traces, neuron_count,
+            outgoing_targets, weights, edge_plasticity_mask,
+            postsynaptic_traces, neuron_count,
             excitatory_count, parameters.depression_rate, parameters.minimum_weight,
             parameters.maximum_weight);
         SPIKING_CUDA_CHECK(cudaGetLastError());
@@ -477,7 +478,7 @@ void apply_stdp(
         incoming_edge_indices != nullptr) {
         stdp_potentiation_kernel<<<neuron_blocks, threads, 0, stream>>>(
             active_spike_sources, active_spike_count, incoming_row_offsets,
-            incoming_sources, incoming_edge_indices, weights,
+            incoming_sources, incoming_edge_indices, weights, edge_plasticity_mask,
             presynaptic_traces, neuron_count, excitatory_count,
             parameters.potentiation_rate, parameters.minimum_weight,
             parameters.maximum_weight);
