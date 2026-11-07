@@ -74,15 +74,17 @@ void train_pair(CudaSimulationRuntime& runtime, RuntimeModuleManager& modules,
         const auto start = runtime.completed_steps() + 1U;
         runtime.schedule_stimulus(pre, start, 4, 500.0f);
         runtime.schedule_stimulus(post, start + 2U, 4, 500.0f);
-        runtime.run_steps(12);
-        const auto batch = runtime.collect_spike_events();
-        std::vector<NeuromancerSpikeEventV1> events;
-        events.reserve(batch.events.size());
-        for (const auto& event : batch.events)
-            events.push_back({event.step, event.neuron_id});
-        modules.dispatch_spikes(events.data(), static_cast<std::uint32_t>(events.size()));
-        if (batch.dropped_events != 0)
-            throw std::runtime_error("Spike event ring overflow during training");
+        for (std::uint32_t step = 0; step < 12; ++step) {
+            runtime.run_steps(1);
+            const auto batch = runtime.collect_spike_events();
+            std::vector<NeuromancerSpikeEventV1> events;
+            events.reserve(batch.events.size());
+            for (const auto& event : batch.events)
+                events.push_back({event.step, event.neuron_id});
+            modules.dispatch_spikes(events.data(), static_cast<std::uint32_t>(events.size()));
+            if (batch.dropped_events != 0)
+                throw std::runtime_error("Spike event ring overflow during training");
+        }
     }
 }
 
@@ -132,6 +134,8 @@ int main(int argc, char** argv) {
         };
         RuntimeModuleManager modules(host);
 
+        // The neural runtime is already alive before the plugin is attached.
+        runtime.run_steps(3);
         modules.load(module_path.string());
         std::cout << "module_loaded=" << modules.module_name() << '\n';
         // Edge 0 remains open; edge 1 is frozen. Both remain transmissive.
