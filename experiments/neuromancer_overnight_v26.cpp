@@ -31,7 +31,7 @@ constexpr std::uint32_t kTeacherLag = 3;
 constexpr std::uint32_t kPulseSteps = 4;
 constexpr float kInputCurrent = 500.0f;
 constexpr float kDtMs = 0.5f;
-constexpr float kThresholdMv = -65.0f;
+constexpr float kThresholdMv = 30.0f;
 constexpr std::uint32_t kTrainingSamplesPerClass = 16;
 constexpr std::uint32_t kTestSamplesPerClass = 16;
 
@@ -277,6 +277,7 @@ int main(int argc, char** argv) {
         const auto model = make_model();
         auto initial = make_initial_topology(26031U);
         save_csr_topology(initial, initial_path.string());
+        const auto baseline_score = evaluate(initial_path.string(), model);
         StdpParameters stdp;
         stdp.potentiation_rate = 0.005f;
         stdp.depression_rate = 0.00525f;
@@ -365,7 +366,15 @@ int main(int argc, char** argv) {
         if (!final_metrics.finite_state || score.dropped_events != 0)
             throw std::runtime_error("Final integrity checks failed");
 
-        std::cout << "\nFINAL FROZEN-WEIGHT RECALL\n"
+        const double baseline_accuracy = baseline_score.total == 0 ? 0.0
+            : 100.0 * static_cast<double>(baseline_score.correct) / baseline_score.total;
+        std::cout << "\nFROZEN-WEIGHT RECALL COMPARISON\n"
+                  << "Untrained baseline: " << baseline_score.correct << '/'
+                  << baseline_score.total << " (" << std::fixed << std::setprecision(1)
+                  << baseline_accuracy << "%), output spikes=" << baseline_score.output_spikes << '\n'
+                  << "Trained model: " << score.correct << '/' << score.total
+                  << " (" << accuracy << "%), output spikes=" << score.output_spikes << '\n'
+                  << "\nFINAL FROZEN-WEIGHT RECALL\n"
                   << "Held-out accuracy: " << score.correct << '/' << score.total
                   << " (" << std::fixed << std::setprecision(1) << accuracy << "%)\n"
                   << "Class 0: correct " << score.class0_correct << '/' << kTestSamplesPerClass
@@ -380,8 +389,15 @@ int main(int argc, char** argv) {
                   << "Saved inference package: " << (output / "model.nmc").string() << '\n'
                   << "Saved learned CSR: " << final_path.string() << '\n'
                   << "Training log: " << metrics_path.string() << '\n';
-        std::cout << (smoke ? "PASS: V26 smoke test completed; inspect accuracy and metrics before overnight use.\n"
-                            : "PASS: overnight training completed; model package and metrics saved.\n");
+        const bool useful_recall = score.output_spikes > 0 &&
+            score.correct > baseline_score.correct;
+        if (!useful_recall) {
+            std::cerr << "FAIL: trained model did not outperform the untrained baseline "
+                         "with nonzero output activity; do not use for overnight training.\\n";
+            return 2;
+        }
+        std::cout << (smoke ? "PASS: trained frozen-weight recall beat the untrained baseline.\\n"
+                            : "PASS: overnight training completed and beat the untrained baseline.\\n");
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "Neuromancer V26 error: " << e.what() << '\n';
