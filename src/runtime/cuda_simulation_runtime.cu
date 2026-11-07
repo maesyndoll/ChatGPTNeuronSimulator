@@ -42,7 +42,7 @@ CudaSimulationRuntime::DeviceState::DeviceState(
       row_offsets(topology.row_offsets.size()),
       target_indices(topology.target_indices.size()),
       weights(topology.weights.size()),
-      delays(topology.delays.size()),
+      delays(topology.delays.size()), preferred_phases(count),
       plasticity_state_enabled(enable_learning_state),
       external_current(count),
       external_stimuli(kMaxExternalStimuli),
@@ -214,6 +214,9 @@ CudaSimulationRuntime::build_device_state(
     }
 
     SPIKING_CUDA_CHECK(cudaMemsetAsync(
+        next->preferred_phases.get(), 0,
+        next->preferred_phases.size() * sizeof(float), stream));
+    SPIKING_CUDA_CHECK(cudaMemsetAsync(
         next->synaptic_current.get(), 0,
         next->synaptic_current.size() * sizeof(float), stream));
     SPIKING_CUDA_CHECK(cudaMemsetAsync(
@@ -306,6 +309,39 @@ void CudaSimulationRuntime::schedule_stimulus(
     external_stimuli_dirty_ = true;
 }
 
+void CudaSimulationRuntime::configure_phase_gate(
+    const std::vector<float>& preferred_phases_rad,
+    float oscillator_frequency_hz,
+    float gate_half_width_rad,
+    float phase_offset_rad) {
+    if (!device_state_)
+        throw std::logic_error("CUDA simulation is not initialized");
+    if (preferred_phases_rad.size() != device_state_->neuron_count)
+        throw std::invalid_argument("Phase-tag count must equal neuron count");
+    constexpr float tau = 6.28318530717958647692f;
+    if (!std::isfinite(oscillator_frequency_hz) || oscillator_frequency_hz <= 0.0f ||
+        !std::isfinite(gate_half_width_rad) || gate_half_width_rad < 0.0f ||
+        gate_half_width_rad > 3.14159265358979323846f ||
+        !std::isfinite(phase_offset_rad))
+        throw std::invalid_argument("Invalid phase-gate parameters");
+    for (const float phase : preferred_phases_rad) {
+        if (!std::isfinite(phase))
+            throw std::invalid_argument("Neuron phase tags must be finite");
+    }
+    device_state_->stream.synchronize();
+    SPIKING_CUDA_CHECK(cudaMemcpy(
+        device_state_->preferred_phases.get(), preferred_phases_rad.data(),
+        preferred_phases_rad.size() * sizeof(float), cudaMemcpyHostToDevice));
+    phase_frequency_hz_ = oscillator_frequency_hz;
+    phase_gate_half_width_rad_ = gate_half_width_rad;
+    phase_offset_rad_ = std::fmod(phase_offset_rad, tau);
+    phase_gate_enabled_ = true;
+}
+
+void CudaSimulationRuntime::disable_phase_gate() noexcept {
+    phase_gate_enabled_ = false;
+}
+
 void CudaSimulationRuntime::clear_stimuli() {
     if (!device_state_)
         throw std::logic_error("CUDA simulation is not initialized");
@@ -377,7 +413,12 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
         device_state_->row_offsets.get(), device_state_->target_indices.get(),
         device_state_->weights.get(), device_state_->delays.get(),
         device_state_->edge_count, device_state_->synaptic_current.get(),
-        device_state_->ring_slots
+        device_state_->ring_slots,
+        phase_gate_enabled_ ? device_state_->preferred_phases.get() : nullptr,
+        phase_gate_enabled_
+            ? static_cast<float>(6.28318530717958647692 * phase_frequency_hz_ * p.dt / 1000.0)
+            : 0.0f,
+        phase_offset_rad_, phase_gate_half_width_rad_, phase_gate_enabled_
     };
 
     const auto apply_learning = [&]() {
