@@ -446,7 +446,7 @@ if(SPIKINGMODEL_ENABLE_CUDA)
     add_executable(neuromancer_infer apps/neuromancer_infer.cpp)
     target_link_libraries(neuromancer_infer PRIVATE neuromancer_inference)
     add_test(NAME neuromancer_inference_api_v24
-             COMMAND neuromancer_infer --self-test /tmp/neuromancer_v23_model.csr)
+             COMMAND neuromancer_infer --self-test ${CMAKE_CURRENT_BINARY_DIR}/neuromancer_v23_model/model.nmc)
     set_tests_properties(neuromancer_inference_api_v24 PROPERTIES
         TIMEOUT 180
         FIXTURES_REQUIRED neuromancer_v23_model
@@ -472,7 +472,7 @@ if(SPIKINGMODEL_ENABLE_CUDA)
         CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
     )
     add_test(NAME neuromancer_inference_prototype_v23
-             COMMAND neuromancer_inference_prototype_v23)
+             COMMAND neuromancer_inference_prototype_v23 ${CMAKE_CURRENT_BINARY_DIR}/neuromancer_v23_model)
     set_tests_properties(neuromancer_inference_prototype_v23 PROPERTIES TIMEOUT 180)
     set_tests_properties(neuromancer_inference_prototype_v23 PROPERTIES
         FIXTURES_SETUP neuromancer_v23_model
