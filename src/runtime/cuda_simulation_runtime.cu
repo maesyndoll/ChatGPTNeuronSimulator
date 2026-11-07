@@ -336,6 +336,7 @@ void CudaSimulationRuntime::configure_phase_gate(
     phase_gate_half_width_rad_ = gate_half_width_rad;
     phase_offset_rad_ = std::fmod(phase_offset_rad, tau);
     phase_gate_inhibitory_only_ = false;
+    phase_gate_excitatory_only_ = false;
     phase_gate_enabled_ = true;
 }
 
@@ -347,11 +348,24 @@ void CudaSimulationRuntime::configure_inhibitory_phase_gate(
     configure_phase_gate(preferred_phases_rad, oscillator_frequency_hz,
                          gate_half_width_rad, phase_offset_rad);
     phase_gate_inhibitory_only_ = true;
+    phase_gate_excitatory_only_ = false;
+}
+
+void CudaSimulationRuntime::configure_excitatory_phase_gate(
+    const std::vector<float>& preferred_phases_rad,
+    float oscillator_frequency_hz,
+    float gate_half_width_rad,
+    float phase_offset_rad) {
+    configure_phase_gate(preferred_phases_rad, oscillator_frequency_hz,
+                         gate_half_width_rad, phase_offset_rad);
+    phase_gate_inhibitory_only_ = false;
+    phase_gate_excitatory_only_ = true;
 }
 
 void CudaSimulationRuntime::disable_phase_gate() noexcept {
     phase_gate_enabled_ = false;
     phase_gate_inhibitory_only_ = false;
+    phase_gate_excitatory_only_ = false;
 }
 
 void CudaSimulationRuntime::clear_stimuli() {
@@ -431,7 +445,8 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
             ? static_cast<float>(6.28318530717958647692 * phase_frequency_hz_ * p.dt / 1000.0)
             : 0.0f,
         phase_offset_rad_, phase_gate_half_width_rad_, phase_gate_enabled_,
-        p.excitatory_count, phase_gate_inhibitory_only_
+        p.excitatory_count, phase_gate_inhibitory_only_,
+        phase_gate_excitatory_only_
     };
 
     const auto apply_learning = [&]() {
