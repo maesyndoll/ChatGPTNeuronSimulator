@@ -45,7 +45,7 @@ ModelParameters make_model() {
     p.simulation.excitatory_current_max = 0.0f;
     p.simulation.inhibitory_current_min = 0.0f;
     p.simulation.inhibitory_current_max = 0.0f;
-    p.topology.minimum_delay = 2;
+    p.topology.minimum_delay = 1;
     p.topology.maximum_delay = 2;
     p.topology.delay_distribution = DelayDistribution::Uniform;
     p.topology.fibonacci_delays = {2};
@@ -57,7 +57,8 @@ CSRTopology make_random_graph(std::uint32_t seed) {
     CSRTopology g;
     g.excitatory_count = E;
     g.inhibitory_count = 1;
-    g.minimum_delay = g.maximum_delay = 2;
+    g.minimum_delay = 1;
+    g.maximum_delay = 2;
     g.row_offsets.assign(N + 1, 0);
     std::mt19937 rng(seed);
     std::bernoulli_distribution edge(0.15);
