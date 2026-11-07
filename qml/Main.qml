@@ -821,6 +821,121 @@ ApplicationWindow {
             }
         }
 
+        Rectangle {
+            Layout.fillWidth: true
+            radius: 14
+            color: "#111d2b"
+            border.color: "#31506a"
+            implicitHeight: graftPanel.implicitHeight + 28
+
+            ColumnLayout {
+                id: graftPanel
+                anchors.fill: parent
+                anchors.margins: 16
+                spacing: 10
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label {
+                        text: "Graft bay · package loader"
+                        color: "#edf5ff"
+                        font.pixelSize: 18
+                        font.bold: true
+                    }
+                    Item { Layout.fillWidth: true }
+                    Label {
+                        text: simulation.graftInspectionValid ? "PACKAGE VALIDATED" : "INSPECT ONLY"
+                        color: simulation.graftInspectionValid ? "#8de0ca" : "#e5bd78"
+                        font.pixelSize: 10
+                        font.bold: true
+                    }
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    text: "Inspect a graft directory or neuromancer.graft.json. This checks the manifest and CSR matrix without changing the running simulation or executing a module."
+                    color: "#91a2b8"
+                    wrapMode: Text.Wrap
+                    font.pixelSize: 12
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    TextField {
+                        id: graftPackagePath
+                        Layout.fillWidth: true
+                        placeholderText: "/path/to/graft-package"
+                        color: "#e8eef7"
+                        placeholderTextColor: "#71839a"
+                        selectByMouse: true
+                    }
+                    Button {
+                        text: "Inspect package"
+                        enabled: graftPackagePath.text.trim().length > 0
+                        onClicked: simulation.inspectGraftPackage(graftPackagePath.text)
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    visible: Object.keys(simulation.graftInspection).length > 0
+                    radius: 8
+                    color: "#0b1420"
+                    border.color: simulation.graftInspectionValid ? "#347c6e" : "#704650"
+                    implicitHeight: graftDetails.implicitHeight + 20
+
+                    ColumnLayout {
+                        id: graftDetails
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        spacing: 5
+                        Label {
+                            Layout.fillWidth: true
+                            text: simulation.graftInspectionValid
+                                  ? (simulation.graftInspection.name || "Unnamed graft") +
+                                    " · " + (simulation.graftInspection.id || "")
+                                  : (simulation.graftInspection.error || "Package inspection failed")
+                            color: simulation.graftInspectionValid ? "#8de0ca" : "#f0a7ad"
+                            font.bold: true
+                            wrapMode: Text.Wrap
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            visible: simulation.graftInspectionValid
+                            text: "Neurons: E " + simulation.graftInspection.excitatory_count +
+                                  " / I " + simulation.graftInspection.inhibitory_count +
+                                  "    CSR edges: " + simulation.graftInspection.synapse_count
+                            color: "#cbd7e5"
+                            font.pixelSize: 12
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            visible: simulation.graftInspectionValid
+                            text: "Input adapters: " + simulation.graftInspection.input_adapters +
+                                  "    Output adapters: " + simulation.graftInspection.output_adapters
+                            color: "#cbd7e5"
+                            font.pixelSize: 12
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            visible: simulation.graftInspectionValid
+                            text: "Module: " + simulation.graftInspection.module_binary
+                            color: "#91a2b8"
+                            font.pixelSize: 11
+                            wrapMode: Text.Wrap
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            visible: simulation.graftInspectionValid
+                            text: simulation.graftInspection.status
+                            color: "#e5bd78"
+                            font.pixelSize: 11
+                        }
+                    }
+                }
+            }
+        }
+
         GridLayout {
             Layout.fillWidth: true
             columns: 2
