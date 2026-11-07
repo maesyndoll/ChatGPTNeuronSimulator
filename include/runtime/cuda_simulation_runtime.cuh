@@ -97,6 +97,15 @@ public:
                            std::uint32_t duration_steps,
                            float amplitude);
     void clear_stimuli();
+
+    // Optional GPU-side phase gate. Each neuron receives a preferred phase
+    // in radians; propagation from a spiking source is admitted only when
+    // the configured oscillator phase lies within the gate half-width.
+    void configure_phase_gate(const std::vector<float>& preferred_phases_rad,
+                              float oscillator_frequency_hz,
+                              float gate_half_width_rad,
+                              float phase_offset_rad = 0.0f);
+    void disable_phase_gate() noexcept;
     SimulationMetrics collect_metrics();
     std::vector<std::uint32_t> collect_spike_count_snapshot();
     // Read post-integration voltage and recovery state for selected neurons.
@@ -159,6 +168,7 @@ private:
         DeviceBuffer<std::uint32_t> target_indices;
         DeviceBuffer<float> weights;
         DeviceBuffer<std::uint32_t> delays;
+        DeviceBuffer<float> preferred_phases;
 
         // Optional reverse CSR index and zero-initialized learning traces.
         // Edge indices refer back to the single authoritative weights array.
@@ -201,6 +211,10 @@ private:
     StdpParameters stdp_parameters_{};
     std::vector<ExternalStimulusGPU> external_stimuli_;
     bool external_stimuli_dirty_ = false;
+    bool phase_gate_enabled_ = false;
+    float phase_frequency_hz_ = 10.0f;
+    float phase_gate_half_width_rad_ = 0.3490658504f;
+    float phase_offset_rad_ = 0.0f;
 };
 
 } // namespace spiking
