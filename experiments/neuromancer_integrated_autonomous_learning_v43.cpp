@@ -161,7 +161,6 @@ Trial run_reference(std::uint32_t seed,bool stdp_on,bool structure_on,bool phase
     out.m.phase_lag=phase.learned_lag(0,1);out.m.phase_conf=phase.temporal_confidence(0,1);
     out.m.control_conf=phase.temporal_confidence(0,2);
     out.final_edges=static_cast<std::uint32_t>(g.synapse_count());
-    std::uint32_t ab=edge_between(g,0,1),wrong=edge_between(g,0,0)+edge_between(g,0,2);
     out.m.csr=true;
     // Frozen host recall from a 50% A cue; edge weights provide propagation.
     std::array<bool,N> active{};active[0]=active[1]=true;
@@ -209,7 +208,7 @@ bool cuda_closed_loop(const std::filesystem::path& dir){
     p.temporal_association_window_steps=20;p.temporal_lag_learning_rate=.12f;
     AutonomousPopulationPhase phase(3,p);
     std::vector<float> phases(3,0),lags(1,0);
-    rt.configure_dynamic_phase_gate(phases,lags,.35f);
+    rt.configure_dynamic_phase_gate(phases,lags,PI);
     const float cuda_weight_before=rt.collect_connectivity().weights.at(0);
     std::array<std::uint64_t,3> observed{};
     for(std::uint32_t cycle=0;cycle<16;++cycle){
