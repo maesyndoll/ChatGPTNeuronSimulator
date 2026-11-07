@@ -287,7 +287,7 @@ int main(int argc, char** argv) {
         constexpr std::array<std::uint32_t, 4> seeds{35031,35132,35233,35334};
 
         std::uint64_t rows = 0;
-        constexpr std::uint64_t total =
+        const std::uint64_t total =
             seeds.size() * e_weights.size() * i_weights.size() *
             offsets.size() * gates.size();
 
