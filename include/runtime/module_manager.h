@@ -2,6 +2,7 @@
 
 #include "runtime/module_api_v1.h"
 
+#include <cstdint>
 #include <mutex>
 #include <string>
 
