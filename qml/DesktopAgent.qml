@@ -16,6 +16,7 @@ ApplicationWindow {
     property color borderColor: "#26384b"
     property color mutedColor: "#91a2b8"
     property color textColor: "#edf5ff"
+    property bool visualInputEnabled: false
 
     ColumnLayout {
         anchors.fill: parent
@@ -115,6 +116,28 @@ ApplicationWindow {
                             height: 4
                             radius: 2
                             color: "#092018"
+                        }
+                    }
+
+                    Grid {
+                        x: preview.imageOffsetX
+                        y: preview.imageOffsetY
+                        width: desktopCapture.screenWidth * preview.fitScale
+                        height: desktopCapture.screenHeight * preview.fitScale
+                        columns: 8
+                        rows: 8
+                        opacity: 0.42
+                        Repeater {
+                            model: desktopCapture.visualGrid
+                            delegate: Rectangle {
+                                required property var modelData
+                                width: parent.width / 8
+                                height: parent.height / 8
+                                color: "#38e8b4"
+                                opacity: 0.08 + Number(modelData) * 0.52
+                                border.width: 0.5
+                                border.color: "#8fffdc"
+                            }
                         }
                     }
 
@@ -221,9 +244,15 @@ ApplicationWindow {
                     Label {
                         Layout.fillWidth: true
                         wrapMode: Text.Wrap
-                        text: "Neural attention: not connected yet. The green marker shows the operating-system pointer, not a prediction from the network."
-                        color: "#e5b66e"
+                        text: "8×8 luminance encoder. Each cell maps to one of excitatory neurons 0–63. The grid overlay shows measured pixel brightness, not learned attention."
+                        color: mutedColor
                         font.pixelSize: 11
+                    }
+                    Button {
+                        Layout.fillWidth: true
+                        enabled: simulation.connected && desktopCapture.visualGrid.length === 64
+                        text: "Send current frame to neural input"
+                        onClicked: simulation.sendVisualGrid(desktopCapture.visualGrid)
                     }
 
                     Rectangle {
@@ -242,7 +271,7 @@ ApplicationWindow {
                     Label {
                         Layout.fillWidth: true
                         wrapMode: Text.Wrap
-                        text: "Observe-only mode. Mouse and keyboard actuation are not enabled in this first capture milestone."
+                        text: "Visual stimulation enabled. Mouse and keyboard actuation remain disabled. Sending a frame schedules brief current pulses to neurons 0–63; it does not yet mean the network recognizes objects."
                         color: mutedColor
                         font.pixelSize: 12
                     }
