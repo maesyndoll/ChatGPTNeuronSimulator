@@ -8,6 +8,7 @@
 #include <QPoint>
 
 #include <algorithm>
+#include <cmath>
 
 DesktopCapture::DesktopCapture(QObject* parent)
     : QObject(parent) {
