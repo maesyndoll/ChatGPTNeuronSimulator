@@ -554,7 +554,7 @@ if(SPIKINGMODEL_ENABLE_CUDA)
 
     # V36: test phase-gate robustness across widths and frequencies.
     add_executable(neuromancer_inhibitory_phase_robustness_v36
-        experiments/neuromancer_inhibitory_phase_robustness_v36.cpp
+        experiments/neuromancer_phase_gate_robustness_v36.cpp
         src/cuda/neuron_izhikevich.cu
         src/runtime/cuda_simulation_runtime.cu
         src/topology/topology_generator.cpp
