@@ -4,6 +4,7 @@
 #include "topology/topology_io.h"
 
 #include <limits>
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <string>
