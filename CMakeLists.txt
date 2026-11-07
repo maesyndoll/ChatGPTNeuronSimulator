@@ -447,7 +447,13 @@ if(SPIKINGMODEL_ENABLE_CUDA)
     target_link_libraries(neuromancer_infer PRIVATE neuromancer_inference)
     add_test(NAME neuromancer_inference_api_v24
              COMMAND neuromancer_infer --self-test /tmp/neuromancer_v23_model.csr)
-    set_tests_properties(neuromancer_inference_api_v24 PROPERTIES TIMEOUT 180)
+    set_tests_properties(neuromancer_inference_api_v24 PROPERTIES
+        TIMEOUT 180
+        FIXTURES_REQUIRED neuromancer_v23_model
+    )
+    set_tests_properties(neuromancer_inference_prototype_v23 PROPERTIES
+        FIXTURES_SETUP neuromancer_v23_model
+    )
 
     # V23: two-class spiking inference with a trained, frozen CSR readout.
     add_executable(neuromancer_inference_prototype_v23
