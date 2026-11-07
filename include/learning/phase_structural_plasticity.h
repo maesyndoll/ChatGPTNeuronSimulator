@@ -147,6 +147,7 @@ struct StructuralPlasticityReport {
     std::uint32_t deaths = 0;
     std::uint32_t strengthened = 0;
     std::uint32_t weakened = 0;
+    std::vector<std::uint32_t> next_edge_ages;
 };
 
 class ActivityStructuralPlasticity {
@@ -226,6 +227,7 @@ public:
             }
         }
 
+        report.next_edge_ages.clear();
         graph.row_offsets.assign(static_cast<std::size_t>(n) + 1U, 0U);
         graph.target_indices.clear();
         graph.weights.clear();
@@ -242,6 +244,7 @@ public:
                     ? std::max(rows[s][i].second, 0.0001f)
                     : -std::max(std::abs(rows[s][i].second), 0.0001f));
                 graph.delays.push_back(1U);
+                report.next_edge_ages.push_back(ages[s][i]);
             }
             graph.row_offsets[s + 1] =
                 static_cast<std::uint32_t>(graph.target_indices.size());
