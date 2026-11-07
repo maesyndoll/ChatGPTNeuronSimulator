@@ -364,6 +364,18 @@ void CudaSimulationRuntime::replace_topology_preserving_state(
         }
         return target;
     };
+    const auto migrate_u8 = [](const std::vector<std::uint8_t>& source,
+                               const std::vector<std::uint32_t>& mapping,
+                               std::size_t target_count) {
+        std::vector<std::uint8_t> target(target_count, 0U);
+        for (std::size_t i = 0; i < source.size(); ++i) {
+            if (mapping[i] == UINT32_MAX) continue;
+            if (mapping[i] >= target_count)
+                throw std::out_of_range("Byte state migration target is out of range");
+            target[mapping[i]] = source[i];
+        }
+        return target;
+    };
     const auto migrate_u32 = [](const std::vector<std::uint32_t>& source,
                                 const std::vector<std::uint32_t>& mapping,
                                 std::size_t target_count) {
@@ -383,11 +395,11 @@ void CudaSimulationRuntime::replace_topology_preserving_state(
     const auto old_voltage = read_float(old.voltage, old_n);
     const auto old_recovery = read_float(old.recovery, old_n);
     const auto old_spikes = read_u32(old.spike_counts, old_n);
+    const auto old_spike_flags = read_u8(old.spike_flags, old_n);
     const auto old_preferred = read_float(old.preferred_phases, old_n);
     const auto old_dynamic = read_float(old.dynamic_phases, old_n);
     const auto old_external = read_float(old.external_current, old_n);
     const auto old_lags = read_float(old.edge_phase_lags, old_e);
-    const auto old_mask = read_u8(old.edge_plasticity_mask, old_e);
     const auto old_ring = read_float(old.synaptic_current,
         old.neuron_count * old.ring_slots);
 
@@ -427,6 +439,7 @@ void CudaSimulationRuntime::replace_topology_preserving_state(
     const auto new_dynamic = migrate_float(old_dynamic, old_n, old_to_new_neurons, new_n);
     const auto new_external = migrate_float(old_external, old_n, old_to_new_neurons, new_n);
     const auto new_spikes = migrate_u32(old_spikes, old_to_new_neurons, new_n);
+    const auto new_spike_flags = migrate_u8(old_spike_flags, old_to_new_neurons, new_n);
     upload(next->a, new_a); upload(next->b, new_b); upload(next->c, new_c);
     upload(next->d, new_d); upload(next->current, new_current);
     upload(next->voltage, new_voltage); upload(next->recovery, new_recovery);
@@ -434,6 +447,7 @@ void CudaSimulationRuntime::replace_topology_preserving_state(
     upload(next->dynamic_phases, new_dynamic);
     upload(next->external_current, new_external);
     upload_u32(next->spike_counts, new_spikes);
+    upload_u8(next->spike_flags, new_spike_flags);
 
     const auto migrated_ring = remap_delayed_current_ring(
         old_ring, old_n, old.ring_slots, new_n, next->ring_slots,
