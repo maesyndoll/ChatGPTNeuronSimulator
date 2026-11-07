@@ -38,13 +38,6 @@ CSRTopology random_graph(std::uint32_t seed){
     }
     g.validate(); return g;
 }
-std::uint32_t edge_between(const CSRTopology& g,std::uint32_t a,std::uint32_t b){
-    std::uint32_t n=0;
-    for(std::uint32_t s=a*K;s<(a+1)*K;++s)
-        for(auto e=g.row_offsets[s];e<g.row_offsets[s+1];++e)
-            if(pop(g.target_indices[e])==b) ++n;
-    return n;
-}
 float mean_between(const CSRTopology& g,std::uint32_t a,std::uint32_t b){
     float sum=0; std::uint32_t n=0;
     for(std::uint32_t s=a*K;s<(a+1)*K;++s)
@@ -211,9 +204,9 @@ bool cuda_closed_loop(const std::filesystem::path& dir){
     rt.configure_dynamic_phase_gate(phases,lags,PI);
     const float cuda_weight_before=rt.collect_connectivity().weights.at(0);
     std::array<std::uint64_t,3> observed{};
-    for(std::uint32_t cycle=0;cycle<16;++cycle){
+    for(std::uint32_t cycle=0;cycle<24;++cycle){
         for(int t=0;t<80;++t){
-            if(t==0)rt.schedule_stimulus(0,rt.completed_steps()+1,1,500);
+            if(t==0)rt.schedule_stimulus(0,rt.completed_steps()+1,4,500);
             rt.run_steps(1);auto batch=rt.collect_spike_events();
             if(batch.dropped_events)throw std::runtime_error("CUDA phase loop dropped spike events");
             std::vector<std::uint32_t> ps(3,0);
