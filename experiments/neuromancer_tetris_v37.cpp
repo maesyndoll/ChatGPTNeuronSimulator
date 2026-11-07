@@ -32,7 +32,7 @@ const std::array<Shape,7> BASE{{
  {{2,0},{0,1},{1,1},{2,1}}
 }};
 struct Candidate { int rot=0,x=0,y=0,lines=0,holes=0,height=0,bump=0,maxh=0; double utility=0; Board board{}; };
-struct GameResult { std::string agent; unsigned seed=0; int score=0,lines=0,pieces=0,decisions=0; bool topout=false; };
+struct GameResult { std::string agent; unsigned seed=0; int score=0,lines=0,pieces=0,decisions=0; std::uint64_t neural_active_decisions=0, neural_action_spikes=0; bool topout=false; };
 
 Shape rotate_shape(const Shape& s) {
  Shape r; for(auto c:s) r.push_back({c.y,-c.x});
@@ -63,7 +63,7 @@ void features(Candidate& c){
 std::vector<Candidate> legal_moves(const Board& b,const Shape& piece){
  std::vector<Candidate> out;
  for(int r=0;r<(int)rotations(piece).size();++r){const auto rs=rotations(piece)[r];int maxx=0;for(auto c:rs)maxx=std::max(maxx,c.x);
-  for(int x=0;x+maxx<W;++x){int y=-4;if(collides(b,rs,x,y))continue;while(!collides(b,rs,x,y+1))++y;
+  for(int x=0;x+maxx<W;++x){int y=-4;if(collides(b,rs,x,y))continue;while(!collides(b,rs,x,y+1))++y;if(y<0)continue;
    int lines=0;Candidate c;c.rot=r;c.x=x;c.y=y;c.board=lock_piece(b,rs,x,y,lines);c.lines=lines;features(c);out.push_back(c);}
  }
  return out;
@@ -99,13 +99,18 @@ class NeuralChooser {
   const auto events=runtime_->collect_spike_events();
   std::array<int,MAX_ACTIONS> counts{};
   for(const auto& ev:events.events)if(ev.step>=start&&ev.neuron_id<MAX_ACTIONS)++counts[ev.neuron_id];
+  std::uint64_t total=0;for(std::size_t i=0;i<moves.size()&&i<MAX_ACTIONS;++i)total+=counts[i];
+  total_action_spikes_+=total;if(total>0)++active_decisions_;
   int best=0;for(std::size_t i=1;i<moves.size()&&i<MAX_ACTIONS;++i){
    if(counts[i]>counts[best]||(counts[i]==counts[best]&&moves[i].utility>moves[best].utility))best=(int)i;
   }
   return best;
  }
+ std::uint64_t active_decisions() const{return active_decisions_;}
+ std::uint64_t action_spikes() const{return total_action_spikes_;}
  private:
  std::filesystem::path path_;std::unique_ptr<CudaSimulationRuntime> runtime_;
+ std::uint64_t active_decisions_=0,total_action_spikes_=0;
 };
 GameResult play(const std::string& agent,unsigned seed,int max_pieces,const std::filesystem::path& outdir){
  GameResult result;result.agent=agent;result.seed=seed;std::mt19937 rng(seed);std::uniform_int_distribution<int> piece_dist(0,6);
@@ -120,6 +125,7 @@ GameResult play(const std::string& agent,unsigned seed,int max_pieces,const std:
   static const int points[5]={0,100,300,500,800};result.score+=points[std::clamp(moves[chosen].lines,0,4)];
   ++result.pieces;++result.decisions;
  }
+ if(brain){result.neural_active_decisions=brain->active_decisions();result.neural_action_spikes=brain->action_spikes();}
  return result;
 }
 }
@@ -128,10 +134,10 @@ int main(int argc,char**argv){
   if(argc!=2)throw std::runtime_error("usage: neuromancer_tetris_v37 <output-directory>");
   std::filesystem::path out=argv[1];std::filesystem::create_directories(out);
   std::ofstream csv(out/"tetris_v37_games.csv");if(!csv)throw std::runtime_error("cannot open results CSV");
-  csv<<"agent,seed,score,lines,pieces,decisions,topout\n";
+  csv<<"agent,seed,score,lines,pieces,decisions,neural_active_decisions,neural_action_spikes,topout\n";
   constexpr std::array<unsigned,4> seeds{37031,37132,37233,37334};
   for(auto seed:seeds)for(const std::string agent:{"random","heuristic","neuromancer"}){
-   auto r=play(agent,seed,500,out);csv<<r.agent<<','<<r.seed<<','<<r.score<<','<<r.lines<<','<<r.pieces<<','<<r.decisions<<','<<(r.topout?1:0)<<'\n';csv.flush();
+   auto r=play(agent,seed,500,out);csv<<r.agent<<','<<r.seed<<','<<r.score<<','<<r.lines<<','<<r.pieces<<','<<r.decisions<<','<<r.neural_active_decisions<<','<<r.neural_action_spikes<<','<<(r.topout?1:0)<<'\n';csv.flush();
    std::cout<<agent<<" seed="<<seed<<" score="<<r.score<<" lines="<<r.lines<<" pieces="<<r.pieces<<" topout="<<r.topout<<'\n';
   }
   std::cout<<"NEUROMANCER V37 — CLOSED-LOOP TETRIS PROTOTYPE\n"
