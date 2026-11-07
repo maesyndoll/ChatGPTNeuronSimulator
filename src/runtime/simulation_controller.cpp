@@ -1,5 +1,6 @@
 #include "runtime/simulation_controller.h"
 #include "topology/topology_io.h"
+#include "runtime/graft_package.h"
 
 #include <stdexcept>
 
@@ -110,6 +111,40 @@ void SimulationController::step(std::uint32_t steps) {
             status_ = ControllerStatus::Paused;
         }
     });
+}
+
+
+GraftPackageInfo SimulationController::attach_graft_package(
+    const std::string& package_path, bool plasticity_enabled) {
+    return submit([this, package_path, plasticity_enabled](CudaSimulationRuntime& runtime) {
+        const auto info = GraftPackageInspector::inspect(package_path);
+        const auto topology = load_csr_topology(info.topology_path.string());
+        runtime.attach_graft_topology(topology, plasticity_enabled);
+        const auto metrics = runtime.collect_metrics();
+        if (collect_spike_events_) {
+            const auto events = runtime.collect_spike_events();
+            publish_spike_events(events, runtime.simulation_generation());
+        }
+        publish_metrics(metrics);
+        return info;
+    });
+}
+
+void SimulationController::detach_graft_package() {
+    submit([this](CudaSimulationRuntime& runtime) {
+        runtime.detach_graft_topology();
+        const auto metrics = runtime.collect_metrics();
+        if (collect_spike_events_) {
+            const auto events = runtime.collect_spike_events();
+            publish_spike_events(events, runtime.simulation_generation());
+        }
+        publish_metrics(metrics);
+    });
+}
+
+bool SimulationController::graft_attached() const {
+    return const_cast<SimulationController*>(this)->submit(
+        [](CudaSimulationRuntime& runtime) { return runtime.graft_attached(); });
 }
 
 void SimulationController::schedule_stimulus(
