@@ -117,11 +117,11 @@ class NeuralChooser {
    if(counts[i]>counts[best]||(counts[i]==counts[best]&&moves[i].q>moves[best].q))best=(int)i;
   }
   int q_best=0;for(std::size_t i=1;i<moves.size()&&i<MAX_ACTIONS;++i)if(moves[i].q>moves[q_best].q)q_best=(int)i;
-  int spike_second=0;for(std::size_t i=0;i<moves.size()&&i<MAX_ACTIONS;++i)if((int)i!=best)spike_second=std::max(spike_second,counts[i]);
+  int spike_second=0,spike_top_ties=0;for(std::size_t i=0;i<moves.size()&&i<MAX_ACTIONS;++i){if(counts[i]>spike_second&&counts[i]<counts[best]){} if((int)i!=best)spike_second=std::max(spike_second,counts[i]);if(counts[i]==counts[best])++spike_top_ties;}
   int selected_q_rank=1;for(std::size_t i=0;i<moves.size()&&i<MAX_ACTIONS;++i)if(moves[i].q>moves[best].q)++selected_q_rank;
   const int top_spikes=counts[best],spike_margin=top_spikes-spike_second;
   const double utility_regret=moves[q_best].utility-moves[best].utility;
-  diagnostics_<<seed_<<','<<decision_index_<<','<<moves.size()<<','<<q_best<<','<<best<<','<<selected_q_rank<<','<<counts[q_best]<<','<<top_spikes<<','<<spike_second<<','<<spike_margin<<','<<moves[q_best].q<<','<<moves[best].q<<','<<moves[q_best].utility<<','<<moves[best].utility<<','<<utility_regret<<','<<total<<'\n';
+  diagnostics_<<seed_<<','<<decision_index_<<','<<moves.size()<<','<<q_best<<','<<best<<','<<selected_q_rank<<','<<counts[q_best]<<','<<top_spikes<<','<<spike_second<<','<<spike_margin<<','<<spike_top_ties<<','<<moves[q_best].q<<','<<moves[best].q<<','<<moves[q_best].utility<<','<<moves[best].utility<<','<<utility_regret<<','<<total<<'\n';
   return best;
  }
  std::uint64_t active_decisions() const{return active_decisions_;}
@@ -199,11 +199,11 @@ GameResult play(const std::string& agent,unsigned seed,int max_pieces,const std:
 
 int main(int argc,char**argv){
  try{
-  if(argc!=2)throw std::runtime_error("usage: neuromancer_tetris_v40 <output-directory>");
+  if(argc!=2)throw std::runtime_error("usage: neuromancer_tetris_v41 <output-directory>");
   std::filesystem::path out=argv[1];std::filesystem::create_directories(out);
   std::ofstream csv(out/"tetris_v41_games.csv");if(!csv)throw std::runtime_error("cannot open results CSV");
   std::ofstream decisions(out/"tetris_v41_decisions.csv");if(!decisions)throw std::runtime_error("cannot open decision diagnostics CSV");
-  decisions<<"seed,decision,legal_candidates,q_best_index,neural_selected_index,selected_q_rank,q_best_spikes,selected_spikes,second_spikes,spike_margin,q_best_value,selected_q_value,q_best_utility,selected_utility,utility_regret,total_output_spikes\n";
+  decisions<<"seed,decision,legal_candidates,q_best_index,neural_selected_index,selected_q_rank,q_best_spikes,selected_spikes,second_spikes,spike_margin,spike_top_ties,q_best_value,selected_q_value,q_best_utility,selected_utility,utility_regret,total_output_spikes\n";
   csv<<"stage,agent,seed,score,lines,pieces,decisions,neural_active_decisions,neural_action_spikes,topout\n";
   LinearQPolicy policy;
   constexpr int training_episodes=0,training_piece_limit=500;
@@ -230,5 +230,5 @@ int main(int argc,char**argv){
            <<"Only action-output spikes count as decisions. Q learning is reward-driven linear function approximation, not synaptic STDP.\n"
            <<"Wrote "<<(out/"tetris_v41_games.csv").string()<<" and "<<(out/"tetris_v41_decisions.csv").string()<<'\n';
   return 0;
- }catch(const std::exception&e){std::cerr<<"V40 Tetris failed: "<<e.what()<<'\n';return 1;}
+ }catch(const std::exception&e){std::cerr<<"V41 Tetris failed: "<<e.what()<<'\n';return 1;}
 }
