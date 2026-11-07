@@ -451,10 +451,6 @@ if(SPIKINGMODEL_ENABLE_CUDA)
         TIMEOUT 180
         FIXTURES_REQUIRED neuromancer_v23_model
     )
-    set_tests_properties(neuromancer_inference_prototype_v23 PROPERTIES
-        FIXTURES_SETUP neuromancer_v23_model
-    )
-
     # V23: two-class spiking inference with a trained, frozen CSR readout.
     add_executable(neuromancer_inference_prototype_v23
         experiments/neuromancer_inference_prototype_v23.cpp
@@ -478,6 +474,9 @@ if(SPIKINGMODEL_ENABLE_CUDA)
     add_test(NAME neuromancer_inference_prototype_v23
              COMMAND neuromancer_inference_prototype_v23)
     set_tests_properties(neuromancer_inference_prototype_v23 PROPERTIES TIMEOUT 180)
+    set_tests_properties(neuromancer_inference_prototype_v23 PROPERTIES
+        FIXTURES_SETUP neuromancer_v23_model
+    )
 
     # V22: matched disconnected-target control and event-aligned synaptic transfer curve.
     add_executable(neuromancer_transmission_audit_v22
