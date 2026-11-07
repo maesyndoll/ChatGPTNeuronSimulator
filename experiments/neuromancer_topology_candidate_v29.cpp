@@ -229,7 +229,13 @@ int main(int argc,char**argv) {
   auto after=evaluate(topology_path,p,seed);
   double meanw=0; for(float w:learned.weights)meanw+=std::abs(w);
   if(!learned.weights.empty())meanw/=learned.weights.size();
-  json out={{"control",control},{"architecture",architecture},{"seed",seed},{"synapses",learned.synapse_count()},{"e_spikes",m.excitatory_spikes},
+  const auto topology_stats=analyze_csr_topology(learned);
+  json out={{"control",control},{"architecture",architecture},{"seed",seed},{"synapses",learned.synapse_count()},
+    {"ee_synapses",topology_stats.excitatory_to_excitatory},
+    {"ei_synapses",topology_stats.excitatory_to_inhibitory},
+    {"ie_synapses",topology_stats.inhibitory_to_excitatory},
+    {"ii_synapses",topology_stats.inhibitory_to_inhibitory},
+    {"topology_density",topology_stats.density},{"e_spikes",m.excitatory_spikes},
     {"i_spikes",m.inhibitory_spikes},{"e_rate_hz",m.excitatory_rate_hz},{"i_rate_hz",m.inhibitory_rate_hz},
     {"mean_voltage_mv",m.mean_voltage_mv},{"finite_state",m.finite_state},
     {"baseline_accuracy",before.total?double(before.correct)/before.total:0.0},
