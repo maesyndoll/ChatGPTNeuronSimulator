@@ -92,7 +92,6 @@ void pairwise_structure(CSRTopology& g,const std::vector<float>& pair_score,
     g.row_offsets.assign(N+1,0); g.target_indices.clear();g.weights.clear();g.delays.clear();
     ages.clear();
     for(std::uint32_t s=0;s<N;++s){
-        std::sort(rows[s].begin(),rows[s].end(),[](auto a,auto b){return a.first<b.first;});
         for(std::size_t j=0;j<rows[s].size();++j){
             g.target_indices.push_back(rows[s][j].first);g.weights.push_back(rows[s][j].second);
             g.delays.push_back(1);ages.push_back(next_age[s][j]);
@@ -155,7 +154,7 @@ Trial run_reference(std::uint32_t seed,bool stdp_on,bool structure_on,bool phase
     out.m.ab_after=mean_between(g,0,1);out.m.bc_after=mean_between(g,1,2);
     out.m.phase_lag=phase.learned_lag(0,1);out.m.phase_conf=phase.temporal_confidence(0,1);
     out.m.control_conf=phase.temporal_confidence(0,2);
-    out.m.final_edges=static_cast<std::uint32_t>(g.synapse_count());
+    out.final_edges=static_cast<std::uint32_t>(g.synapse_count());
     std::uint32_t ab=edge_between(g,0,1),wrong=edge_between(g,0,0)+edge_between(g,0,2);
     out.m.csr=true;
     // Frozen host recall from a 50% A cue; edge weights provide propagation.
