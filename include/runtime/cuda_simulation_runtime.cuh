@@ -186,6 +186,8 @@ private:
         DeviceBuffer<float> weights;
         DeviceBuffer<std::uint32_t> delays;
         DeviceBuffer<float> preferred_phases;
+        DeviceBuffer<float> dynamic_phases;
+        DeviceBuffer<float> edge_phase_lags;
 
         // Optional reverse CSR index and zero-initialized learning traces.
         // Edge indices refer back to the single authoritative weights array.
