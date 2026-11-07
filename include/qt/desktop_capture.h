@@ -15,6 +15,7 @@ class DesktopCapture final : public QObject {
     Q_PROPERTY(int cursorY READ cursorY NOTIFY frameChanged)
     Q_PROPERTY(bool capturing READ capturing NOTIFY captureStatusChanged)
     Q_PROPERTY(QString captureStatus READ captureStatus NOTIFY captureStatusChanged)
+    Q_PROPERTY(QString pointerActionStatus READ pointerActionStatus NOTIFY captureStatusChanged)
     Q_PROPERTY(QVariantList visualGrid READ visualGrid NOTIFY frameChanged)
 
 public:
@@ -27,12 +28,14 @@ public:
     int cursorY() const noexcept;
     bool capturing() const noexcept;
     QString captureStatus() const;
+    QString pointerActionStatus() const;
     QImage image() const;
     QVariantList visualGrid() const;
 
     Q_INVOKABLE void start();
     Q_INVOKABLE void stop();
     Q_INVOKABLE void refreshNow();
+    Q_INVOKABLE void movePointerToNormalized(double x, double y);
 
 signals:
     void frameChanged();
@@ -52,6 +55,7 @@ private:
     int cursor_y_ = 0;
     bool capturing_ = false;
     QString capture_status_ = QStringLiteral("Capture stopped");
+    QString pointer_action_status_ = QStringLiteral("Pointer actuator idle");
 };
 
 class DesktopFrameProvider final : public QQuickImageProvider {
