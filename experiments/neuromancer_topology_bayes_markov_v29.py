@@ -83,7 +83,7 @@ def main():
     by_family={}
     for family in FAMILIES:
         rows=[r for r in candidate_rows if r["candidate"].startswith(family+"_")]
-        successes=sum(min(int(r["class0_correct"]),int(r["class1_correct"])) for r in rows)
+        successes=sum(int(r["class0_correct"])+int(r["class1_correct"]) for r in rows)
         total=32*len(rows)
         post=beta_summary(successes,total,a.posterior_draws,rng)
         post["per_seed_accuracy"]=[float(r["accuracy"]) for r in rows]
@@ -127,7 +127,7 @@ def main():
              "interpretation_note":"Beta posteriors use classwise correct counts over 32 held-out trials per seed. Markov rows use Dirichlet(1) priors over coarse edge-weight states. These are benchmark-specific statistical summaries, not proof of biological mechanisms."}
     (out/"bayesian_markov_summary.json").write_text(json.dumps(summary,indent=2)+"\n")
     leaderboard=sorted(by_family,key=lambda k:(by_family[k]["all_seeds_classwise_pass"],
-        by_family[k]["mean_i_spikes"]>0,by_family[k]["mean_synapses"]*-1),reverse=True)
+        by_family[k]["mean"],by_family[k]["mean_i_spikes"]>0,by_family[k]["mean_synapses"]*-1),reverse=True)
     (out/"architecture_leaderboard.json").write_text(json.dumps(
         [{"family":k,**{x:y for x,y in by_family[k].items() if x!="edge_markov"}}
          for k in leaderboard],indent=2)+"\n")
