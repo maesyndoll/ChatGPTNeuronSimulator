@@ -88,6 +88,8 @@ def main():
         post=beta_summary(successes,total,a.posterior_draws,rng)
         post["per_seed_accuracy"]=[float(r["accuracy"]) for r in rows]
         post["mean_synapses"]=float(np.mean([r["synapses"] for r in rows]))
+        for metric in ("ee_synapses","ei_synapses","ie_synapses","ii_synapses"):
+            post["mean_"+metric]=float(np.mean([r[metric] for r in rows]))
         post["sd_synapses"]=float(np.std([r["synapses"] for r in rows],ddof=1)) if len(rows)>1 else 0.0
         post["mean_i_spikes"]=float(np.mean([r["i_spikes"] for r in rows]))
         post["mean_e_rate_hz"]=float(np.mean([r["e_rate_hz"] for r in rows]))
