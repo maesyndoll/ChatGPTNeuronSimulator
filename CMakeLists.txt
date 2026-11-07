@@ -422,6 +422,33 @@ if(SPIKINGMODEL_ENABLE_CUDA)
              COMMAND neuromancer_random_topology_association_v18)
     set_tests_properties(neuromancer_random_topology_association_v18 PROPERTIES TIMEOUT 180)
 
+    # V24: reusable inference API and command-line runner.
+    add_library(neuromancer_inference
+        src/neuromancer/inference_engine.cpp
+        src/cuda/neuron_izhikevich.cu
+        src/runtime/cuda_simulation_runtime.cu
+        src/topology/topology_generator.cpp
+        src/topology/topology_io.cpp
+    )
+    target_include_directories(neuromancer_inference PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(neuromancer_inference PUBLIC CUDA::cudart)
+    target_compile_options(neuromancer_inference PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+    )
+    set_target_properties(neuromancer_inference PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+    )
+
+    add_executable(neuromancer_infer apps/neuromancer_infer.cpp)
+    target_link_libraries(neuromancer_infer PRIVATE neuromancer_inference)
+    add_test(NAME neuromancer_inference_api_v24
+             COMMAND neuromancer_infer --self-test /tmp/neuromancer_v23_model.csr)
+    set_tests_properties(neuromancer_inference_api_v24 PROPERTIES TIMEOUT 180)
+
     # V23: two-class spiking inference with a trained, frozen CSR readout.
     add_executable(neuromancer_inference_prototype_v23
         experiments/neuromancer_inference_prototype_v23.cpp
