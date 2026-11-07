@@ -924,6 +924,23 @@ ApplicationWindow {
                             font.pixelSize: 11
                             wrapMode: Text.Wrap
                         }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            visible: simulation.graftInspectionValid
+                            Button {
+                                text: "Attach frozen graft"
+                                enabled: simulation.connected &&
+                                         simulation.graftInspectionValid &&
+                                         !simulation.graftInspection.attached
+                                onClicked: simulation.attachGraftPackage(graftPackagePath.text, false)
+                            }
+                            Button {
+                                text: "Eject graft"
+                                enabled: simulation.connected &&
+                                         simulation.graftInspection.attached === true
+                                onClicked: simulation.detachGraftPackage()
+                            }
+                        }
                         Label {
                             Layout.fillWidth: true
                             visible: simulation.graftInspectionValid
