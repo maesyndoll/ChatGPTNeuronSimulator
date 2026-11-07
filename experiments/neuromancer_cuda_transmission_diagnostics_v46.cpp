@@ -234,6 +234,7 @@ int main(int argc, char** argv) {
         }
         std::cout << "stage1_single_synapse_transmission=" << (single_pass ? "PASS" : "FAIL") << '\n'
                   << "stage1_weak_weight_control=" << (weak_suppressed ? "PASS" : "FAIL") << '\n'
+                  << "weight_sweep_non_decreasing_observed=" << (sweep_monotonic ? "YES" : "NO") << '\n'
                   << "stage2_assembly_recruitment=" << (assembly_pass ? "PASS" : "FAIL") << '\n'
                   << "stage3_A_to_B_to_C_chain=" << (chain_pass ? "PASS" : "FAIL") << '\n'
                   << "stage4_no_path_negative_control=" << (negative_clean ? "PASS" : "FAIL") << '\n'
