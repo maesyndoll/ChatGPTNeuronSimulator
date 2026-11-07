@@ -84,6 +84,7 @@ public:
 
     QVariantMap connectivityStatistics() const;
     QVariantMap topologyVisual() const;
+    QVariantMap selfObservation() const;
     QVariantMap graftInspection() const;
     bool graftInspectionValid() const;
     QVariantList spikeEvents() const;
@@ -103,6 +104,7 @@ public:
     Q_INVOKABLE void refreshSpikeEvents();
     Q_INVOKABLE void refreshConnectivity();
     Q_INVOKABLE void refreshTopologyVisual();
+    Q_INVOKABLE void refreshSelfObservation();
     Q_INVOKABLE void inspectGraftPackage(const QString& packagePath);
     Q_INVOKABLE void attachGraftPackage(const QString& packagePath, bool plasticityEnabled = false);
     Q_INVOKABLE void detachGraftPackage();
@@ -120,6 +122,7 @@ signals:
     void spikeEventsChanged();
     void connectivityChanged();
     void topologyVisualChanged();
+    void selfObservationChanged();
     void graftInspectionChanged();
     void errorOccurred(const QString& message);
 
@@ -143,9 +146,11 @@ private:
     QJsonObject configuration_;
     QVariantMap connectivity_statistics_;
     QVariantMap topology_visual_;
+    QVariantMap self_observation_;
     QVariantMap graft_inspection_;
     bool graft_inspection_valid_ = false;
     QTimer topology_visual_timer_;
+    QTimer self_observation_timer_;
     bool topology_visual_request_pending_ = false;
     QVariantList spike_events_;
     QString spike_event_count_ = QStringLiteral("0");
