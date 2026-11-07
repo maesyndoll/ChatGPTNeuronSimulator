@@ -150,6 +150,38 @@ recall, and rejection. This validates temporal phase separation through the
 spiking backend, not learned phase addresses, autonomous oscillators, or
 associative inference. STDP is disabled in this assay to isolate timing.
 
+## Neuromancer CUDA phase-selective recruitment (V9)
+
+The `neuromancer_phase_recruitment_v9` target advances the V8 timestamp assay
+by placing the phase decision inside the CUDA CSR propagation kernel. Each
+postsynaptic neuron has an externally assigned preferred phase. When a source
+spikes, its current oscillator phase is compared with each outgoing edge's
+target preference; edges outside the configured circular phase window are not
+scheduled into the delayed synaptic-current ring.
+
+The experiment saves a deterministic CSR graph with eight externally driven
+source neurons connected to two downstream target assemblies. Target neurons
+receive no external current. It compares ungated propagation, aligned target
+preferences, swapped/mismatched preferences, and shuffled target preferences.
+STDP is disabled so the assay isolates transmission and recruitment.
+
+Build and run:
+
+```bash
+cmake -S . -B build-cuda -DSPIKINGMODEL_ENABLE_CUDA=ON \\
+  -DCMAKE_CUDA_ARCHITECTURES=120 -DBUILD_TESTING=ON
+cmake --build build-cuda --target neuromancer_phase_recruitment_v9 --parallel
+./build-cuda/neuromancer_phase_recruitment_v9
+```
+
+This is a controlled propagation assay, not yet a complete recurrent
+associative network: the downstream groups are postsynaptically recruited by
+the driver group, and inhibitory neurons are present but are not part of this
+first routing topology. Phase preferences and the 10 Hz reference are supplied
+externally. A passing result would establish that the CUDA propagation path
+can route synaptic transmission by temporal address; it would not establish
+learned phase preferences, autonomous oscillation, or self-organized routing.
+
 ## Experiment configurations and automatic results log
 
 The standalone executable loads JSON parameter files without recompiling.
