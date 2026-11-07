@@ -122,7 +122,7 @@ std::vector<float> remap_delayed_current_ring(
     std::uint32_t new_ring_slots, std::uint64_t completed_steps,
     const std::vector<std::uint32_t>& old_to_new_neuron_map) {
     if (old_neuron_count == 0 || new_neuron_count == 0 ||
-        old_ring_slots == 0 || new_ring_slots < old_ring_slots ||
+        old_ring_slots == 0 || new_ring_slots == 0 ||
         old_to_new_neuron_map.size() != old_neuron_count ||
         old_ring.size() != static_cast<std::size_t>(old_neuron_count) * old_ring_slots)
         throw std::invalid_argument("Invalid delayed-current ring dimensions or neuron map");
@@ -135,6 +135,7 @@ std::vector<float> remap_delayed_current_ring(
     const auto new_current = static_cast<std::uint32_t>(completed_steps % new_ring_slots);
     for (std::uint32_t old_slot = 0; old_slot < old_ring_slots; ++old_slot) {
         const auto offset = (old_slot + old_ring_slots - old_current) % old_ring_slots;
+        if (offset >= new_ring_slots) continue; // Beyond the detached graph maximum delay.
         const auto new_slot = (new_current + offset) % new_ring_slots;
         for (std::uint32_t old_id = 0; old_id < old_neuron_count; ++old_id) {
             const float value = old_ring[static_cast<std::size_t>(old_slot) *
