@@ -1554,3 +1554,31 @@ if(BUILD_TESTING)
     )
     set_tests_properties(neuromancer_validation_batch_v51 PROPERTIES TIMEOUT 360)
 endif()
+
+
+# Neuromancer graft package inspector: validates manifest, package-local paths,
+# and SPKCSR topology without loading executable module code.
+add_library(neuromancer_graft_package STATIC
+    src/runtime/graft_package.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_graft_package PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_graft_package PUBLIC
+    nlohmann_json::nlohmann_json
+)
+target_compile_options(neuromancer_graft_package PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+)
+
+add_executable(neuromancer_graft_inspect
+    tools/neuromancer_graft_inspect.cpp
+)
+target_link_libraries(neuromancer_graft_inspect PRIVATE neuromancer_graft_package)
+
+if(BUILD_TESTING)
+    add_executable(graft_package_tests tests/unit/graft_package_tests.cpp)
+    target_link_libraries(graft_package_tests PRIVATE neuromancer_graft_package)
+    add_test(NAME graft_package_tests COMMAND graft_package_tests)
+endif()
