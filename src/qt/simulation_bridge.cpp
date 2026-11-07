@@ -326,6 +326,10 @@ QVariantMap SimulationBridge::topologyVisual() const {
     return topology_visual_;
 }
 
+QVariantMap SimulationBridge::selfObservation() const {
+    return self_observation_;
+}
+
 QVariantMap SimulationBridge::graftInspection() const {
     return graft_inspection_;
 }
@@ -435,6 +439,12 @@ void SimulationBridge::refreshTopologyVisual() {
         return;
     topology_visual_request_pending_ = true;
     client_.sendRequest(QStringLiteral("get_topology_visual"), {}, 10000);
+}
+
+void SimulationBridge::refreshSelfObservation() {
+    if (connected_) {
+        client_.sendRequest(QStringLiteral("get_self_observation"), {}, 10000);
+    }
 }
 
 void SimulationBridge::inspectGraftPackage(const QString& packagePath) {
