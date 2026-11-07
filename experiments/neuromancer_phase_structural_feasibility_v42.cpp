@@ -76,7 +76,7 @@ PhaseResult test_phase() {
 
     // Frozen, stimulus-free autonomous evolution. The phase state continues
     // to advance, while learned lag/coupling parameters are held fixed.
-    for (int t = 0; t < 2000; ++t)
+    for (int t = 0; t < 1997; ++t)
         phase.step(std::vector<std::uint32_t>(3,0U), false);
 
     const float after_a = phase.phase(0);
@@ -116,7 +116,7 @@ StructureResult test_structure() {
     StructureResult r;
     r.initial_edges = graph.synapse_count();
     std::vector<std::uint32_t> ages(graph.synapse_count(), 3U);
-    std::vector<float> activity = {1.0f,1.0f,0.0f,0.0f};
+    std::vector<float> activity = {1.0f,0.0f,0.0f,1.0f};
 
     StructuralPlasticityParameters p;
     p.potentiation = 0.02f;
@@ -138,7 +138,7 @@ StructureResult test_structure() {
     r.weakened = report.weakened;
     r.final_edges = graph.synapse_count();
     for (std::uint32_t e = graph.row_offsets[0]; e < graph.row_offsets[1]; ++e)
-        if (graph.target_indices[e] == 1U) r.grown_weight = graph.weights[e];
+        if (graph.target_indices[e] == 3U) r.grown_weight = graph.weights[e];
     graph.validate();
     r.csr_valid = true;
 
