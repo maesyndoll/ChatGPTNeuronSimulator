@@ -201,13 +201,16 @@ bool cuda_closed_loop(const std::filesystem::path& dir){
     CSRTopology g;g.excitatory_count=2;g.inhibitory_count=1;g.minimum_delay=g.maximum_delay=1;
     g.row_offsets={0,1,1,1};g.target_indices={1};g.weights={30};g.delays={1};g.validate();
     auto path=dir/"v43_phase_loop.csr";save_csr_topology(g,path.string());
-    CudaSimulationRuntime rt(cuda_model(),path.string(),0,true,false);
+    StdpParameters cuda_stdp;cuda_stdp.potentiation_rate=.002f;cuda_stdp.depression_rate=.001f;
+    cuda_stdp.maximum_weight=40.0f;
+    CudaSimulationRuntime rt(cuda_model(),path.string(),0,true,true,cuda_stdp);
     std::filesystem::remove(path);
     AutonomousPhaseParameters p;p.dt_ms=.5f;p.intrinsic_frequency_hz=8;
     p.temporal_association_window_steps=20;p.temporal_lag_learning_rate=.12f;
     AutonomousPopulationPhase phase(3,p);
     std::vector<float> phases(3,0),lags(1,0);
     rt.configure_dynamic_phase_gate(phases,lags,.35f);
+    const float cuda_weight_before=rt.collect_connectivity().weights.at(0);
     std::array<std::uint64_t,3> observed{};
     for(std::uint32_t cycle=0;cycle<16;++cycle){
         for(int t=0;t<12;++t){
@@ -225,11 +228,12 @@ bool cuda_closed_loop(const std::filesystem::path& dir){
     }
     const auto confidence=phase.temporal_confidence(0,1);
     const auto lag=phase.learned_lag(0,1);
-    auto metrics=rt.collect_metrics();rt.collect_connectivity().validate();
+    auto metrics=rt.collect_metrics();auto final_graph=rt.collect_connectivity();final_graph.validate();
+    const float cuda_weight_after=final_graph.weights.at(0);
     std::cout<<"cuda_phase_source_events="<<observed[0]<<" cuda_phase_target_events="<<observed[1]
              <<" cuda_learned_lag="<<lag<<" cuda_temporal_confidence="<<confidence
              <<" cuda_finite="<<(metrics.finite_state?"PASS":"FAIL")<<'\n';
-    return observed[0]>0&&observed[1]>0&&confidence>.2f&&std::isfinite(lag)&&metrics.finite_state;
+    return observed[0]>0&&observed[1]>0&&confidence>.2f&&std::isfinite(lag)&&metrics.finite_state&&cuda_weight_after>=cuda_weight_before;
 }
 }
 
