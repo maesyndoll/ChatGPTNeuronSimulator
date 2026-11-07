@@ -215,6 +215,28 @@ ApplicationWindow {
                         font.pixelSize: 12
                     }
 
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Button {
+                            Layout.fillWidth: true
+                            enabled: simulation.connected && simulation.simulationStatus !== "running"
+                            text: "Start"
+                            onClicked: simulation.startSimulation()
+                        }
+                        Button {
+                            Layout.fillWidth: true
+                            enabled: simulation.connected && simulation.simulationStatus === "running"
+                            text: "Pause"
+                            onClicked: simulation.pauseSimulation()
+                        }
+                    }
+                    Button {
+                        Layout.fillWidth: true
+                        enabled: simulation.connected && simulation.simulationStatus !== "running"
+                        text: "Step 10"
+                        onClicked: simulation.stepSimulation(10)
+                    }
+
                     Rectangle {
                         Layout.fillWidth: true
                         height: 1
@@ -250,7 +272,7 @@ ApplicationWindow {
                     }
                     Button {
                         Layout.fillWidth: true
-                        enabled: simulation.connected && desktopCapture.visualGrid.length === 64
+                        enabled: simulation.connected && simulation.simulationStatus !== "running" && desktopCapture.visualGrid.length === 64
                         text: "Send current frame to neural input"
                         onClicked: simulation.sendVisualGrid(desktopCapture.visualGrid)
                     }
