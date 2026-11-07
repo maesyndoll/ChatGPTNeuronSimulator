@@ -156,9 +156,9 @@ int main(int argc, char** argv) {
         // Stage 1: reproduce the known-good V42 single-synapse control and
         // compare it with an intentionally weak connection.
         const auto single_strong = run_trial(
-            dir, "single_strong", {{0, 1, 30.0f, 1}}, 1, 40);
+            dir, "single_strong", {{0, K, 30.0f, 1}}, 1, 40);
         const auto single_weak = run_trial(
-            dir, "single_weak", {{0, 1, 0.01f, 1}}, 1, 40);
+            dir, "single_weak", {{0, K, 0.01f, 1}}, 1, 40);
 
         // Stage 2: an engineered one-to-one A->B positive control. Only four
         // of eight A neurons receive external current.
