@@ -1116,3 +1116,19 @@ if(BUILD_TESTING)
     target_link_libraries(trajectory_tests PRIVATE neuron_analysis)
     add_test(NAME trajectory_tests COMMAND trajectory_tests)
 endif()
+
+# V42 deterministic host-side learning primitive smoke test. The integrated
+# CUDA experiment will be registered after the runtime phase interface lands.
+add_executable(neuromancer_learning_primitives_v42
+    experiments/neuromancer_learning_primitives_v42.cpp
+)
+target_include_directories(neuromancer_learning_primitives_v42 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_options(neuromancer_learning_primitives_v42 PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_learning_primitives_v42
+             COMMAND neuromancer_learning_primitives_v42)
+endif()
