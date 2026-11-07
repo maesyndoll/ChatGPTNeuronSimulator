@@ -422,6 +422,30 @@ if(SPIKINGMODEL_ENABLE_CUDA)
              COMMAND neuromancer_random_topology_association_v18)
     set_tests_properties(neuromancer_random_topology_association_v18 PROPERTIES TIMEOUT 180)
 
+    # V20: isolated positive/negative pre-post lag sweep to identify the STDP kernel.
+    add_executable(neuromancer_stdp_kernel_calibration_v20
+        experiments/neuromancer_stdp_kernel_calibration_v20.cpp
+        src/cuda/neuron_izhikevich.cu
+        src/runtime/cuda_simulation_runtime.cu
+        src/topology/topology_generator.cpp
+        src/topology/topology_io.cpp
+    )
+    target_include_directories(neuromancer_stdp_kernel_calibration_v20 PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(neuromancer_stdp_kernel_calibration_v20 PRIVATE CUDA::cudart)
+    target_compile_options(neuromancer_stdp_kernel_calibration_v20 PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+    )
+    set_target_properties(neuromancer_stdp_kernel_calibration_v20 PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+    )
+    add_test(NAME neuromancer_stdp_kernel_calibration_v20
+             COMMAND neuromancer_stdp_kernel_calibration_v20)
+    set_tests_properties(neuromancer_stdp_kernel_calibration_v20 PROPERTIES TIMEOUT 180)
+
     # V19: edge-wise STDP deltas and stepwise frozen-recall voltage traces.
     add_executable(neuromancer_system_identification_v19
         experiments/neuromancer_system_identification_v19.cpp
