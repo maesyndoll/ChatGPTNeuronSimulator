@@ -108,6 +108,7 @@ public:
     Q_INVOKABLE void detachGraftPackage();
     Q_INVOKABLE void refreshGraftStatus();
     Q_INVOKABLE void sendVisualGrid(const QVariantList& intensities);
+    Q_INVOKABLE void sendStimulusPulse(int neuronId, double amplitude, int durationSteps);
 
 signals:
     void connectionChanged();
