@@ -25,8 +25,8 @@ std::string required_string(const Json& object, const char* key) {
 
 std::uint32_t required_u32(const Json& object, const char* key) {
     const auto it = object.find(key);
-    if (it == object.end() || !it->is_number_unsigned() &&
-        !(it->is_number_integer() && it->get<std::int64_t>() >= 0)) {
+    if (it == object.end() || (!it->is_number_unsigned() &&
+        !(it->is_number_integer() && it->get<std::int64_t>() >= 0))) {
         throw std::invalid_argument(std::string("Graft manifest requires non-negative integer: ") + key);
     }
     const auto value = it->get<std::uint64_t>();
