@@ -146,13 +146,8 @@ public:
                             std::cos(wrap(phase_[i] - phase_[j] -
                                           learned_lag_[ij])),
                         0.0f, parameters_.maximum_coupling);
-                    if (activity_[i] > 0.05f && activity_[j] > 0.05f) {
-                        const float observed = wrap(phase_[i] - phase_[j]);
-                        const float phase_error = wrap(observed - learned_lag_[ij]);
-                        learned_lag_[ij] = wrap(
-                            learned_lag_[ij] + 0.001f * activity_[i] *
-                            activity_[j] * std::sin(phase_error));
-                    }
+                    // The directed lag is learned exclusively from spike timing
+                    // above; do not overwrite it with instantaneous phase alignment.
                 }
             }
         }
