@@ -223,6 +223,7 @@ private:
     bool external_stimuli_dirty_ = false;
     bool phase_gate_enabled_ = false;
     bool phase_gate_inhibitory_only_ = false;
+    bool phase_gate_excitatory_only_ = false;
     float phase_frequency_hz_ = 10.0f;
     float phase_gate_half_width_rad_ = 0.3490658504f;
     float phase_offset_rad_ = 0.0f;
