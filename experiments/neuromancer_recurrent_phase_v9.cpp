@@ -70,8 +70,8 @@ CSRTopology make_recurrent_topology() {
             if (source == target) continue;
             graph.target_indices.push_back(target);
             graph.weights.push_back(source < kExcitatory
-                ? (target < kExcitatory ? 85.0f : 75.0f)
-                : (target < kExcitatory ? -35.0f : -12.0f));
+                ? (target < kExcitatory ? 200.0f : 180.0f)
+                : (target < kExcitatory ? -80.0f : -12.0f));
             graph.delays.push_back(1);
         }
         graph.row_offsets[source + 1] =
