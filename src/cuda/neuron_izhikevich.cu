@@ -105,7 +105,9 @@ __global__ void propagate_spikes_kernel(
              edge < end;
              edge += blockDim.x) {
             const std::uint32_t target = synapses.target_indices[edge];
-            if (synapses.phase_gate_enabled) {
+            const bool apply_phase_gate = synapses.phase_gate_enabled &&
+                (!synapses.phase_gate_inhibitory_only || source >= synapses.excitatory_count);
+            if (apply_phase_gate) {
                 constexpr float tau = 6.28318530717958647692f;
                 const float phase = fmodf(
                     synapses.phase_offset_rad +
