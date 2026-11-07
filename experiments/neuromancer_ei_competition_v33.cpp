@@ -43,9 +43,9 @@ struct Observation {
 
 struct Condition {
     Observation none, e, i, both;
-    double peak_e = 0, peak_i = 0, peak_both = 0, peak_interaction = 0;
+    double peak_e = 0, peak_i = 0, peak_both = 0, peak_interaction = 0;\n    double peak_interaction_pre_spike = 0;
     std::uint32_t peak_e_step = 0, peak_i_step = 0;
-    std::uint32_t peak_both_step = 0, peak_interaction_step = 0;
+    std::uint32_t peak_both_step = 0, peak_interaction_step = 0;\n    std::uint32_t peak_interaction_pre_spike_step = 0;
     double final_e = 0, final_i = 0, final_both = 0, final_interaction = 0;
 };
 
@@ -175,11 +175,25 @@ Condition run_condition(const std::filesystem::path& dir, std::int32_t offset,
     c.final_i = c.i.trace[n-1] - c.none.trace[n-1];
     c.final_both = c.both.trace[n-1] - c.none.trace[n-1];
     c.final_interaction = c.final_both - c.final_e - c.final_i;
+    std::uint64_t first_target_spike = 0;
+    for (const auto first : {c.none.target_first, c.e.target_first,
+                             c.i.target_first, c.both.target_first}) {
+        if (first && (!first_target_spike || first < first_target_spike))
+            first_target_spike = first;
+    }
     for (std::uint32_t s = 0; s < n; ++s) {
         const double de = c.e.trace[s] - c.none.trace[s];
         const double di = c.i.trace[s] - c.none.trace[s];
         const double db = c.both.trace[s] - c.none.trace[s];
         const double inter = db - de - di;
+        // Strictly pre-spike interaction: exclude the first sample at/after
+        // any target spike in any ablation condition.
+        if (!first_target_spike || (s + 1) < first_target_spike) {
+            if (std::abs(inter) > std::abs(c.peak_interaction_pre_spike)) {
+                c.peak_interaction_pre_spike = inter;
+                c.peak_interaction_pre_spike_step = s + 1;
+            }
+        }
         if (std::abs(de) > std::abs(c.peak_e)) { c.peak_e = de; c.peak_e_step = s+1; }
         if (std::abs(di) > std::abs(c.peak_i)) { c.peak_i = di; c.peak_i_step = s+1; }
         if (std::abs(db) > std::abs(c.peak_both)) { c.peak_both = db; c.peak_both_step = s+1; }
@@ -202,7 +216,7 @@ int main(int argc, char** argv) {
         csv << std::setprecision(9);
         csv << "seed,gate,gate_phase_shift_deg,e_weight,i_weight,i_offset_steps,i_offset_ms,"
                "peak_e_delta_mv,peak_e_step,peak_i_delta_mv,peak_i_step,peak_both_delta_mv,"
-               "peak_both_step,peak_interaction_mv,peak_interaction_step,final_interaction_mv,"
+               "peak_both_step,peak_interaction_mv,peak_interaction_step,peak_interaction_pre_spike_mv,peak_interaction_pre_spike_step,final_interaction_mv,"
                "e_source_spikes,i_source_spikes,target_spikes_e_only,target_spikes_i_only,"
                "target_spikes_both,target_first_step_both,e_first_step,i_first_step,finite\n";
 
@@ -241,7 +255,7 @@ int main(int argc, char** argv) {
                                 << '\n';
                             ++rows;
                             if (rows % 30 == 0) {
-                                std::cout << "completed " << rows << " / 540 conditions\n";
+                                std::cout << "completed " << rows << " / 1512 conditions\n";
                                 csv.flush();
                             }
                         }
