@@ -211,6 +211,37 @@ int main(int argc, char** argv) {
                 selected_target, amplitude));
         }
 
+        // Change only the selected inhibitory neuron's E->I afferent weights
+        // in temporary topology copies. The original V26 model is untouched.
+        std::vector<ConditionResult> e_to_i_weight_sweep;
+        for (const float multiplier : {1.0f, 2.0f, 4.0f, 8.0f, 16.0f}) {
+            if (multiplier == 1.0f) {
+                e_to_i_weight_sweep.push_back(e_driven);
+                continue;
+            }
+            auto scaled_graph = graph;
+            for (std::uint32_t source = 0; source < e_count; ++source) {
+                for (std::uint32_t edge = scaled_graph.row_offsets[source];
+                     edge < scaled_graph.row_offsets[source + 1U]; ++edge) {
+                    if (scaled_graph.target_indices[edge] == selected_target)
+                        scaled_graph.weights[edge] *= multiplier;
+                }
+            }
+            const auto scaled_path = output_path.string() + ".target_ei_" +
+                std::to_string(static_cast<int>(multiplier)) + "x.csr";
+            save_csr_topology(scaled_graph, scaled_path);
+            try {
+                e_to_i_weight_sweep.push_back(run_condition(
+                    "e_to_i_weight_" +
+                        std::to_string(static_cast<int>(multiplier)) + "x",
+                    model, scaled_path, e_inputs, selected_target));
+            } catch (...) {
+                std::filesystem::remove(scaled_path);
+                throw;
+            }
+            std::filesystem::remove(scaled_path);
+        }
+
         if (!output_path.parent_path().empty())
             std::filesystem::create_directories(output_path.parent_path());
         std::ofstream out(output_path);
@@ -228,6 +259,9 @@ int main(int argc, char** argv) {
         write_result(out, direct_i, stats, selected_target,
                      static_cast<std::uint32_t>(e_inputs.size()));
         for (const auto& sweep : direct_current_sweep)
+            write_result(out, sweep, stats, selected_target,
+                         static_cast<std::uint32_t>(e_inputs.size()));
+        for (const auto& sweep : e_to_i_weight_sweep)
             write_result(out, sweep, stats, selected_target,
                          static_cast<std::uint32_t>(e_inputs.size()));
         out.flush();
@@ -262,11 +296,14 @@ int main(int argc, char** argv) {
         print(e_driven);
         print(direct_i);
         for (const auto& sweep : direct_current_sweep) print(sweep);
+        for (const auto& sweep : e_to_i_weight_sweep) print(sweep);
         std::cout << "CSV: " << std::filesystem::absolute(output_path).string()
                   << '\n';
         if (!baseline.metrics.finite_state || !e_driven.metrics.finite_state ||
             !direct_i.metrics.finite_state ||
             std::any_of(direct_current_sweep.begin(), direct_current_sweep.end(),
+                [](const ConditionResult& r) { return !r.metrics.finite_state; }) ||
+            std::any_of(e_to_i_weight_sweep.begin(), e_to_i_weight_sweep.end(),
                 [](const ConditionResult& r) { return !r.metrics.finite_state; }))
             throw std::runtime_error("Non-finite state detected during diagnostics");
         std::cout << "PASS: diagnostic runs completed with finite neuron state.\n";
