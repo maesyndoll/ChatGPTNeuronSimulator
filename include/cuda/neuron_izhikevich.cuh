@@ -101,6 +101,7 @@ void apply_stdp(
     const std::uint32_t* outgoing_row_offsets,
     const std::uint32_t* outgoing_targets,
     float* weights,
+    const std::uint8_t* edge_plasticity_mask,
     const std::uint32_t* incoming_row_offsets,
     const std::uint32_t* incoming_sources,
     const std::uint32_t* incoming_edge_indices,
