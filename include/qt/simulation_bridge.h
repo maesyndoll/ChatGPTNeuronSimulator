@@ -104,6 +104,9 @@ public:
     Q_INVOKABLE void refreshConnectivity();
     Q_INVOKABLE void refreshTopologyVisual();
     Q_INVOKABLE void inspectGraftPackage(const QString& packagePath);
+    Q_INVOKABLE void attachGraftPackage(const QString& packagePath, bool plasticityEnabled = false);
+    Q_INVOKABLE void detachGraftPackage();
+    Q_INVOKABLE void refreshGraftStatus();
     Q_INVOKABLE void sendVisualGrid(const QVariantList& intensities);
 
 signals:
