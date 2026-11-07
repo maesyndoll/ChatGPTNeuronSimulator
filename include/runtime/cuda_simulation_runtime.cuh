@@ -97,6 +97,15 @@ public:
                            std::uint32_t duration_steps,
                            float amplitude);
     void clear_stimuli();
+
+    // Configure target-neuron phase addresses used by the CUDA CSR propagation
+    // kernel. An empty preference vector disables phase routing.
+    void configure_phase_routing(const std::vector<float>& preferred_phase_rad,
+                                 float oscillator_period_ms,
+                                 float reference_phase_rad,
+                                 float half_width_rad);
+    void disable_phase_routing() noexcept;
+
     SimulationMetrics collect_metrics();
     std::vector<std::uint32_t> collect_spike_count_snapshot();
     // Read post-integration voltage and recovery state for selected neurons.
@@ -171,6 +180,7 @@ private:
 
         // Dense target-current ring: [ring_slot][neuron].
         DeviceBuffer<float> synaptic_current;
+        DeviceBuffer<float> preferred_phase_rad;
 
         // Persistent additive external current and fixed-address event schedule.
         DeviceBuffer<float> external_current;
@@ -201,6 +211,10 @@ private:
     StdpParameters stdp_parameters_{};
     std::vector<ExternalStimulusGPU> external_stimuli_;
     bool external_stimuli_dirty_ = false;
+    std::vector<float> preferred_phase_rad_;
+    float phase_oscillator_period_ms_ = 0.0f;
+    float phase_reference_rad_ = 0.0f;
+    float phase_gate_half_width_rad_ = 0.0f;
 };
 
 } // namespace spiking
