@@ -4,6 +4,7 @@
 #include <QGuiApplication>
 #include <QPixmap>
 #include <QScreen>
+#include <QColor>
 
 #include <algorithm>
 
@@ -44,6 +45,10 @@ QString DesktopCapture::captureStatus() const {
 
 QImage DesktopCapture::image() const {
     return image_;
+}
+
+QVariantList DesktopCapture::visualGrid() const {
+    return visual_grid_;
 }
 
 void DesktopCapture::start() {
@@ -89,7 +94,17 @@ void DesktopCapture::captureFrame() {
         return;
     }
 
-    image_ = pixmap.toImage();
+    image_ = pixmap.toImage().convertToFormat(QImage::Format_Grayscale8);
+    const QImage reduced = image_.scaled(8, 8, Qt::IgnoreAspectRatio,
+                                         Qt::SmoothTransformation);
+    visual_grid_.clear();
+    visual_grid_.reserve(64);
+    for (int y = 0; y < 8; ++y) {
+        for (int x = 0; x < 8; ++x) {
+            const int luminance = qGray(reduced.pixel(x, y));
+            visual_grid_.append(static_cast<double>(luminance) / 255.0);
+        }
+    }
     screen_width_ = image_.width();
     screen_height_ = image_.height();
 
