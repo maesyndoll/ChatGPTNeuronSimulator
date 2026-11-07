@@ -468,6 +468,27 @@ if(SPIKINGMODEL_ENABLE_CUDA)
         CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
     )
 
+    # V30: phase-gated excitatory and inhibitory CSR transmission assay.
+    add_executable(neuromancer_phase_inhibitory_v30
+        experiments/neuromancer_phase_inhibitory_v30.cpp
+        src/cuda/neuron_izhikevich.cu
+        src/runtime/cuda_simulation_runtime.cu
+        src/topology/topology_generator.cpp
+        src/topology/topology_io.cpp
+    )
+    target_include_directories(neuromancer_phase_inhibitory_v30 PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(neuromancer_phase_inhibitory_v30 PRIVATE CUDA::cudart)
+    target_compile_options(neuromancer_phase_inhibitory_v30 PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+    )
+    set_target_properties(neuromancer_phase_inhibitory_v30 PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+    )
+
     # V29: comparative topology growth, inhibitory regulation and Markov telemetry.
     add_executable(neuromancer_topology_candidate_v29
         experiments/neuromancer_topology_candidate_v29.cpp
