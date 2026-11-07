@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -176,6 +177,25 @@ int main(int argc, char** argv) {
             !spike_seen(runtime, 1, 0, 24);
         runtime.disable_phase_gate();
 
+        const auto csv_path = output_dir / "v48_mixed_plasticity.csv";
+        std::ofstream csv(csv_path);
+        if (!csv) throw std::runtime_error("cannot create V48 CSV");
+        csv << "condition,edge,initial_weight,final_weight,passed\n";
+        csv << "open_learning,0," << open_before << ',' << open_after << ','
+            << (open_changed ? 1 : 0) << '\n';
+        csv << "frozen_learning,1," << frozen_before << ',' << frozen_after << ','
+            << (frozen_unchanged ? 1 : 0) << '\n';
+        csv << "frozen_transmission,1," << frozen_after << ','
+            << final_graph.weights.at(1) << ',' << (frozen_transmits ? 1 : 0) << '\n';
+        const auto phase_final_weights = runtime.collect_connectivity();
+        csv << "phase_aligned_transmission,0," << open_after << ','
+            << phase_final_weights.weights.at(0) << ','
+            << (phase_aligned_transmits ? 1 : 0) << '\n';
+        csv << "phase_misaligned_suppression,0," << open_after << ','
+            << phase_final_weights.weights.at(0) << ','
+            << (phase_misaligned_suppresses ? 1 : 0) << '\n';
+        csv.close();
+
         std::cout << "edge0_mode=open initial_weight=" << open_before
                   << " trained_weight=" << open_after << '\n'
                   << "edge1_mode=frozen initial_weight=" << frozen_before
@@ -188,7 +208,7 @@ int main(int argc, char** argv) {
                   << "phase_aligned_transmission=" << (phase_aligned_transmits ? "PASS" : "FAIL") << '\n'
                   << "phase_misaligned_suppression=" << (phase_misaligned_suppresses ? "PASS" : "FAIL") << '\n'
                   << "completed_steps=" << runtime.completed_steps() << '\n'
-                  << "artifacts=" << topology_path.string() << '\n'
+                  << "artifacts=" << csv_path.string() << '\n'
                   << "LIMITATION=V48 proves dynamically loaded host module lifecycle and per-edge CUDA STDP enable/freeze policy on a persistent runtime. Module unload is invoked between synchronized run batches; this is not concurrent lock-free hot replacement or GPU-resident plugin execution.\n";
 
         return open_changed && frozen_unchanged && frozen_transmits &&
