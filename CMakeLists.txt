@@ -193,6 +193,38 @@ if(SPIKINGMODEL_ENABLE_QT_CLIENT)
         FILES
             qml/Main.qml
     )
+
+    # V11: local desktop capture frontend. This milestone is observe-only;
+    # it does not inject mouse or keyboard events.
+    add_executable(neuromancer_desktop_agent
+        include/qt/simulation_client.h
+        include/qt/simulation_bridge.h
+        include/qt/desktop_capture.h
+        src/qt/simulation_client.cpp
+        src/qt/simulation_bridge.cpp
+        src/qt/desktop_capture.cpp
+        src/qt/desktop_agent_main.cpp
+    )
+    target_include_directories(neuromancer_desktop_agent PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(neuromancer_desktop_agent PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Qml
+        Qt6::Quick
+    )
+    target_compile_options(neuromancer_desktop_agent PRIVATE
+        $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+    )
+    set_target_properties(neuromancer_desktop_agent PROPERTIES
+        AUTOMOC ON
+    )
+    qt_add_resources(neuromancer_desktop_agent desktop_agent_qml
+        PREFIX "/"
+        FILES
+            qml/DesktopAgent.qml
+    )
 endif()
 
 add_executable(topology_inspect
