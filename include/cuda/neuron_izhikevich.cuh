@@ -64,6 +64,8 @@ struct SynapseParametersGPU {
     float phase_offset_rad = 0.0f;
     float gate_half_width_rad = 0.0f;
     bool phase_gate_enabled = false;
+    std::uint32_t excitatory_count = 0;
+    bool phase_gate_inhibitory_only = false;
 };
 
 void initialize_neurons(
