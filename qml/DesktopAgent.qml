@@ -5,18 +5,25 @@ import QtQuick.Layouts
 ApplicationWindow {
     id: window
     visible: true
-    width: 1500
-    height: 920
+    width: 1440
+    height: 900
     minimumWidth: 1000
     minimumHeight: 680
-    title: "Neuromancer · Desktop Agent"
+    title: "Neuromancer · Neural Vision"
     color: "#080f18"
 
     property color panelColor: "#101b29"
     property color borderColor: "#26384b"
     property color mutedColor: "#91a2b8"
     property color textColor: "#edf5ff"
-    property bool visualInputEnabled: false
+    property int rasterWindowSteps: 2000
+
+    function neuronCount() {
+        var p = simulation.activeParameters
+        var e = Number(p.excitatory_neurons || 64)
+        var i = Number(p.inhibitory_neurons || 0)
+        return Math.max(64, e + i)
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -25,8 +32,6 @@ ApplicationWindow {
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 12
-
             ColumnLayout {
                 spacing: 2
                 Label {
@@ -37,26 +42,18 @@ ApplicationWindow {
                     font.letterSpacing: 2
                 }
                 Label {
-                    text: "Desktop perception"
+                    text: "Neural vision · live spike activity"
                     color: textColor
                     font.pixelSize: 23
                     font.bold: true
                 }
             }
-
             Item { Layout.fillWidth: true }
-
             Label {
-                text: desktopCapture.captureStatus
-                color: desktopCapture.capturing ? "#70efc5" : mutedColor
-                font.pixelSize: 12
-            }
-
-            Button {
-                text: desktopCapture.capturing ? "Pause capture" : "Resume capture"
-                onClicked: desktopCapture.capturing
-                           ? desktopCapture.stop()
-                           : desktopCapture.start()
+                text: simulation.connected ? "BACKEND CONNECTED" : "BACKEND DISCONNECTED"
+                color: simulation.connected ? "#70efc5" : "#e5b66e"
+                font.pixelSize: 11
+                font.bold: true
             }
         }
 
@@ -68,108 +65,109 @@ ApplicationWindow {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Layout.minimumWidth: 560
                 radius: 12
                 color: "#050a10"
                 border.color: borderColor
-                clip: true
 
-                Item {
-                    id: preview
+                ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 10
+                    anchors.margins: 14
+                    spacing: 10
 
-                    property real fitScale: Math.min(
-                        width / Math.max(1, desktopCapture.screenWidth),
-                        height / Math.max(1, desktopCapture.screenHeight))
-                    property real imageOffsetX:
-                        (width - desktopCapture.screenWidth * fitScale) / 2
-                    property real imageOffsetY:
-                        (height - desktopCapture.screenHeight * fitScale) / 2
-
-                    Image {
-                        id: screenImage
-                        anchors.fill: parent
-                        source: "image://desktop/live/" + desktopCapture.frameSequence
-                        cache: false
-                        asynchronous: false
-                        fillMode: Image.PreserveAspectFit
-                    }
-
-                    Rectangle {
-                        visible: desktopCapture.screenWidth > 0
-                        x: preview.imageOffsetX +
-                           desktopCapture.cursorX * preview.fitScale - width / 2
-                        y: preview.imageOffsetY +
-                           desktopCapture.cursorY * preview.fitScale - height / 2
-                        width: 22
-                        height: 22
-                        radius: 11
-                        color: "#35e6b0"
-                        opacity: 0.88
-                        border.color: "#f1fff9"
-                        border.width: 2
-
-                        Rectangle {
-                            anchors.centerIn: parent
-                            width: 4
-                            height: 4
-                            radius: 2
-                            color: "#092018"
-                        }
-                    }
-
-                    Grid {
-                        x: preview.imageOffsetX
-                        y: preview.imageOffsetY
-                        width: desktopCapture.screenWidth * preview.fitScale
-                        height: desktopCapture.screenHeight * preview.fitScale
-                        columns: 8
-                        rows: 8
-                        opacity: 0.42
-                        Repeater {
-                            model: desktopCapture.visualGrid
-                            delegate: Rectangle {
-                                required property var modelData
-                                width: parent.width / 8
-                                height: parent.height / 8
-                                color: "#38e8b4"
-                                opacity: 0.08 + Number(modelData) * 0.52
-                                border.width: 0.5
-                                border.color: "#8fffdc"
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.top: parent.top
-                        radius: 5
-                        color: "#cc08111b"
-                        width: statusLabel.implicitWidth + 18
-                        height: statusLabel.implicitHeight + 12
+                    RowLayout {
+                        Layout.fillWidth: true
                         Label {
-                            id: statusLabel
-                            anchors.centerIn: parent
-                            text: "LIVE SCREEN · POINTER OVERLAY"
-                            color: "#dce9f6"
-                            font.pixelSize: 10
+                            text: "SPIKE RASTER"
+                            color: "#70efc5"
+                            font.pixelSize: 11
                             font.bold: true
-                            font.letterSpacing: 1
+                            font.letterSpacing: 1.4
+                        }
+                        Item { Layout.fillWidth: true }
+                        Label {
+                            text: simulation.spikeEventCount + " total · " +
+                                  simulation.spikeEvents.length + " retained"
+                            color: mutedColor
+                            font.pixelSize: 11
                         }
                     }
 
-                    Label {
-                        anchors.centerIn: parent
-                        visible: desktopCapture.screenWidth === 0
-                        text: "Waiting for the first screen frame…"
-                        color: mutedColor
+                    Canvas {
+                        id: raster
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        antialiasing: false
+
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            ctx.fillStyle = "#050a10"
+                            ctx.fillRect(0, 0, width, height)
+
+                            var count = window.neuronCount()
+                            var current = Number(simulation.completedSteps || 0)
+                            var first = Math.max(0, current - window.rasterWindowSteps)
+                            var span = Math.max(1, current - first)
+
+                            // Subtle horizontal guides make individual neuron rows readable.
+                            ctx.strokeStyle = "#172638"
+                            ctx.lineWidth = 1
+                            for (var n = 0; n < count; n += Math.max(1, Math.floor(count / 16))) {
+                                var gy = (n + 0.5) * height / count
+                                ctx.beginPath()
+                                ctx.moveTo(0, gy)
+                                ctx.lineTo(width, gy)
+                                ctx.stroke()
+                            }
+
+                            var events = simulation.spikeEvents
+                            for (var j = 0; j < events.length; ++j) {
+                                var ev = events[j]
+                                var step = Number(ev.step)
+                                var id = Number(ev.neuron_id)
+                                if (step < first || step > current || id < 0 || id >= count)
+                                    continue
+
+                                var x = ((step - first) / span) * width
+                                var y = ((id + 0.5) / count) * height
+                                ctx.fillStyle = id < Number(simulation.activeParameters.excitatory_neurons || 64)
+                                               ? "#65e6bd" : "#f2b66d"
+                                ctx.fillRect(Math.floor(x), Math.floor(y), 2, Math.max(2, height / count))
+                            }
+
+                            // Current-time marker.
+                            ctx.strokeStyle = "#dce9f6"
+                            ctx.globalAlpha = 0.35
+                            ctx.beginPath()
+                            ctx.moveTo(width - 1, 0)
+                            ctx.lineTo(width - 1, height)
+                            ctx.stroke()
+                            ctx.globalAlpha = 1
+                        }
+
+                        Connections {
+                            target: simulation
+                            function onSpikeEventsChanged() { raster.requestPaint() }
+                            function onTelemetryChanged() { raster.requestPaint() }
+                            function onConfigurationChanged() { raster.requestPaint() }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Label { text: "● Excitatory"; color: "#65e6bd"; font.pixelSize: 11 }
+                        Label { text: "● Inhibitory"; color: "#f2b66d"; font.pixelSize: 11 }
+                        Item { Layout.fillWidth: true }
+                        Label {
+                            text: "Last " + window.rasterWindowSteps + " simulation steps"
+                            color: mutedColor
+                            font.pixelSize: 11
+                        }
                     }
                 }
             }
 
             Rectangle {
-                Layout.preferredWidth: 310
+                Layout.preferredWidth: 330
                 Layout.fillHeight: true
                 radius: 12
                 color: panelColor
@@ -177,42 +175,88 @@ ApplicationWindow {
 
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 18
-                    spacing: 12
+                    anchors.margins: 16
+                    spacing: 11
 
                     Label {
-                        text: "ENGINE STATUS"
+                        text: "VISUAL INPUT"
                         color: "#70efc5"
                         font.pixelSize: 11
                         font.bold: true
                         font.letterSpacing: 1.4
                     }
                     Label {
-                        text: simulation.connected ? "Backend connected" :
-                                                      "Backend disconnected"
-                        color: simulation.connected ? "#70efc5" : "#e5b66e"
-                        font.pixelSize: 16
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        text: "Captured desktop frames are encoded as 8×8 luminance values. The map below shows the 64 input intensities; it is not drawn over your desktop."
+                        color: mutedColor
+                        font.pixelSize: 11
+                    }
+
+                    Grid {
+                        Layout.alignment: Qt.AlignHCenter
+                        columns: 8
+                        rows: 8
+                        spacing: 3
+                        Repeater {
+                            model: desktopCapture.visualGrid
+                            delegate: Rectangle {
+                                required property var modelData
+                                width: 24
+                                height: 24
+                                radius: 2
+                                color: Qt.rgba(0.12 + 0.45 * Number(modelData),
+                                               0.18 + 0.55 * Number(modelData),
+                                               0.25 + 0.45 * Number(modelData), 1)
+                                border.color: "#34465a"
+                                border.width: 1
+                            }
+                        }
+                    }
+
+                    Button {
+                        Layout.fillWidth: true
+                        enabled: simulation.connected &&
+                                 simulation.simulationStatus !== "running" &&
+                                 desktopCapture.visualGrid.length === 64
+                        text: "Encode current desktop frame"
+                        onClicked: simulation.sendVisualGrid(desktopCapture.visualGrid)
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        color: borderColor
+                    }
+
+                    Label {
+                        text: "SIMULATION"
+                        color: "#70efc5"
+                        font.pixelSize: 11
                         font.bold: true
+                        font.letterSpacing: 1.4
                     }
                     Label {
-                        text: "Simulation: " + simulation.simulationStatus
+                        text: "State: " + simulation.simulationStatus
                         color: textColor
                         font.pixelSize: 12
                     }
                     Label {
-                        text: "Completed steps: " + simulation.completedSteps
+                        text: "Step: " + simulation.completedSteps
                         color: mutedColor
                         font.pixelSize: 12
                     }
                     Label {
-                        text: "Excitatory spikes: " + simulation.excitatorySpikes
+                        text: "E spikes: " + simulation.excitatorySpikes +
+                              "   I spikes: " + simulation.inhibitorySpikes
                         color: mutedColor
-                        font.pixelSize: 12
+                        font.pixelSize: 11
                     }
                     Label {
-                        text: "Inhibitory spikes: " + simulation.inhibitorySpikes
+                        text: "E rate: " + simulation.excitatoryRateHz.toFixed(1) +
+                              " Hz   I rate: " + simulation.inhibitoryRateHz.toFixed(1) + " Hz"
                         color: mutedColor
-                        font.pixelSize: 12
+                        font.pixelSize: 11
                     }
 
                     RowLayout {
@@ -237,76 +281,15 @@ ApplicationWindow {
                         onClicked: simulation.stepSimulation(10)
                     }
 
-                    Rectangle {
-                        Layout.fillWidth: true
-                        height: 1
-                        color: borderColor
-                    }
-
-                    Label {
-                        text: "VISUAL ATTENTION"
-                        color: "#70efc5"
-                        font.pixelSize: 11
-                        font.bold: true
-                        font.letterSpacing: 1.4
-                    }
-                    Label {
-                        Layout.fillWidth: true
-                        text: "Pointer position"
-                        color: mutedColor
-                        font.pixelSize: 11
-                    }
-                    Label {
-                        text: desktopCapture.cursorX + ", " +
-                              desktopCapture.cursorY
-                        color: textColor
-                        font.pixelSize: 22
-                        font.family: "monospace"
-                    }
-                    Label {
-                        Layout.fillWidth: true
-                        wrapMode: Text.Wrap
-                        text: "8×8 luminance encoder. Each cell maps to one of excitatory neurons 0–63. The grid overlay shows measured pixel brightness, not learned attention."
-                        color: mutedColor
-                        font.pixelSize: 11
-                    }
-                    Button {
-                        Layout.fillWidth: true
-                        enabled: simulation.connected && simulation.simulationStatus !== "running" && desktopCapture.visualGrid.length === 64
-                        text: "Send current frame to neural input"
-                        onClicked: simulation.sendVisualGrid(desktopCapture.visualGrid)
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        height: 1
-                        color: borderColor
-                    }
-
-                    Label {
-                        text: "ACTION OUTPUT"
-                        color: "#70efc5"
-                        font.pixelSize: 11
-                        font.bold: true
-                        font.letterSpacing: 1.4
-                    }
-                    Label {
-                        Layout.fillWidth: true
-                        wrapMode: Text.Wrap
-                        text: "Visual stimulation enabled. Mouse and keyboard actuation remain disabled. Sending a frame schedules brief current pulses to neurons 0–63; it does not yet mean the network recognizes objects."
-                        color: mutedColor
-                        font.pixelSize: 12
-                    }
-
                     Item { Layout.fillHeight: true }
 
-                    Button {
+                    Label {
                         Layout.fillWidth: true
-                        text: simulation.connected ? "Disconnect backend" :
-                                                      "Connect backend"
-                        onClicked: simulation.connected
-                                   ? simulation.disconnectFromServer()
-                                   : simulation.connectToServer()
+                        wrapMode: Text.Wrap
+                        text: "Spike events dropped: " + simulation.spikeEventsDropped +
+                              "\nGeneration: " + simulation.spikeEventsGeneration
+                        color: mutedColor
+                        font.pixelSize: 10
                     }
                 }
             }
@@ -316,14 +299,14 @@ ApplicationWindow {
             Layout.fillWidth: true
             Label {
                 Layout.fillWidth: true
-                text: "Screen capture is local. No screenshots are transmitted by this frontend."
+                text: "Neural activity is plotted from recorded backend spike events. Desktop pixels are not sent anywhere outside the local simulation."
                 color: "#71839a"
-                font.pixelSize: 11
+                font.pixelSize: 10
             }
             Label {
-                text: "100 ms capture interval"
+                text: "Raster window: " + window.rasterWindowSteps + " steps"
                 color: "#71839a"
-                font.pixelSize: 11
+                font.pixelSize: 10
             }
         }
     }
