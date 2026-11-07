@@ -179,6 +179,8 @@ GameResult play(const std::string& agent,unsigned seed,int max_pieces,const std:
  if(brain){result.neural_active_decisions=brain->active_decisions();result.neural_action_spikes=brain->action_spikes();}
  return result;
 }
+} // namespace
+
 int main(int argc,char**argv){
  try{
   if(argc!=2)throw std::runtime_error("usage: neuromancer_tetris_v38 <output-directory>");
