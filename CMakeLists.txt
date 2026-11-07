@@ -489,6 +489,27 @@ if(SPIKINGMODEL_ENABLE_CUDA)
         CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
     )
 
+    # V33: matched E/I recruitment competition near the excitatory threshold.
+    add_executable(neuromancer_ei_competition_v33
+        experiments/neuromancer_ei_competition_v33.cpp
+        src/cuda/neuron_izhikevich.cu
+        src/runtime/cuda_simulation_runtime.cu
+        src/topology/topology_generator.cpp
+        src/topology/topology_io.cpp
+    )
+    target_include_directories(neuromancer_ei_competition_v33 PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(neuromancer_ei_competition_v33 PRIVATE CUDA::cudart)
+    target_compile_options(neuromancer_ei_competition_v33 PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+    )
+    set_target_properties(neuromancer_ei_competition_v33 PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+    )
+
     # V32: phase-gated recruitment, E/I strength and timing sweep, shifted-phase control.
     add_executable(neuromancer_phase_recruitment_v32
         experiments/neuromancer_phase_recruitment_v32.cpp
