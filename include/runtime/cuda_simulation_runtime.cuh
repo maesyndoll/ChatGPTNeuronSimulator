@@ -110,6 +110,11 @@ public:
                                          float oscillator_frequency_hz,
                                          float gate_half_width_rad,
                                          float phase_offset_rad = 0.0f);
+    // Apply the same postsynaptic phase window only to excitatory-source edges.
+    void configure_excitatory_phase_gate(const std::vector<float>& preferred_phases_rad,
+                                         float oscillator_frequency_hz,
+                                         float gate_half_width_rad,
+                                         float phase_offset_rad = 0.0f);
     void disable_phase_gate() noexcept;
     SimulationMetrics collect_metrics();
     std::vector<std::uint32_t> collect_spike_count_snapshot();
