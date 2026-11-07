@@ -264,6 +264,31 @@ if(SPIKINGMODEL_ENABLE_CUDA)
     )
     add_test(NAME neuromancer_phase_runtime COMMAND neuromancer_phase_runtime)
 
+    # Neuromancer V9: verifies target-phase gating inside the real CUDA CSR
+    # propagation kernel using externally stimulated drivers and unstimulated targets.
+    add_executable(neuromancer_phase_recruitment_v9
+        experiments/neuromancer_phase_recruitment_v9.cpp
+        src/cuda/neuron_izhikevich.cu
+        src/runtime/cuda_simulation_runtime.cu
+        src/topology/topology_generator.cpp
+        src/topology/topology_io.cpp
+    )
+    target_include_directories(neuromancer_phase_recruitment_v9 PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(neuromancer_phase_recruitment_v9 PRIVATE CUDA::cudart)
+    target_compile_options(neuromancer_phase_recruitment_v9 PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+    )
+    set_target_properties(neuromancer_phase_recruitment_v9 PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+    )
+    add_test(NAME neuromancer_phase_recruitment_v9
+             COMMAND neuromancer_phase_recruitment_v9)
+    set_tests_properties(neuromancer_phase_recruitment_v9 PROPERTIES TIMEOUT 120)
+
     if(BUILD_TESTING)
         add_executable(stdp_cuda_tests
             tests/cuda/stdp_cuda_tests.cpp
