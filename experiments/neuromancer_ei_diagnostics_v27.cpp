@@ -65,19 +65,12 @@ ConditionResult run_condition(const std::string& name,
         runtime.schedule_stimulus(
             neuron, kPulseStart, kPulseDuration, kPulseCurrent);
     }
-    runtime.run_steps(kSteps);
+    // Capture the inhibitory membrane response immediately after the
+    // four-step stimulus, before the remaining quiet interval can erase it.
+    runtime.run_steps(kPulseStart + kPulseDuration);
 
     ConditionResult result;
     result.name = name;
-    result.metrics = runtime.collect_metrics();
-
-    const auto events = runtime.collect_spike_events();
-    if (events.dropped_events != 0)
-        throw std::runtime_error("Spike-event recorder dropped events");
-    for (const auto& event : events.events) {
-        if (event.neuron_id == selected_inhibitory)
-            ++result.selected_inhibitory_spikes;
-    }
 
     std::vector<std::uint32_t> inhibitory_ids;
     inhibitory_ids.reserve(model.simulation.inhibitory_count);
@@ -105,6 +98,16 @@ ConditionResult run_condition(const std::string& name,
     }
     result.inhibitory_voltage_mean =
         sum / static_cast<double>(voltages.size());
+
+    runtime.run_steps(kSteps - (kPulseStart + kPulseDuration));
+    result.metrics = runtime.collect_metrics();
+    const auto events = runtime.collect_spike_events();
+    if (events.dropped_events != 0)
+        throw std::runtime_error("Spike-event recorder dropped events");
+    for (const auto& event : events.events) {
+        if (event.neuron_id == selected_inhibitory)
+            ++result.selected_inhibitory_spikes;
+    }
     return result;
 }
 
