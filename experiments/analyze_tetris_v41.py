@@ -29,10 +29,13 @@ else:
   n=len(d);agree=sum(int(x["q_best_index"])==int(x["neural_selected_index"]) for x in d)
   regret=[val(x,"utility_regret") for x in d];rank=[val(x,"selected_q_rank") for x in d];margin=[val(x,"spike_margin") for x in d]
   silent=sum(val(x,"total_output_spikes")==0 for x in d)
+  unique=[x for x in d if int(x["spike_top_ties"])==1]
+  unique_agree=sum(int(x["q_best_index"])==int(x["neural_selected_index"]) for x in unique)
   print(f"decisions={n}; exact neural/Q-best agreement={agree}/{n} ({100*agree/n:.1f}%)")
   print(f"selected Q-rank mean={statistics.mean(rank):.2f}, median={statistics.median(rank):.1f}")
   print(f"utility regret mean={statistics.mean(regret):.4f}, median={statistics.median(regret):.4f}, zero regret={sum(x==0 for x in regret)}/{n}")
   print(f"silent output decisions={silent}/{n}; mean top-vs-second spike margin={statistics.mean(margin):.2f}")
+  print(f"unique spike winner decisions={len(unique)}/{n}; unique-winner agreement with Q-best={unique_agree}/{len(unique)}" if unique else "No decisions had a unique spike-count winner.")
   groups={}
   for x in d:groups.setdefault(int(x["legal_candidates"]),[]).append(x)
   for k,rr in sorted(groups.items()):
