@@ -46,12 +46,6 @@ std::uint32_t mapped(std::uint32_t i, std::uint32_t seed, std::uint32_t hop) {
     return hop * kAssembly + ((i + seed * hop) % kAssembly);
 }
 
-bool has_edge(const CSRTopology& g, std::uint32_t s, std::uint32_t t) {
-    for (auto e = g.row_offsets[s]; e < g.row_offsets[s + 1]; ++e)
-        if (g.target_indices[e] == t) return true;
-    return false;
-}
-
 std::uint32_t edge_count_between(const CSRTopology& g, std::uint32_t sb,
                                  std::uint32_t tb) {
     std::uint32_t n = 0;
@@ -75,7 +69,7 @@ float mean_between(const CSRTopology& g, std::uint32_t sb, std::uint32_t tb) {
 }
 
 void update_stdp(CSRTopology& g, StdpTraces& traces,
-                 std::uint32_t neuron, float dt, const StdpParameters& p) {
+                 int neuron, float dt, const StdpParameters& p) {
     std::vector<std::uint32_t> src, dst;
     src.reserve(g.synapse_count()); dst.reserve(g.synapse_count());
     for (std::uint32_t s = 0; s < kN; ++s)
@@ -83,7 +77,8 @@ void update_stdp(CSRTopology& g, StdpTraces& traces,
             src.push_back(s); dst.push_back(g.target_indices[e]);
         }
     std::vector<std::uint8_t> spikes(kN, 0);
-    spikes[neuron] = 1;
+    if (neuron >= 0 && neuron < static_cast<int>(kN))
+        spikes[static_cast<std::size_t>(neuron)] = 1;
     apply_pair_stdp_step(g.weights, src, dst, kN, kE, spikes, traces, dt, p);
 }
 
@@ -156,7 +151,7 @@ Result run_seed(std::uint32_t seed) {
             update_stdp(g,traces,a,0.5f,sp);
             for(int gap=0;gap<5;++gap) {
                 std::fill(ps.begin(),ps.end(),0); phase.step(ps,true);
-                update_stdp(g,traces,kN-1,0.5f,sp);
+                update_stdp(g,traces,-1,0.5f,sp);
             }
             std::fill(ps.begin(),ps.end(),0); ps[1]=1; phase.step(ps,true);
             update_stdp(g,traces,b,0.5f,sp);
