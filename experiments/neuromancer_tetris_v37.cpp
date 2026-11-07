@@ -89,7 +89,8 @@ class NeuralChooser {
  int choose(const std::vector<Candidate>& moves){
   if(moves.empty())return -1;
   runtime_->clear_stimuli();
-  const auto start=runtime_->completed_steps();
+  // The runtime requires external pulses to begin strictly after the completed step.
+  const auto start=runtime_->completed_steps()+1U;
   for(std::size_t i=0;i<moves.size()&&i<MAX_ACTIONS;++i){
    const double u=std::clamp(moves[i].utility,-25.0,5.0);
    const float current=(float)std::clamp(360.0+u*12.0,80.0,500.0);
