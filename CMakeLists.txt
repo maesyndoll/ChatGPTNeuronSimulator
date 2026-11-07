@@ -422,6 +422,30 @@ if(SPIKINGMODEL_ENABLE_CUDA)
              COMMAND neuromancer_random_topology_association_v18)
     set_tests_properties(neuromancer_random_topology_association_v18 PROPERTIES TIMEOUT 180)
 
+    # V21: external-current and isolated synaptic impulse-response identification.
+    add_executable(neuromancer_neuron_dynamics_identification_v21
+        experiments/neuromancer_neuron_dynamics_identification_v21.cpp
+        src/cuda/neuron_izhikevich.cu
+        src/runtime/cuda_simulation_runtime.cu
+        src/topology/topology_generator.cpp
+        src/topology/topology_io.cpp
+    )
+    target_include_directories(neuromancer_neuron_dynamics_identification_v21 PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(neuromancer_neuron_dynamics_identification_v21 PRIVATE CUDA::cudart)
+    target_compile_options(neuromancer_neuron_dynamics_identification_v21 PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+    )
+    set_target_properties(neuromancer_neuron_dynamics_identification_v21 PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+    )
+    add_test(NAME neuromancer_neuron_dynamics_identification_v21
+             COMMAND neuromancer_neuron_dynamics_identification_v21)
+    set_tests_properties(neuromancer_neuron_dynamics_identification_v21 PROPERTIES TIMEOUT 180)
+
     # V20: isolated positive/negative pre-post lag sweep to identify the STDP kernel.
     add_executable(neuromancer_stdp_kernel_calibration_v20
         experiments/neuromancer_stdp_kernel_calibration_v20.cpp
