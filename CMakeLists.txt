@@ -1525,3 +1525,32 @@ if(BUILD_TESTING)
     )
     set_tests_properties(neuromancer_phase_controlled_plasticity_v50 PROPERTIES TIMEOUT 360)
 endif()
+
+# V51: consolidated phase/STDP reference, autonomous phase, structural
+# plasticity, and CUDA inhibitory competition validation batch.
+add_executable(neuromancer_validation_batch_v51
+    experiments/neuromancer_validation_batch_v51.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_validation_batch_v51 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_validation_batch_v51 PRIVATE CUDA::cudart)
+target_compile_options(neuromancer_validation_batch_v51 PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+)
+set_target_properties(neuromancer_validation_batch_v51 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_validation_batch_v51
+        COMMAND neuromancer_validation_batch_v51
+            ${CMAKE_CURRENT_BINARY_DIR}/v51_validation_batch_test
+    )
+    set_tests_properties(neuromancer_validation_batch_v51 PROPERTIES TIMEOUT 360)
+endif()
