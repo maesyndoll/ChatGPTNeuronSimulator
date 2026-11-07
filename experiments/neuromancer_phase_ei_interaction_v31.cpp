@@ -49,6 +49,8 @@ struct Observation {
     std::uint64_t e_spikes = 0;
     std::uint64_t i_spikes = 0;
     std::uint64_t target_spikes = 0;
+    std::uint64_t e_source_step = 0;
+    std::uint64_t i_source_step = 0;
     bool finite = false;
 };
 
@@ -145,9 +147,18 @@ Observation run_trial(const std::filesystem::path& directory,
     const auto metrics = runtime.collect_metrics();
     Observation result;
     result.target_voltage = voltage.front().voltage_mv;
-    result.e_spikes = metrics.excitatory_spikes;
-    result.i_spikes = metrics.inhibitory_spikes;
-    result.target_spikes = metrics.excitatory_spikes + metrics.inhibitory_spikes;
+    const auto events = runtime.collect_spike_events();
+    for (const auto& event : events.events) {
+        if (event.neuron_id == kExcitatorySource) {
+            ++result.e_spikes;
+            result.e_source_step = event.step;
+        } else if (event.neuron_id == kInhibitorySource) {
+            ++result.i_spikes;
+            result.i_source_step = event.step;
+        } else if (event.neuron_id == kTarget) {
+            ++result.target_spikes;
+        }
+    }
     result.finite = metrics.finite_state && std::isfinite(result.target_voltage);
     if (!result.finite)
         throw std::runtime_error(label + ": non-finite simulation state");
@@ -206,7 +217,7 @@ int main(int argc, char** argv) {
 
         csv << "gate,inh_offset_steps,inh_offset_ms,none_mv,e_only_delta_mv,"
                "i_only_delta_mv,both_delta_mv,interaction_mv,e_spikes,i_spikes,"
-               "target_spikes,finite\n";
+               "target_spikes,e_source_step,i_source_step,finite\n";
         csv << std::setprecision(9);
 
         // With dt=0.5 ms and a 10 Hz oscillator, 5 steps correspond to 9 degrees.
@@ -238,6 +249,7 @@ int main(int argc, char** argv) {
                     << c.delta_both << ',' << c.interaction << ','
                     << c.both.e_spikes << ',' << c.both.i_spikes << ','
                     << c.both.target_spikes << ','
+                    << c.both.e_source_step << ',' << c.both.i_source_step << ','
                     << (c.none.finite && c.e.finite && c.i.finite &&
                         c.both.finite ? 1 : 0) << '\n';
 
@@ -248,8 +260,11 @@ int main(int argc, char** argv) {
                           << " | dI=" << c.delta_i << " mV"
                           << " | d(E+I)=" << c.delta_both << " mV"
                           << " | interaction=" << c.interaction << " mV"
-                          << " | E spikes=" << c.both.e_spikes
-                          << " | I spikes=" << c.both.i_spikes << '\n';
+                          << " | E source spikes=" << c.both.e_spikes
+                          << " @step " << c.both.e_source_step
+                          << " | I source spikes=" << c.both.i_spikes
+                          << " @step " << c.both.i_source_step
+                          << " | target spikes=" << c.both.target_spikes << '\n';
             }
         }
         csv.close();
