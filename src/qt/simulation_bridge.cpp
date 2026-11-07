@@ -452,6 +452,7 @@ void SimulationBridge::inspectGraftPackage(const QString& packagePath) {
         graft_inspection_.insert(QStringLiteral("error"), QString::fromUtf8(error.what()));
     }
     emit graftInspectionChanged();
+    refreshGraftStatus();
 }
 
 
