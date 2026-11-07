@@ -1376,3 +1376,31 @@ if(BUILD_TESTING)
              COMMAND neuromancer_cuda_transmission_diagnostics_v46)
     set_tests_properties(neuromancer_cuda_transmission_diagnostics_v46 PROPERTIES TIMEOUT 300)
 endif()
+
+
+# V47: calibrate direct B->C recruitment and engineered A->B->C chains
+# after V46 identified a subthreshold second-hop response.
+add_executable(neuromancer_two_hop_threshold_calibration_v47
+    experiments/neuromancer_two_hop_threshold_calibration_v47.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_two_hop_threshold_calibration_v47 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_two_hop_threshold_calibration_v47 PRIVATE CUDA::cudart)
+target_compile_options(neuromancer_two_hop_threshold_calibration_v47 PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+)
+set_target_properties(neuromancer_two_hop_threshold_calibration_v47 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_two_hop_threshold_calibration_v47
+             COMMAND neuromancer_two_hop_threshold_calibration_v47)
+    set_tests_properties(neuromancer_two_hop_threshold_calibration_v47 PROPERTIES TIMEOUT 300)
+endif()
