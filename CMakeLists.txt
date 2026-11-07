@@ -445,6 +445,29 @@ if(SPIKINGMODEL_ENABLE_CUDA)
         CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
     )
 
+    # V28: parameterized candidate evaluator for multi-run CSR/STDP optimization.
+    add_executable(neuromancer_csr_stdp_candidate_v28
+        experiments/neuromancer_csr_stdp_candidate_v28.cpp
+        src/cuda/neuron_izhikevich.cu
+        src/runtime/cuda_simulation_runtime.cu
+        src/topology/topology_generator.cpp
+        src/topology/topology_io.cpp
+    )
+    target_include_directories(neuromancer_csr_stdp_candidate_v28 PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(neuromancer_csr_stdp_candidate_v28 PRIVATE
+        CUDA::cudart nlohmann_json::nlohmann_json
+    )
+    target_compile_options(neuromancer_csr_stdp_candidate_v28 PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+    )
+    set_target_properties(neuromancer_csr_stdp_candidate_v28 PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+    )
+
     # V26: overnight continual-learning experiment with online STDP,
     # periodic learned-CSR checkpoints, held-out frozen-weight evaluation.
     add_executable(neuromancer_overnight_v26
