@@ -137,4 +137,121 @@ SelfObservationReport observe_connectome(
     return report;
 }
 
+
+TopologyProposalReport propose_topology_update(
+    const CSRTopology& topology,
+    const std::vector<ObservedSpike>& recent_spikes,
+    const std::vector<std::uint64_t>& cumulative_activity,
+    const TopologyAdvisorOptions& options) {
+    topology.validate();
+    const auto neurons = topology.neuron_count();
+    if (cumulative_activity.size() != neurons) {
+        throw std::invalid_argument("Topology advisor activity vector must match neuron count");
+    }
+    if (options.maximum_coactivity_lag == 0 ||
+        !std::isfinite(options.proposed_excitatory_weight) ||
+        !std::isfinite(options.proposed_inhibitory_weight) ||
+        options.proposed_excitatory_weight <= 0.0f ||
+        options.proposed_inhibitory_weight >= 0.0f ||
+        !std::isfinite(options.weak_edge_threshold) ||
+        options.weak_edge_threshold < 0.0f) {
+        throw std::invalid_argument("Invalid topology advisor options");
+    }
+    for (const auto& spike : recent_spikes) {
+        if (spike.neuron_id >= neurons) {
+            throw std::invalid_argument("Topology advisor spike neuron is out of range");
+        }
+    }
+
+    TopologyProposalReport result;
+    result.base_graph_fingerprint = observe_connectome(topology).graph_fingerprint;
+    result.candidate = topology;
+
+    std::vector<ObservedSpike> ordered = recent_spikes;
+    std::stable_sort(ordered.begin(), ordered.end(),
+        [](const ObservedSpike& a, const ObservedSpike& b) {
+            if (a.step != b.step) return a.step < b.step;
+            return a.neuron_id < b.neuron_id;
+        });
+
+    std::vector<std::vector<std::uint32_t>> coactive_sources(neurons);
+    for (std::size_t i = 0; i < ordered.size(); ++i) {
+        for (std::size_t j = i + 1; j < ordered.size(); ++j) {
+            const auto lag = ordered[j].step - ordered[i].step;
+            if (lag > options.maximum_coactivity_lag) break;
+            const auto source = ordered[i].neuron_id;
+            const auto target = ordered[j].neuron_id;
+            if (source != target) coactive_sources[source].push_back(target);
+        }
+    }
+
+    struct EdgeValue { std::uint32_t target; float weight; std::uint32_t delay; };
+    std::vector<std::vector<EdgeValue>> rows(neurons);
+    for (std::uint32_t source = 0; source < neurons; ++source) {
+        for (std::uint32_t edge = topology.row_offsets[source];
+             edge < topology.row_offsets[source + 1]; ++edge) {
+            const auto target = topology.target_indices[edge];
+            const bool prune = options.prune_dormant_weak_edges &&
+                cumulative_activity[source] == 0 &&
+                cumulative_activity[target] == 0 &&
+                std::abs(topology.weights[edge]) <= options.weak_edge_threshold;
+            if (prune) {
+                ++result.proposed_pruned_edges;
+            } else {
+                rows[source].push_back(
+                    {target, topology.weights[edge], topology.delays[edge]});
+            }
+        }
+    }
+
+    std::size_t additions = 0;
+    for (std::uint32_t source = 0;
+         source < neurons && additions < options.maximum_added_edges; ++source) {
+        auto& candidates = coactive_sources[source];
+        std::sort(candidates.begin(), candidates.end());
+        candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+        for (const auto target : candidates) {
+            if (additions >= options.maximum_added_edges) break;
+            const auto existing = std::lower_bound(
+                rows[source].begin(), rows[source].end(), target,
+                [](const EdgeValue& edge, std::uint32_t id) {
+                    return edge.target < id;
+                });
+            if (existing != rows[source].end() && existing->target == target) continue;
+            // A previously pruned edge is eligible for re-proposal only if
+            // current temporal evidence supports it.
+            const float weight = source < topology.excitatory_count
+                ? options.proposed_excitatory_weight
+                : options.proposed_inhibitory_weight;
+            const auto delay = std::max(topology.minimum_delay,
+                std::min(topology.maximum_delay, options.maximum_coactivity_lag));
+            rows[source].push_back({target, weight, delay});
+            ++additions;
+        }
+    }
+
+    auto& candidate = result.candidate;
+    candidate.row_offsets.assign(static_cast<std::size_t>(neurons) + 1, 0);
+    candidate.target_indices.clear();
+    candidate.weights.clear();
+    candidate.delays.clear();
+    for (std::uint32_t source = 0; source < neurons; ++source) {
+        auto& row = rows[source];
+        std::sort(row.begin(), row.end(),
+            [](const EdgeValue& a, const EdgeValue& b) { return a.target < b.target; });
+        for (const auto& edge : row) {
+            candidate.target_indices.push_back(edge.target);
+            candidate.weights.push_back(edge.weight);
+            candidate.delays.push_back(edge.delay);
+        }
+        candidate.row_offsets[source + 1] =
+            static_cast<std::uint32_t>(candidate.target_indices.size());
+    }
+    candidate.validate();
+    result.proposed_added_edges = additions;
+    result.candidate_graph_fingerprint =
+        observe_connectome(candidate).graph_fingerprint;
+    return result;
+}
+
 } // namespace spiking
