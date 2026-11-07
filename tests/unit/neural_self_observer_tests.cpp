@@ -22,7 +22,7 @@ spiking::CSRTopology sample() {
     graph.minimum_delay = 1;
     graph.maximum_delay = 2;
     graph.row_offsets = {0, 2, 3, 4, 5};
-    graph.target_indices = {1, 2, 2, 3, 0};
+    graph.target_indices = {1, 2, 0, 3, 2};
     graph.weights = {0.5f, 0.001f, 0.4f, 0.3f, -0.2f};
     graph.delays = {1, 1, 2, 1, 2};
     return graph;
@@ -42,9 +42,9 @@ int main() {
     check(report.isolated_neurons == 0, "detects no isolated neurons");
     check(report.inactive_neurons == 1, "detects inactive neurons from activity counts");
     check(report.weak_edges == 1, "counts weak-weight edges");
-    check(report.reciprocal_pairs == 1, "detects reciprocal edge pair");
+    check(report.reciprocal_pairs == 2, "detects reciprocal edge pairs");
     check(report.highest_degree_neurons.size() == 2, "bounds ranked neuron output");
-    check(report.highest_degree_neurons.front().neuron_id == 2,
+    check(report.highest_degree_neurons.front().neuron_id == 0,
           "ranks highest total-degree neuron first");
 
     const auto repeat = observe_connectome(graph, activity, 0.01f, 2);
