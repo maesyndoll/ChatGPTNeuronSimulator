@@ -1,8 +1,10 @@
 #include "core/parameters.h"
 #include "learning/phase_structural_plasticity.h"
+#include "plasticity/stdp.h"
 #include "runtime/cuda_simulation_runtime.cuh"
 #include "topology/topology_io.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
