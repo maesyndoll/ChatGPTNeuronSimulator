@@ -343,7 +343,12 @@ void NeuralMemoryStore::save(const std::string& id,
 
 NeuralModuleInfo NeuralMemoryStore::inspect(const std::string& id) const {
     const auto directory = module_directory(id);
-    const auto manifest_path = std::filesystem::canonical(directory / "neuromancer.module.json");
+    const auto canonical_root = std::filesystem::canonical(root_directory_);
+    const auto canonical_directory = std::filesystem::canonical(directory);
+    if (canonical_directory.parent_path() != canonical_root)
+        throw std::invalid_argument("Neural module directory resolves outside its memory root");
+    const auto manifest_path = std::filesystem::canonical(
+        canonical_directory / "neuromancer.module.json");
     Json manifest;
     try {
         std::ifstream in(manifest_path);
