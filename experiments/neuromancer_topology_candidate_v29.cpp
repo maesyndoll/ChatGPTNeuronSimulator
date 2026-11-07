@@ -120,17 +120,37 @@ json transition_matrix(const CSRTopology& before,const CSRTopology& after) {
         new_edges[edge_key(s,after.target_indices[e])]=after.weights[e];
     }
     std::uint64_t m[3][3]={{0,0,0},{0,0,0},{0,0,0}};
-    std::uint64_t born=0,dead=0;
+    const char* names[4]={"EE","EI","IE","II"};
+    std::uint64_t modular[4][3][3]={};
+    std::uint64_t born=0,dead=0,mod_born[4]={},mod_dead[4]={};
+    auto module=[](std::uint32_t source,std::uint32_t target) {
+      return (source<E ? (target<E?0U:1U) : (target<E?2U:3U));
+    };
     for(const auto& kv:old_edges) {
+      const auto source=static_cast<std::uint32_t>(kv.first>>32U);
+      const auto target=static_cast<std::uint32_t>(kv.first&0xffffffffU);
+      const auto mod=module(source,target);
       auto it=new_edges.find(kv.first);
-      if(it==new_edges.end()){++dead;continue;}
-      ++m[edge_state(kv.second)][edge_state(it->second)];
+      if(it==new_edges.end()){++dead;++mod_dead[mod];continue;}
+      const auto from=edge_state(kv.second),to=edge_state(it->second);
+      ++m[from][to];++modular[mod][from][to];
     }
-    for(const auto& kv:new_edges) if(old_edges.find(kv.first)==old_edges.end()) ++born;
-    json matrix=json::array();
+    for(const auto& kv:new_edges) if(old_edges.find(kv.first)==old_edges.end()) {
+      ++born;
+      const auto source=static_cast<std::uint32_t>(kv.first>>32U);
+      const auto target=static_cast<std::uint32_t>(kv.first&0xffffffffU);
+      ++mod_born[module(source,target)];
+    }
+    json matrix=json::array(),modules=json::object();
     for(int i=0;i<3;++i) matrix.push_back({m[i][0],m[i][1],m[i][2]});
+    for(std::uint32_t mod=0;mod<4;++mod) {
+      json mm=json::array();
+      for(int i=0;i<3;++i) mm.push_back({modular[mod][i][0],modular[mod][i][1],modular[mod][i][2]});
+      modules[names[mod]]={{"transition_counts",mm},{"born",mod_born[mod]},{"dead",mod_dead[mod]}};
+    }
     return {{"state_labels",{"weak","medium","strong"}},
-            {"transition_counts",matrix},{"born",born},{"dead",dead}};
+            {"transition_counts",matrix},{"module_transitions",modules},
+            {"born",born},{"dead",dead}};
 }
 json structural_update(CSRTopology& g,float prune_below,float growth_fraction,
                        bool inhibitory_regulated,std::uint64_t inhibitory_spikes,
