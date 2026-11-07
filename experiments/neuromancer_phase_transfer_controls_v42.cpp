@@ -16,7 +16,7 @@ using namespace spiking;
 ModelParameters make_model() {
     ModelParameters p;
     p.simulation.excitatory_count = 2;
-    p.simulation.inhibitory_count = 0;
+    p.simulation.inhibitory_count = 1;
     p.simulation.steps = 1;
     p.simulation.dt = 0.5f;
     p.simulation.threshold = 30.0f;
@@ -37,9 +37,9 @@ ModelParameters make_model() {
 CSRTopology make_graph() {
     CSRTopology g;
     g.excitatory_count = 2;
-    g.inhibitory_count = 0;
+    g.inhibitory_count = 1;
     g.minimum_delay = g.maximum_delay = 1;
-    g.row_offsets = {0, 1, 1};
+    g.row_offsets = {0, 1, 1, 1};
     g.target_indices = {1};
     g.weights = {30.0f};
     g.delays = {1};
@@ -66,8 +66,8 @@ Result run_condition(const std::string& condition,
     if (gate_mode != 0) {
         const float pi = 3.14159265358979323846f;
         const std::vector<float> phases =
-            gate_mode == 1 ? std::vector<float>{0.0f, 0.0f}
-                           : std::vector<float>{0.0f, pi};
+            gate_mode == 1 ? std::vector<float>{0.0f, 0.0f, 0.0f}
+                           : std::vector<float>{0.0f, pi, 0.0f};
         runtime.configure_dynamic_phase_gate(phases, {0.0f}, 0.35f);
     }
 
