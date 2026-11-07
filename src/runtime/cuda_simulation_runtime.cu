@@ -43,6 +43,7 @@ CudaSimulationRuntime::DeviceState::DeviceState(
       target_indices(topology.target_indices.size()),
       weights(topology.weights.size()),
       delays(topology.delays.size()), preferred_phases(count),
+      dynamic_phases(count), edge_phase_lags(topology.weights.size()),
       plasticity_state_enabled(enable_learning_state),
       external_current(count),
       external_stimuli(kMaxExternalStimuli),
