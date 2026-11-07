@@ -59,6 +59,8 @@ GraftTopologyMerge merge_graft_topology(
             merged.excitatory_count + base.inhibitory_count + i;
 
     std::vector<std::vector<Edge>> rows(static_cast<std::size_t>(neurons));
+    std::vector<std::vector<std::pair<std::uint32_t, std::uint32_t>>> row_edge_sources(
+        static_cast<std::size_t>(neurons));
     const auto append_graph = [&](const CSRTopology& graph,
                                   const std::vector<std::uint32_t>& mapping,
                                   bool is_graft) {
@@ -73,6 +75,7 @@ GraftTopologyMerge merge_graft_topology(
                         : base_plasticity_mask[edge]);
                 row.push_back({mapping[graph.target_indices[edge]],
                                graph.weights[edge], graph.delays[edge], plastic});
+                row_edge_sources[mapping[source]].push_back({edge, is_graft ? 1U : 0U});
             }
         }
     };
@@ -82,10 +85,22 @@ GraftTopologyMerge merge_graft_topology(
     merged.row_offsets.reserve(static_cast<std::size_t>(neurons) + 1U);
     merged.row_offsets.push_back(0);
     result.plasticity_mask.reserve(static_cast<std::size_t>(edges));
+    result.base_edge_map.resize(base.synapse_count());
+    result.graft_edge_map.resize(graft.synapse_count());
     for (auto& row : rows) {
-        std::sort(row.begin(), row.end(),
-                  [](const Edge& a, const Edge& b) { return a.target < b.target; });
-        for (const auto& edge : row) {
+        const auto row_index = static_cast<std::size_t>(&row - rows.data());
+        auto& origins = row_edge_sources[row_index];
+        std::vector<std::size_t> order(row.size());
+        for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
+        std::sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+            return row[a].target < row[b].target;
+        });
+        for (const auto index : order) {
+            const auto& edge = row[index];
+            const auto origin = origins[index];
+            const auto merged_edge = static_cast<std::uint32_t>(merged.target_indices.size());
+            if (origin.second == 0U) result.base_edge_map[origin.first] = merged_edge;
+            else result.graft_edge_map[origin.first] = merged_edge;
             merged.target_indices.push_back(edge.target);
             merged.weights.push_back(edge.weight);
             merged.delays.push_back(edge.delay);
