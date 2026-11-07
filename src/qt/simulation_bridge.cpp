@@ -23,6 +23,9 @@ SimulationBridge::SimulationBridge(QObject* parent)
     connect(&spike_events_update_timer_, &QTimer::timeout,
             this, &SimulationBridge::spikeEventsChanged);
     topology_visual_timer_.setInterval(5000);
+    self_observation_timer_.setInterval(5000);
+    connect(&self_observation_timer_, &QTimer::timeout,
+            this, &SimulationBridge::refreshSelfObservation);
     connect(&topology_visual_timer_, &QTimer::timeout,
             this, &SimulationBridge::refreshTopologyVisual);
     connect(&client_, &SimulationClient::connected, this, [this]() {
@@ -37,8 +40,10 @@ SimulationBridge::SimulationBridge(QObject* parent)
         client_.sendRequest(QStringLiteral("subscribe_spike_events"));
         refreshConfiguration();
         refreshTopologyVisual();
+        refreshSelfObservation();
         refreshGraftStatus();
         topology_visual_timer_.start();
+        self_observation_timer_.start();
         // The server's spike subscription starts with a recent bounded
         // snapshot; do not separately request the oldest retained events.
     });
@@ -49,9 +54,12 @@ SimulationBridge::SimulationBridge(QObject* parent)
         emit connectionChanged();
         spike_events_update_timer_.stop();
         topology_visual_timer_.stop();
+        self_observation_timer_.stop();
         topology_visual_request_pending_ = false;
         topology_visual_.clear();
         emit topologyVisualChanged();
+        self_observation_.clear();
+        emit selfObservationChanged();
         spike_events_.clear();
         spike_event_count_ = QStringLiteral("0");
         spike_events_dropped_ = QStringLiteral("0");
@@ -95,6 +103,9 @@ SimulationBridge::SimulationBridge(QObject* parent)
             topology_visual_request_pending_ = false;
             topology_visual_ = result.toVariantMap();
             emit topologyVisualChanged();
+        } else if (command == QStringLiteral("get_self_observation")) {
+            self_observation_ = result.toVariantMap();
+            emit selfObservationChanged();
         } else if (command == QStringLiteral("get_graft_status")) {
             const bool attached = result.value(QStringLiteral("attached")).toBool();
             graft_inspection_.insert(QStringLiteral("attached"), attached);
