@@ -1264,3 +1264,30 @@ if(BUILD_TESTING)
              COMMAND neuromancer_unprewired_discovery_v42)
     set_tests_properties(neuromancer_unprewired_discovery_v42 PROPERTIES TIMEOUT 120)
 endif()
+
+# V43: integrated autonomous learning reference plus live CUDA spike-to-phase
+# feedback and dynamic synaptic phase gating.
+add_executable(neuromancer_integrated_autonomous_learning_v43
+    experiments/neuromancer_integrated_autonomous_learning_v43.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_integrated_autonomous_learning_v43 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_integrated_autonomous_learning_v43 PRIVATE CUDA::cudart)
+target_compile_options(neuromancer_integrated_autonomous_learning_v43 PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+)
+set_target_properties(neuromancer_integrated_autonomous_learning_v43 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_integrated_autonomous_learning_v43
+             COMMAND neuromancer_integrated_autonomous_learning_v43)
+    set_tests_properties(neuromancer_integrated_autonomous_learning_v43 PROPERTIES TIMEOUT 240)
+endif()
