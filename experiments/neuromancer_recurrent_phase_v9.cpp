@@ -188,11 +188,14 @@ int main() {
         require(aligned.source_spikes > 0, "Aligned seed failed to spike");
         require(recruited(aligned, 0) > 0,
                 "Phase-aligned condition failed to recruit its addressed assembly");
+        require(ungated.inhibitory > 0 && aligned.inhibitory > 0,
+                "Inhibitory population was not recruited by the recurrent graph");
         require(aligned.excitatory[1] + aligned.excitatory[2] <
                     ungated.excitatory[1] + ungated.excitatory[2],
                 "Aligned phase gate did not reduce off-target recruitment");
-        require(mismatched.excitatory[1] + mismatched.excitatory[2] <
-                    aligned.excitatory[1] + aligned.excitatory[2] + 1,
+        require(recruited(mismatched, 0) < recruited(aligned, 0),
+                "Mismatched phase did not suppress addressed-assembly recruitment");
+        require(mismatched.excitatory[1] + mismatched.excitatory[2] == 0,
                 "Mismatched phase unexpectedly recruited off-target assemblies");
         require(shuffled.excitatory[1] + shuffled.excitatory[2] <
                     ungated.excitatory[1] + ungated.excitatory[2],
