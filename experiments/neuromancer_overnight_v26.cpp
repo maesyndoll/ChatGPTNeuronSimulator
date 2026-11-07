@@ -44,6 +44,12 @@ struct Score {
     std::uint32_t total = 0;
     std::uint64_t input_spikes = 0;
     std::uint64_t output_spikes = 0;
+    std::uint64_t class0_a_spikes = 0;
+    std::uint64_t class0_b_spikes = 0;
+    std::uint64_t class1_a_spikes = 0;
+    std::uint64_t class1_b_spikes = 0;
+    std::uint32_t class0_correct = 0;
+    std::uint32_t class1_correct = 0;
     std::uint64_t dropped_events = 0;
 };
 
@@ -183,7 +189,18 @@ Score evaluate(const std::string& topology_path, const ModelParameters& model) {
             else if (event.neuron_id == kOutputB) { ++b; ++score.output_spikes; }
         }
         score.dropped_events += events.dropped_events;
-        if (a != b && ((a > b ? 0U : 1U) == ex.label)) ++score.correct;
+        if (ex.label == 0) {
+            score.class0_a_spikes += a;
+            score.class0_b_spikes += b;
+        } else {
+            score.class1_a_spikes += a;
+            score.class1_b_spikes += b;
+        }
+        if (a != b && ((a > b ? 0U : 1U) == ex.label)) {
+            ++score.correct;
+            if (ex.label == 0) ++score.class0_correct;
+            else ++score.class1_correct;
+        }
         ++score.total;
     }
     return score;
@@ -351,6 +368,12 @@ int main(int argc, char** argv) {
         std::cout << "\nFINAL FROZEN-WEIGHT RECALL\n"
                   << "Held-out accuracy: " << score.correct << '/' << score.total
                   << " (" << std::fixed << std::setprecision(1) << accuracy << "%)\n"
+                  << "Class 0: correct " << score.class0_correct << '/' << kTestSamplesPerClass
+                  << ", output A spikes=" << score.class0_a_spikes
+                  << ", output B spikes=" << score.class0_b_spikes << '\n'
+                  << "Class 1: correct " << score.class1_correct << '/' << kTestSamplesPerClass
+                  << ", output A spikes=" << score.class1_a_spikes
+                  << ", output B spikes=" << score.class1_b_spikes << '\n'
                   << "Input spikes: " << score.input_spikes
                   << " output spikes: " << score.output_spikes
                   << " dropped events: " << score.dropped_events << '\n'
