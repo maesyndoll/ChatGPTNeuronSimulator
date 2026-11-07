@@ -219,7 +219,7 @@ int main(int argc,char**argv) {
     }
     save_csr_topology(learned,topology_path);
     epoch_history.push_back({{"epoch",epoch+1},{"e_spikes",m_epoch.excitatory_spikes},
-      {"i_spikes",m_epoch.inhibitory_spikes},{"synapses_before_update",transitions["transition_counts"]==nullptr?0:previous.synapse_count()},
+      {"i_spikes",m_epoch.inhibitory_spikes},{"synapses_before_update",previous.synapse_count()},
       {"synapses_after_stdp",transitions["born"].get<std::uint64_t>()+
         (previous.synapse_count()-transitions["dead"].get<std::uint64_t>())},
       {"edge_markov",transitions},{"structural_update",update}});
