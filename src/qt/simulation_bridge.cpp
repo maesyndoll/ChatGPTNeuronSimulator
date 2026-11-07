@@ -36,6 +36,7 @@ SimulationBridge::SimulationBridge(QObject* parent)
         client_.sendRequest(QStringLiteral("subscribe_spike_events"));
         refreshConfiguration();
         refreshTopologyVisual();
+        refreshGraftStatus();
         topology_visual_timer_.start();
         // The server's spike subscription starts with a recent bounded
         // snapshot; do not separately request the oldest retained events.
@@ -428,6 +429,8 @@ void SimulationBridge::inspectGraftPackage(const QString& packagePath) {
                                  QString::fromStdString(info.description));
         graft_inspection_.insert(QStringLiteral("package_directory"),
                                  QString::fromStdString(info.package_directory.string()));
+        graft_inspection_.insert(QStringLiteral("input_path"),
+                                 QFileInfo(path).absoluteFilePath());
         graft_inspection_.insert(QStringLiteral("excitatory_count"),
                                  static_cast<qulonglong>(info.excitatory_count));
         graft_inspection_.insert(QStringLiteral("inhibitory_count"),
@@ -460,7 +463,7 @@ void SimulationBridge::attachGraftPackage(
     }
     if (!graft_inspection_valid_ ||
         QFileInfo(packagePath).absoluteFilePath() !=
-            QFileInfo(graft_inspection_.value(QStringLiteral("package_directory")).toString())
+            QFileInfo(graft_inspection_.value(QStringLiteral("input_path")).toString())
                 .absoluteFilePath()) {
         setErrorMessage(QStringLiteral("Inspect this package before attaching it"));
         return;
