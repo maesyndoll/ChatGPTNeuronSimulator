@@ -422,6 +422,30 @@ if(SPIKINGMODEL_ENABLE_CUDA)
              COMMAND neuromancer_random_topology_association_v18)
     set_tests_properties(neuromancer_random_topology_association_v18 PROPERTIES TIMEOUT 180)
 
+    # V23: two-class spiking inference with a trained, frozen CSR readout.
+    add_executable(neuromancer_inference_prototype_v23
+        experiments/neuromancer_inference_prototype_v23.cpp
+        src/cuda/neuron_izhikevich.cu
+        src/runtime/cuda_simulation_runtime.cu
+        src/topology/topology_generator.cpp
+        src/topology/topology_io.cpp
+    )
+    target_include_directories(neuromancer_inference_prototype_v23 PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(neuromancer_inference_prototype_v23 PRIVATE CUDA::cudart)
+    target_compile_options(neuromancer_inference_prototype_v23 PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+    )
+    set_target_properties(neuromancer_inference_prototype_v23 PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+    )
+    add_test(NAME neuromancer_inference_prototype_v23
+             COMMAND neuromancer_inference_prototype_v23)
+    set_tests_properties(neuromancer_inference_prototype_v23 PROPERTIES TIMEOUT 180)
+
     # V22: matched disconnected-target control and event-aligned synaptic transfer curve.
     add_executable(neuromancer_transmission_audit_v22
         experiments/neuromancer_transmission_audit_v22.cpp
