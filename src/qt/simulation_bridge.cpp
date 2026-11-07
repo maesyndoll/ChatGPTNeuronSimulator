@@ -1,11 +1,13 @@
 #include "qt/simulation_bridge.h"
 
 #include <QJsonValue>
+#include <exception>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QStringList>
 #include <QVariant>
 #include <cmath>
+#include <filesystem>
 
 #include <unistd.h>
 
@@ -273,6 +275,14 @@ QVariantMap SimulationBridge::topologyVisual() const {
     return topology_visual_;
 }
 
+QVariantMap SimulationBridge::graftInspection() const {
+    return graft_inspection_;
+}
+
+bool SimulationBridge::graftInspectionValid() const {
+    return graft_inspection_valid_;
+}
+
 QVariantList SimulationBridge::spikeEvents() const {
     return spike_events_;
 }
@@ -374,6 +384,48 @@ void SimulationBridge::refreshTopologyVisual() {
         return;
     topology_visual_request_pending_ = true;
     client_.sendRequest(QStringLiteral("get_topology_visual"), {}, 10000);
+}
+
+void SimulationBridge::inspectGraftPackage(const QString& packagePath) {
+    graft_inspection_.clear();
+    graft_inspection_valid_ = false;
+    const QString path = packagePath.trimmed();
+    if (path.isEmpty()) {
+        graft_inspection_.insert(QStringLiteral("error"),
+                                 QStringLiteral("Select a graft package directory or manifest."));
+        emit graftInspectionChanged();
+        return;
+    }
+    try {
+        const auto info = spiking::GraftPackageInspector::inspect(
+            std::filesystem::path(path.toStdString()));
+        graft_inspection_.insert(QStringLiteral("id"), QString::fromStdString(info.id));
+        graft_inspection_.insert(QStringLiteral("name"), QString::fromStdString(info.name));
+        graft_inspection_.insert(QStringLiteral("description"),
+                                 QString::fromStdString(info.description));
+        graft_inspection_.insert(QStringLiteral("package_directory"),
+                                 QString::fromStdString(info.package_directory.string()));
+        graft_inspection_.insert(QStringLiteral("excitatory_count"),
+                                 static_cast<qulonglong>(info.excitatory_count));
+        graft_inspection_.insert(QStringLiteral("inhibitory_count"),
+                                 static_cast<qulonglong>(info.inhibitory_count));
+        graft_inspection_.insert(QStringLiteral("synapse_count"),
+                                 static_cast<qulonglong>(info.synapse_count));
+        graft_inspection_.insert(QStringLiteral("module_binary"),
+                                 info.has_module_binary
+                                     ? QString::fromStdString(info.module_binary_path.string())
+                                     : QStringLiteral("No executable module"));
+        graft_inspection_.insert(QStringLiteral("input_adapters"),
+                                 static_cast<int>(info.input_adapters.size()));
+        graft_inspection_.insert(QStringLiteral("output_adapters"),
+                                 static_cast<int>(info.output_adapters.size()));
+        graft_inspection_.insert(QStringLiteral("status"),
+                                 QStringLiteral("Package validated; not attached"));
+        graft_inspection_valid_ = true;
+    } catch (const std::exception& error) {
+        graft_inspection_.insert(QStringLiteral("error"), QString::fromUtf8(error.what()));
+    }
+    emit graftInspectionChanged();
 }
 
 void SimulationBridge::refreshSpikeEvents() {
