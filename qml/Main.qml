@@ -14,6 +14,7 @@ ApplicationWindow {
     property string visualGeneration: "—"
     property double visualLastSequence: 0
     property bool graftExpanded: false
+    property bool selfObserverExpanded: false
 
     function latestSpikeText() {
         var events = simulation.spikeEvents || []
@@ -22,9 +23,25 @@ ApplicationWindow {
         return "LAST EVENT   neuron " + event.neuron_id + "   ·   step " + event.step
     }
 
+    function selfObserverRankedText() {
+        var report = simulation.selfObservation || ({})
+        var ranked = report.ranked_neurons || []
+        if (ranked.length === 0) return "Waiting for live connectome analysis"
+        var entries = []
+        for (var i = 0; i < Math.min(6, ranked.length); ++i) {
+            var neuron = ranked[i]
+            entries.push("#" + neuron.neuron_id + "  in " +
+                         neuron.incoming_degree + " / out " +
+                         neuron.outgoing_degree + " / spikes " +
+                         neuron.activity_count)
+        }
+        return entries.join("     ·     ")
+    }
+
     Connections {
         target: simulation
         function onTopologyVisualChanged() { topologyCanvas.requestPaint() }
+        function onSelfObservationChanged() { }
         function onSpikeEventsChanged() {
             var generation = simulation.spikeEventsGeneration
             if (window.visualGeneration !== generation) {
@@ -458,7 +475,52 @@ ApplicationWindow {
                     Label { text: simulation.meanVoltageMv.toFixed(2)+" mV"; color: "#dceaf0"; font.pixelSize: 13; font.bold: true }
                 }
                 Item { Layout.fillWidth: true }
+                Button { text: window.selfObserverExpanded?"Hide self-model":"Self-model"; onClicked: window.selfObserverExpanded=!window.selfObserverExpanded }
                 Button { text: window.graftExpanded?"Hide graft bay":"Graft bay"; onClicked: window.graftExpanded=!window.graftExpanded }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            visible: window.selfObserverExpanded
+            radius: 10
+            color: "#0b1722"
+            border.color: "#285044"
+            implicitHeight: selfObserverPanel.implicitHeight + 20
+            ColumnLayout {
+                id: selfObserverPanel
+                anchors.fill: parent
+                anchors.margins: 10
+                spacing: 6
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label { text: "04  /  LIVE CONNECTOME SELF-MODEL"; color: "#8bd9ce"; font.pixelSize: 10; font.bold: true; font.letterSpacing: 0.9 }
+                    Item { Layout.fillWidth: true }
+                    Label {
+                        text: simulation.selfObservation.graph_fingerprint === undefined
+                              ? "NO SNAPSHOT"
+                              : "GRAPH " + String(simulation.selfObservation.graph_fingerprint).slice(0, 12)
+                        color: "#739b9a"; font.pixelSize: 9
+                    }
+                    Button { text: "Refresh"; enabled: simulation.connected; onClicked: simulation.refreshSelfObservation() }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 18
+                    Label { text: "ISOLATED  " + (simulation.selfObservation.isolated_neurons === undefined ? "—" : simulation.selfObservation.isolated_neurons); color: "#d5e5eb"; font.pixelSize: 11 }
+                    Label { text: "INACTIVE  " + (simulation.selfObservation.inactive_neurons === undefined ? "—" : simulation.selfObservation.inactive_neurons); color: "#d5e5eb"; font.pixelSize: 11 }
+                    Label { text: "HUBS  " + (simulation.selfObservation.high_degree_neurons === undefined ? "—" : simulation.selfObservation.high_degree_neurons); color: "#d5e5eb"; font.pixelSize: 11 }
+                    Label { text: "RECIPROCAL  " + (simulation.selfObservation.reciprocal_pairs === undefined ? "—" : simulation.selfObservation.reciprocal_pairs); color: "#d5e5eb"; font.pixelSize: 11 }
+                    Label { text: "WEAK EDGES  " + (simulation.selfObservation.weak_edges === undefined ? "—" : simulation.selfObservation.weak_edges); color: "#d5e5eb"; font.pixelSize: 11 }
+                    Item { Layout.fillWidth: true }
+                }
+                Label {
+                    Layout.fillWidth: true
+                    text: window.selfObserverRankedText()
+                    color: "#8db6c4"
+                    font.pixelSize: 10
+                    elide: Text.ElideRight
+                }
             }
         }
 
