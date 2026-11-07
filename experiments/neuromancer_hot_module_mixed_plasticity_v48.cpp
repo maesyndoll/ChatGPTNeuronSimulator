@@ -14,12 +14,14 @@
 
 namespace {
 using namespace spiking;
-constexpr std::uint32_t N = 4;
+constexpr std::uint32_t E = 4;
+constexpr std::uint32_t I = 1;
+constexpr std::uint32_t TOTAL = E + I;
 
 ModelParameters make_model() {
     ModelParameters p;
-    p.simulation.excitatory_count = N;
-    p.simulation.inhibitory_count = 0;
+    p.simulation.excitatory_count = E;
+    p.simulation.inhibitory_count = I;
     p.simulation.steps = 1;
     p.simulation.dt = 0.5f;
     p.simulation.threshold = 30.0f;
@@ -36,10 +38,10 @@ ModelParameters make_model() {
 
 CSRTopology make_graph() {
     CSRTopology graph;
-    graph.excitatory_count = N;
-    graph.inhibitory_count = 0;
+    graph.excitatory_count = E;
+    graph.inhibitory_count = I;
     graph.minimum_delay = graph.maximum_delay = 1;
-    graph.row_offsets = {0, 1, 1, 2, 2};
+    graph.row_offsets = {0, 1, 1, 2, 2, 2};
     graph.target_indices = {1, 3};
     graph.weights = {30.0f, 30.0f};
     graph.delays = {1, 1};
@@ -166,7 +168,7 @@ int main(int argc, char** argv) {
             std::fabs(final_graph.weights.at(1) - frozen_after) < 1.0e-6f;
 
         // Independently verify that phase gating changes transmission, not weight state.
-        const std::vector<float> aligned_phases(N, 0.0f);
+        const std::vector<float> aligned_phases(TOTAL, 0.0f);
         const std::vector<float> edge_lags(2, 0.0f);
         runtime.configure_dynamic_phase_gate(aligned_phases, edge_lags, 0.2f);
         const bool phase_aligned_transmits = spike_seen(runtime, 1, 0, 24);
