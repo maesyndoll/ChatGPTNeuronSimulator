@@ -325,12 +325,34 @@ Json handle_request(SimulationController& controller, const Json& request) {
             TopologyAdvisorOptions options;
             const auto proposal = propose_topology_update(
                 topology, recent, activity, options);
+            Json added_edges = Json::array();
+            for (std::uint32_t source = 0;
+                 source < topology.neuron_count(); ++source) {
+                const auto base_begin = topology.row_offsets[source];
+                const auto base_end = topology.row_offsets[source + 1];
+                for (std::uint32_t edge = proposal.candidate.row_offsets[source];
+                     edge < proposal.candidate.row_offsets[source + 1]; ++edge) {
+                    const auto target = proposal.candidate.target_indices[edge];
+                    const auto existing = std::find(
+                        topology.target_indices.begin() + base_begin,
+                        topology.target_indices.begin() + base_end, target);
+                    if (existing != topology.target_indices.begin() + base_end)
+                        continue;
+                    added_edges.push_back({
+                        {"source", source},
+                        {"target", target},
+                        {"weight", proposal.candidate.weights[edge]},
+                        {"delay", proposal.candidate.delays[edge]}
+                    });
+                }
+            }
             return success_response(request_id, {
                 {"base_graph_fingerprint", std::to_string(proposal.base_graph_fingerprint)},
                 {"candidate_graph_fingerprint", std::to_string(proposal.candidate_graph_fingerprint)},
                 {"proposed_added_edges", proposal.proposed_added_edges},
                 {"proposed_pruned_edges", proposal.proposed_pruned_edges},
                 {"candidate_synapse_count", std::to_string(proposal.candidate.synapse_count())},
+                {"added_edges", std::move(added_edges)},
                 {"source_unchanged", true},
                 {"applied", false},
                 {"evidence_spikes", recent.size()}
