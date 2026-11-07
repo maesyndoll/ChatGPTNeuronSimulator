@@ -97,8 +97,16 @@ SimulationBridge::SimulationBridge(QObject* parent)
         } else if (command == QStringLiteral("get_graft_status")) {
             const bool attached = result.value(QStringLiteral("attached")).toBool();
             graft_inspection_.insert(QStringLiteral("attached"), attached);
-            if (attached) graft_inspection_.insert(QStringLiteral("status"), QStringLiteral("Attached · live"));
-            else if (graft_inspection_valid_) graft_inspection_.insert(QStringLiteral("status"), QStringLiteral("Package validated; not attached"));
+            if (attached) {
+                graft_inspection_.insert(QStringLiteral("lifecycle_state"), QStringLiteral("attached"));
+                graft_inspection_.insert(QStringLiteral("status"), QStringLiteral("Attached · live topology"));
+            } else if (graft_inspection_valid_) {
+                const QString previous = graft_inspection_.value(QStringLiteral("lifecycle_state")).toString();
+                if (previous != QStringLiteral("ejected")) {
+                    graft_inspection_.insert(QStringLiteral("lifecycle_state"), QStringLiteral("validated"));
+                    graft_inspection_.insert(QStringLiteral("status"), QStringLiteral("Validated · not attached"));
+                }
+            }
             emit graftInspectionChanged();
         } else {
             const QJsonValue configurationValue =
@@ -116,10 +124,12 @@ SimulationBridge::SimulationBridge(QObject* parent)
             refreshGraftStatus();
             if (command == QStringLiteral("attach_graft")) {
                 graft_inspection_.insert(QStringLiteral("attached"), true);
-                graft_inspection_.insert(QStringLiteral("status"), QStringLiteral("Attached · live"));
+                graft_inspection_.insert(QStringLiteral("lifecycle_state"), QStringLiteral("attached"));
+                graft_inspection_.insert(QStringLiteral("status"), QStringLiteral("Attached · live topology"));
             } else {
                 graft_inspection_.insert(QStringLiteral("attached"), false);
-                graft_inspection_.insert(QStringLiteral("status"), QStringLiteral("Package validated; not attached"));
+                graft_inspection_.insert(QStringLiteral("lifecycle_state"), QStringLiteral("ejected"));
+                graft_inspection_.insert(QStringLiteral("status"), QStringLiteral("Ejected · original topology restored"));
             }
             emit graftInspectionChanged();
         }
@@ -204,6 +214,22 @@ SimulationBridge::SimulationBridge(QObject* parent)
             topology_visual_request_pending_ = false;
         const QString combined =
             QStringLiteral("%1 (%2): %3").arg(command, errorCode, message);
+        if (command == QStringLiteral("attach_graft") ||
+            command == QStringLiteral("detach_graft")) {
+            const bool stillAttached =
+                graft_inspection_.value(QStringLiteral("attached")).toBool();
+            graft_inspection_.insert(
+                QStringLiteral("lifecycle_state"),
+                stillAttached ? QStringLiteral("attached") : QStringLiteral("validated"));
+            graft_inspection_.insert(
+                QStringLiteral("status"),
+                QStringLiteral("%1 failed · %2")
+                    .arg(command == QStringLiteral("attach_graft")
+                             ? QStringLiteral("Attach") : QStringLiteral("Ejection"),
+                         message));
+            emit graftInspectionChanged();
+            refreshGraftStatus();
+        }
         setErrorMessage(combined);
         setStatusMessage(QStringLiteral("Command failed: %1").arg(command));
         emit errorOccurred(combined);
@@ -445,8 +471,10 @@ void SimulationBridge::inspectGraftPackage(const QString& packagePath) {
                                  static_cast<int>(info.input_adapters.size()));
         graft_inspection_.insert(QStringLiteral("output_adapters"),
                                  static_cast<int>(info.output_adapters.size()));
+        graft_inspection_.insert(QStringLiteral("attached"), false);
+        graft_inspection_.insert(QStringLiteral("lifecycle_state"), QStringLiteral("validated"));
         graft_inspection_.insert(QStringLiteral("status"),
-                                 QStringLiteral("Package validated; not attached"));
+                                 QStringLiteral("Validated · not attached"));
         graft_inspection_valid_ = true;
     } catch (const std::exception& error) {
         graft_inspection_.insert(QStringLiteral("error"), QString::fromUtf8(error.what()));
@@ -469,6 +497,9 @@ void SimulationBridge::attachGraftPackage(
         setErrorMessage(QStringLiteral("Inspect this package before attaching it"));
         return;
     }
+    graft_inspection_.insert(QStringLiteral("lifecycle_state"), QStringLiteral("attaching"));
+    graft_inspection_.insert(QStringLiteral("status"), QStringLiteral("Attaching · waiting for simulation safe point"));
+    emit graftInspectionChanged();
     setStatusMessage(QStringLiteral("Attaching graft at the next simulation safe point..."));
     client_.sendRequest(QStringLiteral("attach_graft"), QJsonObject{
         {QStringLiteral("package_path"), packagePath},
@@ -481,6 +512,9 @@ void SimulationBridge::detachGraftPackage() {
         setErrorMessage(QStringLiteral("Cannot detach graft: backend disconnected"));
         return;
     }
+    graft_inspection_.insert(QStringLiteral("lifecycle_state"), QStringLiteral("ejecting"));
+    graft_inspection_.insert(QStringLiteral("status"), QStringLiteral("Ejecting · restoring original topology"));
+    emit graftInspectionChanged();
     setStatusMessage(QStringLiteral("Detaching graft at the next simulation safe point..."));
     client_.sendRequest(QStringLiteral("detach_graft"), {}, 30000);
 }
