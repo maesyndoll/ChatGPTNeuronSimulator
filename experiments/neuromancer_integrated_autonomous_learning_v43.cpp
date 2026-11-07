@@ -93,7 +93,12 @@ void pairwise_structure(CSRTopology& g,const std::vector<float>& pair_score,
     g.row_offsets.assign(N+1,0); g.target_indices.clear();g.weights.clear();g.delays.clear();
     ages.clear();
     for(std::uint32_t s=0;s<N;++s){
-        for(std::size_t j=0;j<rows[s].size();++j){
+        std::vector<std::size_t> order(rows[s].size());
+        std::iota(order.begin(),order.end(),0U);
+        std::sort(order.begin(),order.end(),[&](auto a,auto b){
+            return rows[s][a].first<rows[s][b].first;
+        });
+        for(auto j:order){
             g.target_indices.push_back(rows[s][j].first);g.weights.push_back(rows[s][j].second);
             g.delays.push_back(1);ages.push_back(next_age[s][j]);
         }
