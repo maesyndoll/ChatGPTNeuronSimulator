@@ -924,6 +924,19 @@ ApplicationWindow {
                         }
                         Label {
                             Layout.fillWidth: true
+                            visible: simulation.connected
+                            text: "Live runtime: " +
+                                  (simulation.connectivityStatistics.neuron_count !== undefined
+                                      ? simulation.connectivityStatistics.neuron_count : "—") +
+                                  " neurons · " +
+                                  (simulation.connectivityStatistics.synapse_count !== undefined
+                                      ? simulation.connectivityStatistics.synapse_count : "—") +
+                                  " CSR synapses"
+                            color: "#9fc4f5"
+                            font.pixelSize: 12
+                        }
+                        Label {
+                            Layout.fillWidth: true
                             visible: simulation.graftInspectionValid
                             text: "Input adapters: " + simulation.graftInspection.input_adapters +
                                   "    Output adapters: " + simulation.graftInspection.output_adapters
@@ -945,13 +958,16 @@ ApplicationWindow {
                                 text: "Attach frozen graft"
                                 enabled: simulation.connected &&
                                          simulation.graftInspectionValid &&
-                                         !simulation.graftInspection.attached
+                                         !simulation.graftInspection.attached &&
+                                         simulation.graftInspection.lifecycle_state !== "attaching" &&
+                                         simulation.graftInspection.lifecycle_state !== "ejecting"
                                 onClicked: simulation.attachGraftPackage(graftPackagePath.text, false)
                             }
                             Button {
                                 text: "Eject graft"
                                 enabled: simulation.connected &&
-                                         simulation.graftInspection.attached === true
+                                         simulation.graftInspection.attached === true &&
+                                         simulation.graftInspection.lifecycle_state !== "ejecting"
                                 onClicked: simulation.detachGraftPackage()
                             }
                         }
