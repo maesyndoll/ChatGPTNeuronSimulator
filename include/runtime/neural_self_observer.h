@@ -2,6 +2,7 @@
 
 #include "topology/csr_topology.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
