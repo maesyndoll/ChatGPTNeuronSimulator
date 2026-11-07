@@ -116,6 +116,13 @@ public:
                                          float gate_half_width_rad,
                                          float phase_offset_rad = 0.0f);
     void disable_phase_gate() noexcept;
+    // Configure an endogenous relative-phase gate. Per-neuron phases and
+    // per-edge learned lags are uploaded independently of simulation time.
+    void configure_dynamic_phase_gate(const std::vector<float>& neuron_phases_rad,
+                                      const std::vector<float>& edge_phase_lags_rad,
+                                      float gate_half_width_rad);
+    void update_dynamic_phase_state(const std::vector<float>& neuron_phases_rad,
+                                    const std::vector<float>& edge_phase_lags_rad);
     SimulationMetrics collect_metrics();
     std::vector<std::uint32_t> collect_spike_count_snapshot();
     // Read post-integration voltage and recovery state for selected neurons.
@@ -224,6 +231,7 @@ private:
     bool phase_gate_enabled_ = false;
     bool phase_gate_inhibitory_only_ = false;
     bool phase_gate_excitatory_only_ = false;
+    bool dynamic_phase_gate_enabled_ = false;
     float phase_frequency_hz_ = 10.0f;
     float phase_gate_half_width_rad_ = 0.3490658504f;
     float phase_offset_rad_ = 0.0f;
