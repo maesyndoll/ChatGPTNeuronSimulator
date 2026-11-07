@@ -397,6 +397,31 @@ if(SPIKINGMODEL_ENABLE_CUDA)
              COMMAND neuromancer_associative_memory_v17)
     set_tests_properties(neuromancer_associative_memory_v17 PROPERTIES TIMEOUT 180)
 
+    # V18: global random sparse E->E graph; association labels are
+    # measurement-only and are not used to generate connectivity.
+    add_executable(neuromancer_random_topology_association_v18
+        experiments/neuromancer_random_topology_association_v18.cpp
+        src/cuda/neuron_izhikevich.cu
+        src/runtime/cuda_simulation_runtime.cu
+        src/topology/topology_generator.cpp
+        src/topology/topology_io.cpp
+    )
+    target_include_directories(neuromancer_random_topology_association_v18 PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(neuromancer_random_topology_association_v18 PRIVATE CUDA::cudart)
+    target_compile_options(neuromancer_random_topology_association_v18 PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+    )
+    set_target_properties(neuromancer_random_topology_association_v18 PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+    )
+    add_test(NAME neuromancer_random_topology_association_v18
+             COMMAND neuromancer_random_topology_association_v18)
+    set_tests_properties(neuromancer_random_topology_association_v18 PROPERTIES TIMEOUT 180)
+
     # V10: causal pair-STDP association learning followed by frozen,
     # phase-gated cue-to-target recall. V8 and V9 remain unchanged.
     add_executable(neuromancer_stdp_learning_v10
