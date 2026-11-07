@@ -256,10 +256,10 @@ int main(int argc, char** argv) {
 
         constexpr std::array<float, 4> e_weights{6.0f, 8.0f, 10.0f, 12.0f};
         constexpr std::array<float, 5> i_weights{1.0f, 2.0f, 4.0f, 8.0f, 16.0f};
-        // 0.5 ms resolution: -6 ms through +6 ms around coincidence.
-        constexpr std::array<std::int32_t, 25> offsets{
-            -12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,
-             1,  2,  3, 4, 5, 6, 7, 8, 9,10,11,12
+        // 1 ms resolution: -6 ms through +6 ms around coincidence.
+        // A follow-up can refine the transition region at 0.5 ms resolution.
+        constexpr std::array<std::int32_t, 13> offsets{
+            -12,-10,-8,-6,-4,-2,0,2,4,6,8,10,12
         };
         constexpr std::array<GateMode, 5> gates{{
             {"ungated", GateKind::None, 0.0f},
