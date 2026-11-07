@@ -211,14 +211,22 @@ int main(int argc, char** argv) {
         const std::filesystem::path output_dir = argv[1];
         std::filesystem::create_directories(output_dir);
         const auto csv_path = output_dir / "phase_ei_interaction_v31.csv";
+        const auto trace_path = output_dir / "phase_ei_trace_v31.csv";
         std::ofstream csv(csv_path);
-        if (!csv)
+        std::ofstream trace_csv(trace_path);
+        if (!csv || !trace_csv)
             throw std::runtime_error("could not open V31 CSV output");
 
-        csv << "gate,inh_offset_steps,inh_offset_ms,none_mv,e_only_delta_mv,"
-               "i_only_delta_mv,both_delta_mv,interaction_mv,e_spikes,i_spikes,"
-               "target_spikes,e_source_step,i_source_step,finite\n";
+        csv << "gate,inh_offset_steps,inh_offset_ms,final_none_mv,final_e_delta_mv,"
+               "final_i_delta_mv,final_both_delta_mv,final_interaction_mv,"
+               "peak_e_delta_mv,peak_e_step,peak_i_delta_mv,peak_i_step,"
+               "peak_both_delta_mv,peak_both_step,peak_interaction_mv,"
+               "peak_interaction_step,e_spikes,i_spikes,target_spikes,"
+               "first_e_source_step,first_i_source_step,finite\n";
+        trace_csv << "gate,inh_offset_steps,step,time_ms,none_mv,e_delta_mv,"
+                     "i_delta_mv,both_delta_mv,interaction_mv\n";
         csv << std::setprecision(9);
+        trace_csv << std::setprecision(9);
 
         // With dt=0.5 ms and a 10 Hz oscillator, 5 steps correspond to 9 degrees.
         // The gate half-width is 20 degrees, so these offsets span admitted and
@@ -247,29 +255,50 @@ int main(int argc, char** argv) {
                     << c.none.target_voltage << ','
                     << c.delta_e << ',' << c.delta_i << ','
                     << c.delta_both << ',' << c.interaction << ','
+                    << c.peak_e << ',' << c.peak_e_step << ','
+                    << c.peak_i << ',' << c.peak_i_step << ','
+                    << c.peak_both << ',' << c.peak_both_step << ','
+                    << c.peak_interaction << ',' << c.peak_interaction_step << ','
                     << c.both.e_spikes << ',' << c.both.i_spikes << ','
                     << c.both.target_spikes << ','
                     << c.both.e_source_step << ',' << c.both.i_source_step << ','
                     << (c.none.finite && c.e.finite && c.i.finite &&
                         c.both.finite ? 1 : 0) << '\n';
 
+                for (std::uint32_t step = 0; step < kRunSteps; ++step) {
+                    const double de = c.e.target_trace[step] - c.none.target_trace[step];
+                    const double di = c.i.target_trace[step] - c.none.target_trace[step];
+                    const double db = c.both.target_trace[step] - c.none.target_trace[step];
+                    trace_csv << (gated ? "gated" : "ungated") << ','
+                              << offset << ',' << (step + 1) << ','
+                              << (step + 1) * kDtMs << ','
+                              << c.none.target_trace[step] << ','
+                              << de << ',' << di << ',' << db << ','
+                              << (db - de - di) << '\n';
+                }
+
                 std::cout << (gated ? "gated" : "ungated")
                           << " | I offset=" << offset << " steps (" << offset_ms
                           << " ms)"
                           << " | dE=" << c.delta_e << " mV"
                           << " | dI=" << c.delta_i << " mV"
-                          << " | d(E+I)=" << c.delta_both << " mV"
-                          << " | interaction=" << c.interaction << " mV"
+                          << " | final interaction=" << c.interaction << " mV"
+                          << " | peak E=" << c.peak_e << " mV @step " << c.peak_e_step
+                          << " | peak I=" << c.peak_i << " mV @step " << c.peak_i_step
+                          << " | peak interaction=" << c.peak_interaction
+                          << " mV @step " << c.peak_interaction_step
                           << " | E source spikes=" << c.both.e_spikes
-                          << " @step " << c.both.e_source_step
+                          << " first@ " << c.both.e_source_step
                           << " | I source spikes=" << c.both.i_spikes
-                          << " @step " << c.both.i_source_step
+                          << " first@ " << c.both.i_source_step
                           << " | target spikes=" << c.both.target_spikes << '\n';
             }
         }
         csv.close();
+        trace_csv.close();
 
         std::cout << "Wrote " << csv_path.string() << '\n';
+        std::cout << "Wrote " << trace_path.string() << '\n';
         std::cout << "INTERPRETATION LIMIT: a nonzero interaction is evidence of "
                      "non-additive target response in this assay, not by itself "
                      "autonomous oscillation, learned phase offsets, or biological "
