@@ -241,6 +241,29 @@ if(SPIKINGMODEL_ENABLE_CUDA)
     set_target_properties(spiking_model PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
     add_dependencies(spiking_model check_parameter_schema)
 
+    # Neuromancer phase-timing experiment: executes the real CUDA runtime,
+    # external-current scheduler, CSR propagation, and spike-event recorder.
+    add_executable(neuromancer_phase_runtime
+        experiments/neuromancer_phase_runtime.cpp
+        src/cuda/neuron_izhikevich.cu
+        src/runtime/cuda_simulation_runtime.cu
+        src/topology/topology_generator.cpp
+        src/topology/topology_io.cpp
+    )
+    target_include_directories(neuromancer_phase_runtime PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(neuromancer_phase_runtime PRIVATE CUDA::cudart)
+    target_compile_options(neuromancer_phase_runtime PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+    )
+    set_target_properties(neuromancer_phase_runtime PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+    )
+    add_test(NAME neuromancer_phase_runtime COMMAND neuromancer_phase_runtime)
+
     if(BUILD_TESTING)
         add_executable(stdp_cuda_tests
             tests/cuda/stdp_cuda_tests.cpp
