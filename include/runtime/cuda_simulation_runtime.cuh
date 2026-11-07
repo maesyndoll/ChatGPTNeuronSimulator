@@ -105,6 +105,11 @@ public:
                               float oscillator_frequency_hz,
                               float gate_half_width_rad,
                               float phase_offset_rad = 0.0f);
+    // Apply the same postsynaptic phase window only to inhibitory-source edges.
+    void configure_inhibitory_phase_gate(const std::vector<float>& preferred_phases_rad,
+                                         float oscillator_frequency_hz,
+                                         float gate_half_width_rad,
+                                         float phase_offset_rad = 0.0f);
     void disable_phase_gate() noexcept;
     SimulationMetrics collect_metrics();
     std::vector<std::uint32_t> collect_spike_count_snapshot();
@@ -212,6 +217,7 @@ private:
     std::vector<ExternalStimulusGPU> external_stimuli_;
     bool external_stimuli_dirty_ = false;
     bool phase_gate_enabled_ = false;
+    bool phase_gate_inhibitory_only_ = false;
     float phase_frequency_hz_ = 10.0f;
     float phase_gate_half_width_rad_ = 0.3490658504f;
     float phase_offset_rad_ = 0.0f;
