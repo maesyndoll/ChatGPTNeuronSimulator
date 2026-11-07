@@ -140,6 +140,9 @@ Observation run_trial(const std::filesystem::path& dir, Edges edges,
 
     auto parameters = make_parameters(seed);
     CudaSimulationRuntime runtime(parameters, path, 0, true, false);
+    // The runtime has loaded the CSR graph; remove the per-trial staging file.
+    std::error_code remove_error;
+    std::filesystem::remove(path, remove_error);
     configure_gate(runtime, gate);
 
     // Stimuli are identical in every ablation. Only the CSR edges differ.
