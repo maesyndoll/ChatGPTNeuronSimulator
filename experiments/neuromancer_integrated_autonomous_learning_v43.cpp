@@ -263,7 +263,7 @@ int main(int argc,char**argv){
             if(ci==0){
                 phase_csv<<seed<<','<<m.phase_lag<<','<<m.phase_conf<<','<<m.control_conf<<'\n';
                 structure<<seed<<','<<m.births<<','<<m.deaths<<','<<m.correct_births<<','
-                    <<m.incorrect_births<<','<<t.selective_ratio<<','<<t.initial_edges<<','<<m.final_edges<<'\n';
+                    <<m.incorrect_births<<','<<t.selective_ratio<<','<<t.initial_edges<<','<<t.final_edges<<'\n';
                 recall<<seed<<','<<m.b_recall<<','<<m.c_recall<<','<<m.ac_recall<<','
                     <<m.precision<<','<<m.recall<<','<<m.jaccard<<'\n';
             }
