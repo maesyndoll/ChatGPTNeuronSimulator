@@ -84,7 +84,7 @@ void stimulate(CudaSimulationRuntime& r,const Example& ex,bool teacher) {
 struct Score { std::uint32_t correct=0,total=0,c0=0,c1=0; std::uint64_t e=0,i=0,out=0,dropped=0; };
 Score evaluate(const std::string& path,const ModelParameters& p,std::uint32_t seed) {
     Score s;
-    for(std::uint32_t label=0;label<2;++label) for(std::uint32_t j=8;j<16;++j) {
+    for(std::uint32_t label=0;label<2;++label) for(std::uint32_t j=16;j<32;++j) {
       CudaSimulationRuntime r(p,path,0,true,false);
       auto ex=example(label,j,seed); stimulate(r,ex,false);
       auto ev=r.collect_spike_events(); std::uint64_t a=0,b=0;
@@ -110,18 +110,18 @@ int main(int argc,char**argv) {
   stdp.minimum_weight=0.001f; stdp.maximum_weight=1.0f;
   auto before=evaluate(topology_path,p,seed);
   CudaSimulationRuntime train(p,topology_path,0,false,true,stdp);
-  for(std::uint32_t epoch=0;epoch<3;++epoch) {
+  const std::string control=c.value("control", "candidate");\n  for(std::uint32_t epoch=0;epoch<(control=="untrained"?0U:3U);++epoch) {
     std::vector<Example> examples;
-    for(std::uint32_t label=0;label<2;++label) for(std::uint32_t j=0;j<8;++j) examples.push_back(example(label,j,seed+17));
+    for(std::uint32_t label=0;label<2;++label) for(std::uint32_t j=0;j<16;++j) examples.push_back(example(label,j,seed+17));
     std::mt19937 order(seed+epoch); std::shuffle(examples.begin(),examples.end(),order);
-    for(const auto& ex:examples) stimulate(train,ex,true);
+    for(const auto& ex:examples) { auto taught=ex; if(control=="shuffled_labels") taught.label=1U-taught.label; stimulate(train,taught,true); }
   }
   auto m=train.collect_metrics(); auto learned=train.collect_connectivity();
   save_csr_topology(learned,topology_path);
   auto after=evaluate(topology_path,p,seed);
   double meanw=0; for(float w:learned.weights)meanw+=std::abs(w);
   if(!learned.weights.empty())meanw/=learned.weights.size();
-  json out={{"seed",seed},{"synapses",learned.synapse_count()},{"e_spikes",m.excitatory_spikes},
+  json out={{"control",control},{"seed",seed},{"synapses",learned.synapse_count()},{"e_spikes",m.excitatory_spikes},
     {"i_spikes",m.inhibitory_spikes},{"e_rate_hz",m.excitatory_rate_hz},{"i_rate_hz",m.inhibitory_rate_hz},
     {"mean_voltage_mv",m.mean_voltage_mv},{"finite_state",m.finite_state},
     {"baseline_accuracy",before.total?double(before.correct)/before.total:0.0},
