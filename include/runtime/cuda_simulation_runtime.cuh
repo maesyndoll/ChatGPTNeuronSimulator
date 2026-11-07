@@ -104,7 +104,7 @@ public:
                                  float oscillator_period_ms,
                                  float reference_phase_rad,
                                  float half_width_rad);
-    void disable_phase_routing() noexcept;
+    void disable_phase_routing();
 
     SimulationMetrics collect_metrics();
     std::vector<std::uint32_t> collect_spike_count_snapshot();
