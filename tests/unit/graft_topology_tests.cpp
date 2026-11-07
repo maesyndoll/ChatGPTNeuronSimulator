@@ -83,6 +83,15 @@ int main() {
                 "future delayed currents were shifted during ring growth");
         require(migrated_ring[8] == 20.0f && migrated_ring[10] == 21.0f,
                 "later delayed currents were not preserved");
+
+        const auto detached_ring = spiking::remap_delayed_current_ring(
+            migrated_ring, 4, 5, 2, 3, 5, {0, UINT32_MAX, 1, UINT32_MAX});
+        require(detached_ring.size() == 6,
+                "detached delay ring was not contracted");
+        require(detached_ring[0] == 30.0f && detached_ring[1] == 0.0f,
+                "removed neurons remained in the delay ring");
+        require(detached_ring[2] == 20.0f && detached_ring[3] == 0.0f,
+                "surviving delayed currents were not remapped after detach");
         std::cout << "GRAFT TOPOLOGY MERGE TESTS: PASS\n"
                   << "population_ordering=PASS neuron_remap=PASS csr_merge=PASS\n"
                   << "frozen_transmission_policy=PASS mixed_plasticity=PASS\n";
