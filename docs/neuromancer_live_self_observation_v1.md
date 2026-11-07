@@ -27,3 +27,19 @@ The current bridge polls at five-second intervals. Each observation synchronizes
 ## Safety boundary
 
 This version cannot edit the live graph. It is a structural mirror and analyzer only. Structural proposals, staged graph replacement, state migration, and baseline-versus-candidate evaluation are separate later work. A graph fingerprint or connectivity statistic is not evidence of learning or cognition by itself.
+
+
+## Proposal-only topology advisor v2
+
+The self-observer now also exposes a deterministic, bounded candidate builder:
+
+- It consumes a time-ordered window of retained spike events.
+- Near-coincident spike pairs create candidate directed connections, with source-population sign respected (excitatory positive, inhibitory negative).
+- Existing connections are retained. Optional dormant-weak pruning is disabled by default and requires both endpoints to have zero activity.
+- Candidate edge additions are capped (default 32); the source graph is never mutated.
+- Both the original and candidate graphs receive fingerprints for comparison.
+- Unit tests verify bounded additions, unchanged source topology, candidate fingerprint changes, activity-aware pruning safeguards, and invalid event rejection.
+
+IPC command `get_topology_proposal` runs the advisor over the most recent retained spike events and returns proposal counts, fingerprints, evidence count, and explicit `applied=false`.
+
+This is not autonomous topology improvement yet. The endpoint is a proposal diagnostic, not a graph writer or live patch mechanism. The next required stage is a controlled evaluator that compares baseline and candidate behavior on matched input, then persists an accepted candidate as a versioned neural-memory module. Only after that should safe-point graph replacement be enabled.
