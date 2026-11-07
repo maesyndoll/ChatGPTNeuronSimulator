@@ -1404,3 +1404,50 @@ if(BUILD_TESTING)
              COMMAND neuromancer_two_hop_threshold_calibration_v47)
     set_tests_properties(neuromancer_two_hop_threshold_calibration_v47 PROPERTIES TIMEOUT 300)
 endif()
+
+
+# V48: dynamically loaded runtime module and mixed frozen/open per-edge STDP.
+add_library(neuromancer_edge_policy_module_v48 SHARED
+    plugins/edge_policy_module.cpp
+)
+target_include_directories(neuromancer_edge_policy_module_v48 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+set_target_properties(neuromancer_edge_policy_module_v48 PROPERTIES
+    PREFIX ""
+    OUTPUT_NAME "neuromancer_edge_policy_v48"
+)
+
+add_executable(neuromancer_hot_module_mixed_plasticity_v48
+    experiments/neuromancer_hot_module_mixed_plasticity_v48.cpp
+    src/runtime/module_manager.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_hot_module_mixed_plasticity_v48 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_hot_module_mixed_plasticity_v48 PRIVATE
+    CUDA::cudart ${CMAKE_DL_LIBS}
+)
+target_compile_options(neuromancer_hot_module_mixed_plasticity_v48 PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+)
+set_target_properties(neuromancer_hot_module_mixed_plasticity_v48 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+add_dependencies(neuromancer_hot_module_mixed_plasticity_v48
+    neuromancer_edge_policy_module_v48
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_hot_module_mixed_plasticity_v48
+        COMMAND neuromancer_hot_module_mixed_plasticity_v48
+            $<TARGET_FILE:neuromancer_edge_policy_module_v48>
+            ${CMAKE_CURRENT_BINARY_DIR}/v48_hot_module_test
+    )
+    set_tests_properties(neuromancer_hot_module_mixed_plasticity_v48 PROPERTIES TIMEOUT 300)
+endif()
