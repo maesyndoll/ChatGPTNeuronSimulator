@@ -87,6 +87,11 @@ public:
     ParameterUpdateResult reset_parameters_to_defaults();
     void reinitialize_simulation();
 
+    // Data-only graft lifecycle. Operations are invoked at the controller worker safe point.
+    void attach_graft_topology(const CSRTopology& graft, bool plasticity_enabled = false);
+    void detach_graft_topology();
+    bool graft_attached() const noexcept { return graft_attached_; }
+
     void run();
     void run_steps(std::uint32_t steps);
 
@@ -220,6 +225,11 @@ private:
 
     std::unique_ptr<DeviceState> build_device_state(const ModelParameters& parameters,
                        bool capture_spike_events, bool enable_plasticity_state);
+    void replace_topology_preserving_state(
+        const CSRTopology& topology,
+        const std::vector<std::uint32_t>& old_to_new_neurons,
+        const std::vector<std::uint32_t>& old_to_new_edges,
+        const std::vector<std::uint8_t>& new_plasticity_mask);
 
     ParameterManager parameter_manager_;
     ModelParameters active_parameters_;
@@ -233,6 +243,13 @@ private:
     bool enable_plasticity_state_ = false;
     StdpParameters stdp_parameters_{};
     std::vector<ExternalStimulusGPU> external_stimuli_;
+    bool graft_attached_ = false;
+    CSRTopology pre_graft_topology_;
+    std::vector<std::uint8_t> pre_graft_plasticity_mask_;
+    std::vector<std::uint32_t> pre_graft_neuron_map_;
+    std::vector<std::uint32_t> pre_graft_edge_map_;
+    std::uint32_t pre_graft_excitatory_count_ = 0;
+    std::uint32_t pre_graft_inhibitory_count_ = 0;
     bool external_stimuli_dirty_ = false;
     bool phase_gate_enabled_ = false;
     bool phase_gate_inhibitory_only_ = false;
