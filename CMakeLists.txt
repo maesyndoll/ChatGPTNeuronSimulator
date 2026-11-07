@@ -1585,3 +1585,19 @@ if(BUILD_TESTING)
     target_link_libraries(graft_package_tests PRIVATE neuromancer_graft_package)
     add_test(NAME graft_package_tests COMMAND graft_package_tests)
 endif()
+
+# Graft topology merge: deterministic CSR composition and per-edge plasticity policy.
+add_library(neuromancer_graft_topology STATIC
+    src/runtime/graft_topology.cpp
+)
+target_include_directories(neuromancer_graft_topology PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_options(neuromancer_graft_topology PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+)
+if(BUILD_TESTING)
+    add_executable(graft_topology_tests tests/unit/graft_topology_tests.cpp)
+    target_link_libraries(graft_topology_tests PRIVATE neuromancer_graft_topology)
+    add_test(NAME graft_topology_tests COMMAND graft_topology_tests)
+endif()
