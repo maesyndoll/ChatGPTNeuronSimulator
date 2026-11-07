@@ -1,6 +1,7 @@
 #pragma once
 
 #include "qt/simulation_client.h"
+#include "runtime/graft_package.h"
 
 #include <QObject>
 #include <QJsonObject>
@@ -41,6 +42,10 @@ class SimulationBridge : public QObject {
                NOTIFY connectivityChanged)
     Q_PROPERTY(QVariantMap topologyVisual READ topologyVisual
                NOTIFY topologyVisualChanged)
+    Q_PROPERTY(QVariantMap graftInspection READ graftInspection
+               NOTIFY graftInspectionChanged)
+    Q_PROPERTY(bool graftInspectionValid READ graftInspectionValid
+               NOTIFY graftInspectionChanged)
 
     Q_PROPERTY(QVariantList spikeEvents READ spikeEvents
                NOTIFY spikeEventsChanged)
@@ -79,6 +84,8 @@ public:
 
     QVariantMap connectivityStatistics() const;
     QVariantMap topologyVisual() const;
+    QVariantMap graftInspection() const;
+    bool graftInspectionValid() const;
     QVariantList spikeEvents() const;
     QString spikeEventCount() const;
     QString spikeEventsDropped() const;
@@ -96,6 +103,7 @@ public:
     Q_INVOKABLE void refreshSpikeEvents();
     Q_INVOKABLE void refreshConnectivity();
     Q_INVOKABLE void refreshTopologyVisual();
+    Q_INVOKABLE void inspectGraftPackage(const QString& packagePath);
     Q_INVOKABLE void sendVisualGrid(const QVariantList& intensities);
 
 signals:
@@ -108,6 +116,7 @@ signals:
     void spikeEventsChanged();
     void connectivityChanged();
     void topologyVisualChanged();
+    void graftInspectionChanged();
     void errorOccurred(const QString& message);
 
 private:
@@ -130,6 +139,8 @@ private:
     QJsonObject configuration_;
     QVariantMap connectivity_statistics_;
     QVariantMap topology_visual_;
+    QVariantMap graft_inspection_;
+    bool graft_inspection_valid_ = false;
     QTimer topology_visual_timer_;
     bool topology_visual_request_pending_ = false;
     QVariantList spike_events_;
