@@ -481,6 +481,8 @@ void CudaSimulationRuntime::replace_topology_preserving_state(
             sizeof(value), cudaMemcpyDeviceToHost));
         return value;
     }();
+    if (active_count > old_n)
+        throw std::runtime_error("Active spike queue exceeds the current neuron count");
     auto active_sources = read_u32(old.active_spike_sources, active_count);
     active_sources.erase(std::remove_if(active_sources.begin(), active_sources.end(),
         [&](std::uint32_t& source) {
