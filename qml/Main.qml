@@ -384,6 +384,39 @@ ApplicationWindow {
 
         Rectangle {
             Layout.fillWidth: true
+            radius: 9
+            color: "#0b1722"
+            border.color: "#284253"
+            implicitHeight: pulseRow.implicitHeight + 16
+            RowLayout {
+                id: pulseRow
+                anchors.fill: parent
+                anchors.margins: 8
+                spacing: 9
+                Label { text: "SENSORY INPUT  /  CONTROLLED PULSE"; color: "#8bd9ce"; font.pixelSize: 10; font.bold: true; font.letterSpacing: 0.7 }
+                Item { Layout.fillWidth: true }
+                Label { text: "Neuron"; color: "#7895a5"; font.pixelSize: 10 }
+                TextField { id: pulseNeuron; text: "0"; Layout.preferredWidth: 66; selectByMouse: true; validator: IntValidator { bottom: 0 } }
+                Label { text: "Amplitude"; color: "#7895a5"; font.pixelSize: 10 }
+                TextField { id: pulseAmplitude; text: "20"; Layout.preferredWidth: 66; selectByMouse: true; validator: DoubleValidator { bottom: 0; top: 100; decimals: 2 } }
+                Label { text: "Steps"; color: "#7895a5"; font.pixelSize: 10 }
+                TextField { id: pulseDuration; text: "2"; Layout.preferredWidth: 54; selectByMouse: true; validator: IntValidator { bottom: 1 } }
+                Button {
+                    text: "Queue pulse"
+                    enabled: simulation.connected &&
+                             simulation.simulationStatus.toLowerCase() !== "running" &&
+                             pulseNeuron.acceptableInput && pulseAmplitude.acceptableInput &&
+                             pulseDuration.acceptableInput
+                    onClicked: simulation.sendStimulusPulse(
+                                   Number(pulseNeuron.text),
+                                   Number(pulseAmplitude.text),
+                                   Number(pulseDuration.text))
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
             radius: 10
             color: "#0d1924"
             border.color: "#203747"
