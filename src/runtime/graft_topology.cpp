@@ -127,7 +127,7 @@ std::vector<float> remap_delayed_current_ring(
         old_ring.size() != static_cast<std::size_t>(old_neuron_count) * old_ring_slots)
         throw std::invalid_argument("Invalid delayed-current ring dimensions or neuron map");
     for (const auto id : old_to_new_neuron_map)
-        if (id >= new_neuron_count)
+        if (id != UINT32_MAX && id >= new_neuron_count)
             throw std::out_of_range("Delayed-current neuron map target is out of range");
     std::vector<float> next(
         static_cast<std::size_t>(new_neuron_count) * new_ring_slots, 0.0f);
@@ -141,8 +141,9 @@ std::vector<float> remap_delayed_current_ring(
                                          old_neuron_count + old_id];
             if (!std::isfinite(value))
                 throw std::invalid_argument("Delayed-current ring contains non-finite current");
-            next[static_cast<std::size_t>(new_slot) * new_neuron_count +
-                 old_to_new_neuron_map[old_id]] = value;
+            if (old_to_new_neuron_map[old_id] != UINT32_MAX)
+                next[static_cast<std::size_t>(new_slot) * new_neuron_count +
+                     old_to_new_neuron_map[old_id]] = value;
         }
     }
     return next;
