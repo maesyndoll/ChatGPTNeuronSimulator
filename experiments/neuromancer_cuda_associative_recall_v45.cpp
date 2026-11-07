@@ -181,7 +181,6 @@ TrainingResult train(const std::filesystem::path& dir) {
     out.confidence_ab = phase.temporal_confidence(0, 1);
     out.confidence_bc = phase.temporal_confidence(1, 2);
     out.phases.resize(N, 0.0f);
-    out.edge_lags.assign(out.learned_graph.synapse_count(), 0.0f);
 
     // Activity values are measured from CUDA spike events. Normalize them
     // before the explicit host-side structural CSR update.
@@ -203,6 +202,9 @@ TrainingResult train(const std::filesystem::path& dir) {
     std::vector<std::uint32_t> ages(out.learned_graph.synapse_count(), 0);
     out.structural = updater.apply(out.learned_graph, out.activity, ages, true);
     out.learned_graph.validate();
+    // Structural remodeling can change edge count; allocate phase lags only
+    // after the final frozen topology has been produced.
+    out.edge_lags.assign(out.learned_graph.synapse_count(), 0.0f);
 
     // Use the measured directed lags to align A->B and B->C. The C population
     // is the phase reference; non-trained cross-population edges retain zero lag.
