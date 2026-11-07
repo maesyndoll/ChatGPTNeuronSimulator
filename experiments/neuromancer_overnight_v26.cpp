@@ -389,15 +389,25 @@ int main(int argc, char** argv) {
                   << "Saved inference package: " << (output / "model.nmc").string() << '\n'
                   << "Saved learned CSR: " << final_path.string() << '\n'
                   << "Training log: " << metrics_path.string() << '\n';
+        constexpr std::uint32_t kMinimumCorrectPerClass = 12U;
+        const bool both_classes_learned =
+            score.class0_correct >= kMinimumCorrectPerClass &&
+            score.class1_correct >= kMinimumCorrectPerClass;
+        const bool inhibition_active = final_metrics.inhibitory_spikes > 0;
         const bool useful_recall = score.output_spikes > 0 &&
-            score.correct > baseline_score.correct;
+            score.correct > baseline_score.correct &&
+            both_classes_learned && inhibition_active;
         if (!useful_recall) {
-            std::cerr << "FAIL: trained model did not outperform the untrained baseline "
-                         "with nonzero output activity; do not use for overnight training.\\n";
+            std::cerr << "FAIL: acceptance criteria not met. Require trained recall "
+                         "to beat baseline, at least 12/16 correct in each class, "
+                         "nonzero output activity, and nonzero inhibitory activity. "
+                         "Do not use for overnight training.\\n";
             return 2;
         }
-        std::cout << (smoke ? "PASS: trained frozen-weight recall beat the untrained baseline.\\n"
-                            : "PASS: overnight training completed and beat the untrained baseline.\\n");
+        std::cout << (smoke ? "PASS: both classes learned; baseline, output, and "
+                               "inhibitory-activity checks passed.\\n"
+                            : "PASS: overnight training completed; all learning and "
+                               "network-activity checks passed.\\n");
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "Neuromancer V26 error: " << e.what() << '\n';
