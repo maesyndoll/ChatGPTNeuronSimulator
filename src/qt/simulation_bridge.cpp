@@ -43,7 +43,7 @@ SimulationBridge::SimulationBridge(QObject* parent)
         refreshSelfObservation();
         refreshGraftStatus();
         topology_visual_timer_.start();
-        self_observation_timer_.start();
+        // Self-observation is on-demand: a full graph snapshot can be expensive.
         // The server's spike subscription starts with a recent bounded
         // snapshot; do not separately request the oldest retained events.
     });
@@ -56,6 +56,7 @@ SimulationBridge::SimulationBridge(QObject* parent)
         topology_visual_timer_.stop();
         self_observation_timer_.stop();
         topology_visual_request_pending_ = false;
+        self_observation_request_pending_ = false;
         topology_visual_.clear();
         emit topologyVisualChanged();
         self_observation_.clear();
@@ -107,6 +108,7 @@ SimulationBridge::SimulationBridge(QObject* parent)
             topology_visual_ = result.toVariantMap();
             emit topologyVisualChanged();
         } else if (command == QStringLiteral("get_self_observation")) {
+            self_observation_request_pending_ = false;
             self_observation_ = result.toVariantMap();
             emit selfObservationChanged();
         } else if (command == QStringLiteral("get_topology_proposal")) {
@@ -232,6 +234,8 @@ SimulationBridge::SimulationBridge(QObject* parent)
                    const QString& errorCode, const QString& message) {
         if (command == QStringLiteral("get_topology_visual"))
             topology_visual_request_pending_ = false;
+        if (command == QStringLiteral("get_self_observation"))
+            self_observation_request_pending_ = false;
         if (command == QStringLiteral("get_topology_proposal"))
             topology_proposal_request_pending_ = false;
         const QString combined =
@@ -467,9 +471,10 @@ void SimulationBridge::refreshTopologyVisual() {
 }
 
 void SimulationBridge::refreshSelfObservation() {
-    if (connected_) {
-        client_.sendRequest(QStringLiteral("get_self_observation"), {}, 10000);
-    }
+    if (!connected_ || self_observation_request_pending_)
+        return;
+    self_observation_request_pending_ = true;
+    client_.sendRequest(QStringLiteral("get_self_observation"), {}, 30000);
 }
 
 void SimulationBridge::refreshTopologyProposal() {
