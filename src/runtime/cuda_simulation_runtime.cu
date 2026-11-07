@@ -497,18 +497,20 @@ void CudaSimulationRuntime::replace_topology_preserving_state(
     SPIKING_CUDA_CHECK(cudaMemcpy(next->completed_step_blocks.get(), &zero_blocks,
         sizeof(zero_blocks), cudaMemcpyHostToDevice));
 
-    // Remap still-pending external stimuli to the replacement neuron IDs.
-    external_stimuli_.erase(std::remove_if(external_stimuli_.begin(), external_stimuli_.end(),
+    // Stage stimulus remapping locally; commit it only after the replacement is ready.
+    auto migrated_stimuli = external_stimuli_;
+    migrated_stimuli.erase(std::remove_if(migrated_stimuli.begin(), migrated_stimuli.end(),
         [&](ExternalStimulusGPU& stimulus) {
             stimulus.neuron_id = old_to_new_neurons.at(stimulus.neuron_id);
             return stimulus.neuron_id == UINT32_MAX;
-        }), external_stimuli_.end());
-    if (!external_stimuli_.empty()) {
-        upload_u32(next->external_stimulus_count,
-                   {static_cast<std::uint32_t>(external_stimuli_.size())});
+        }), migrated_stimuli.end());
+    if (!migrated_stimuli.empty()) {
+        const std::uint32_t stimulus_count = static_cast<std::uint32_t>(migrated_stimuli.size());
+        SPIKING_CUDA_CHECK(cudaMemcpy(next->external_stimulus_count.get(),
+            &stimulus_count, sizeof(stimulus_count), cudaMemcpyHostToDevice));
         SPIKING_CUDA_CHECK(cudaMemcpy(next->external_stimuli.get(),
-            external_stimuli_.data(),
-            external_stimuli_.size() * sizeof(ExternalStimulusGPU),
+            migrated_stimuli.data(),
+            migrated_stimuli.size() * sizeof(ExternalStimulusGPU),
             cudaMemcpyHostToDevice));
     }
 
@@ -517,11 +519,11 @@ void CudaSimulationRuntime::replace_topology_preserving_state(
     if (capture_spike_events_)
         SPIKING_CUDA_CHECK(cudaMemset(next->spike_event_count.get(), 0,
             sizeof(unsigned long long)));
-    spike_event_read_cursor_ = 0;
-    external_stimuli_dirty_ = false;
-
     next->stream.synchronize();
     device_state_.swap(next);
+    external_stimuli_ = std::move(migrated_stimuli);
+    spike_event_read_cursor_ = 0;
+    external_stimuli_dirty_ = false;
     active_parameters_.simulation.excitatory_count = topology.excitatory_count;
     active_parameters_.simulation.inhibitory_count = topology.inhibitory_count;
     active_parameters_.topology.minimum_delay = topology.minimum_delay;
