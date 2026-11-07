@@ -212,12 +212,10 @@ TopologyProposalReport propose_topology_update(
         candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
         for (const auto target : candidates) {
             if (additions >= options.maximum_added_edges) break;
-            const auto existing = std::lower_bound(
-                rows[source].begin(), rows[source].end(), target,
-                [](const EdgeValue& edge, std::uint32_t id) {
-                    return edge.target < id;
-                });
-            if (existing != rows[source].end() && existing->target == target) continue;
+            const auto existing = std::find_if(
+                rows[source].begin(), rows[source].end(),
+                [target](const EdgeValue& edge) { return edge.target == target; });
+            if (existing != rows[source].end()) continue;
             // A previously pruned edge is eligible for re-proposal only if
             // current temporal evidence supports it.
             const float weight = source < topology.excitatory_count
