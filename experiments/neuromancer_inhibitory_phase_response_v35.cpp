@@ -268,7 +268,7 @@ int main(int argc, char** argv) {
         const std::filesystem::path out_dir = argv[1];
         std::filesystem::create_directories(out_dir);
         std::ofstream csv(out_dir / "phase_selective_inhibition_v34.csv");
-        if (!csv) throw std::runtime_error("cannot open V34 CSV");
+        if (!csv) throw std::runtime_error("cannot open V35 CSV");
         csv << std::setprecision(9);
         csv << "seed,gate,gate_phase_shift_deg,e_weight,i_weight,i_offset_steps,i_offset_ms,"
                "target_spikes_e_only,target_spikes_i_only,target_spikes_both,"
@@ -332,14 +332,14 @@ int main(int argc, char** argv) {
         }
 
         csv.close();
-        std::cout << "NEUROMANCER V35 — INHIBITORY PHASE-RESPONSE CURVE\\n"
-                  << "Conditions: " << rows << "; four matched edge ablations each.\\n"
-                  << "Inhibitory gate phase: 0 through 345 degrees in 15-degree increments.\\n"
-                  << "Controls: ungated, all-input aligned, excitatory-only shifted 90 degrees.\\n"
-                  << "Stimulus offsets: -3 to +3 ms in 1 ms increments; four varied initial-condition seeds.\\n"
-                  << "Reports recruitment, spike-free E/I interaction, and inhibitory-only voltage effect.\\n"
-                  << "Wrote " << (out_dir / "inhibitory_phase_response_v35.csv").string() << '\\n'
-                  << "LIMIT: single-target controlled assay; external 10 Hz oscillator; no learned phase coupling.\\n";
+        std::cout << "NEUROMANCER V35 — INHIBITORY PHASE-RESPONSE CURVE\n"
+                  << "Conditions: " << rows << "; four matched edge ablations each.\n"
+                  << "Inhibitory gate phase: 0 through 345 degrees in 15-degree increments.\n"
+                  << "Controls: ungated, all-input aligned, excitatory-only shifted 90 degrees.\n"
+                  << "Stimulus offsets: -3 to +3 ms in 1 ms increments; four varied initial-condition seeds.\n"
+                  << "Reports recruitment, spike-free E/I interaction, and inhibitory-only voltage effect.\n"
+                  << "Wrote " << (out_dir / "inhibitory_phase_response_v35.csv").string() << '\n'
+                  << "LIMIT: single-target controlled assay; external 10 Hz oscillator; no learned phase coupling.\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "V35 inhibitory phase-response experiment failed: " << e.what() << '\n';
