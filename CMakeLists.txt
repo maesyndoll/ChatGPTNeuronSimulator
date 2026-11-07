@@ -1488,3 +1488,40 @@ if(BUILD_TESTING)
     )
     set_tests_properties(neuromancer_frozen_edge_transmission_v49 PROPERTIES TIMEOUT 300)
 endif()
+
+
+# V50: phase-gated transmission controls the postsynaptic spike events available
+# to CUDA STDP; aligned/misaligned and open/frozen conditions are compared.
+add_executable(neuromancer_phase_controlled_plasticity_v50
+    experiments/neuromancer_phase_controlled_plasticity_v50.cpp
+    src/runtime/module_manager.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_phase_controlled_plasticity_v50 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_phase_controlled_plasticity_v50 PRIVATE
+    CUDA::cudart ${CMAKE_DL_LIBS}
+)
+target_compile_options(neuromancer_phase_controlled_plasticity_v50 PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+)
+set_target_properties(neuromancer_phase_controlled_plasticity_v50 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+add_dependencies(neuromancer_phase_controlled_plasticity_v50
+    neuromancer_edge_policy_module_v48
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_phase_controlled_plasticity_v50
+        COMMAND neuromancer_phase_controlled_plasticity_v50
+            $<TARGET_FILE:neuromancer_edge_policy_module_v48>
+            ${CMAKE_CURRENT_BINARY_DIR}/v50_phase_plasticity_test
+    )
+    set_tests_properties(neuromancer_phase_controlled_plasticity_v50 PROPERTIES TIMEOUT 360)
+endif()
