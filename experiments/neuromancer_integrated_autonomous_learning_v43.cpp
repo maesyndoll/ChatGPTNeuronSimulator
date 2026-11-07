@@ -206,7 +206,6 @@ bool cuda_closed_loop(const std::filesystem::path& dir){
     for(std::uint32_t cycle=0;cycle<16;++cycle){
         for(int t=0;t<12;++t){
             if(t==0)rt.schedule_stimulus(0,rt.completed_steps()+1,1,500);
-            if(t==5)rt.schedule_stimulus(1,rt.completed_steps()+1,1,500);
             rt.run_steps(1);auto batch=rt.collect_spike_events();
             if(batch.dropped_events)throw std::runtime_error("CUDA phase loop dropped spike events");
             std::vector<std::uint32_t> ps(3,0);
