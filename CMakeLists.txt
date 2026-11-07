@@ -321,6 +321,32 @@ if(SPIKINGMODEL_ENABLE_CUDA)
              COMMAND neuromancer_recurrent_phase_v9)
     set_tests_properties(neuromancer_recurrent_phase_v9 PROPERTIES TIMEOUT 120)
 
+    # V15: two STDP associations learned in one shared CSR runtime and
+    # retrieved from partial cues with frozen weights; includes an untrained
+    # paired-path control and a plasticity-disabled control.
+    add_executable(neuromancer_associative_memory_v15
+        experiments/neuromancer_associative_memory_v15.cpp
+        src/cuda/neuron_izhikevich.cu
+        src/runtime/cuda_simulation_runtime.cu
+        src/topology/topology_generator.cpp
+        src/topology/topology_io.cpp
+    )
+    target_include_directories(neuromancer_associative_memory_v15 PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(neuromancer_associative_memory_v15 PRIVATE CUDA::cudart)
+    target_compile_options(neuromancer_associative_memory_v15 PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+    )
+    set_target_properties(neuromancer_associative_memory_v15 PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+    )
+    add_test(NAME neuromancer_associative_memory_v15
+             COMMAND neuromancer_associative_memory_v15)
+    set_tests_properties(neuromancer_associative_memory_v15 PROPERTIES TIMEOUT 180)
+
     # V10: causal pair-STDP association learning followed by frozen,
     # phase-gated cue-to-target recall. V8 and V9 remain unchanged.
     add_executable(neuromancer_stdp_learning_v10
