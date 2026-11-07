@@ -1319,3 +1319,32 @@ if(BUILD_TESTING)
              COMMAND neuromancer_learned_cuda_phase_causality_v44)
     set_tests_properties(neuromancer_learned_cuda_phase_causality_v44 PROPERTIES TIMEOUT 240)
 endif()
+
+
+# V45: CUDA STDP training on a globally random CSR graph, event-driven phase
+# learning, activity-dependent host CSR remodeling, and frozen fresh-runtime
+# partial-cue recall. Structural/phase controllers remain host-side explicitly.
+add_executable(neuromancer_cuda_associative_recall_v45
+    experiments/neuromancer_cuda_associative_recall_v45.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_cuda_associative_recall_v45 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_cuda_associative_recall_v45 PRIVATE CUDA::cudart)
+target_compile_options(neuromancer_cuda_associative_recall_v45 PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+)
+set_target_properties(neuromancer_cuda_associative_recall_v45 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_cuda_associative_recall_v45
+             COMMAND neuromancer_cuda_associative_recall_v45)
+    set_tests_properties(neuromancer_cuda_associative_recall_v45 PROPERTIES TIMEOUT 300)
+endif()
