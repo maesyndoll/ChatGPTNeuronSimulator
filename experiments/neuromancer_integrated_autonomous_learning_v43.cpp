@@ -212,7 +212,7 @@ bool cuda_closed_loop(const std::filesystem::path& dir){
     const float cuda_weight_before=rt.collect_connectivity().weights.at(0);
     std::array<std::uint64_t,3> observed{};
     for(std::uint32_t cycle=0;cycle<16;++cycle){
-        for(int t=0;t<12;++t){
+        for(int t=0;t<80;++t){
             if(t==0)rt.schedule_stimulus(0,rt.completed_steps()+1,1,500);
             rt.run_steps(1);auto batch=rt.collect_spike_events();
             if(batch.dropped_events)throw std::runtime_error("CUDA phase loop dropped spike events");
