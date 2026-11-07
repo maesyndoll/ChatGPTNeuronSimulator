@@ -60,6 +60,14 @@ struct SynapseParametersGPU {
     std::uint32_t ring_slots = 0;
 };
 
+struct PhaseGateParametersGPU {
+    const float* preferred_phase_rad = nullptr;
+    float dt_ms = 0.0f;
+    float angular_frequency_rad_per_ms = 0.0f;
+    float reference_phase_rad = 0.0f;
+    float half_width_rad = 0.0f;
+};
+
 void initialize_neurons(
     NeuronParametersGPU parameters,
     NeuronStateGPU state,
@@ -79,7 +87,8 @@ void propagate_spikes(
     NeuronStateGPU state,
     SynapseParametersGPU synapses,
     std::uint32_t neuron_count,
-    cudaStream_t stream = nullptr
+    cudaStream_t stream = nullptr,
+    const PhaseGateParametersGPU* phase_gate = nullptr
 );
 
 void apply_stdp(
