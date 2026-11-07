@@ -203,10 +203,16 @@ public:
             }
         }
 
-        // Grow only E-source edges. The resource budget and degree cap are
-        // local to each source neuron. Highest co-activity targets win.
+        // Grow only E-source edges. Each source owns a finite local dendritic
+        // allocation budget; one edge consumes one unit. The hard degree cap
+        // remains an independent safety bound.
+        const auto resource_capacity = static_cast<std::uint32_t>(std::max(1.0f,
+            std::floor(parameters_.maximum_out_degree *
+                       parameters_.resource_per_excitatory_neuron)));
         for (std::uint32_t s = 0; s < graph.excitatory_count; ++s) {
-            if (rows[s].size() >= parameters_.maximum_out_degree) continue;
+            const auto capacity = std::min(parameters_.maximum_out_degree,
+                                           resource_capacity);
+            if (rows[s].size() >= capacity) continue;
             std::vector<std::pair<float, std::uint32_t>> candidates;
             for (std::uint32_t t = 0; t < n; ++t) {
                 if (t == s || activity[s] * activity[t] < parameters_.growth_threshold)
@@ -220,7 +226,7 @@ public:
                     return a.first > b.first || (a.first == b.first && a.second < b.second);
                 });
             for (const auto& candidate : candidates) {
-                if (rows[s].size() >= parameters_.maximum_out_degree) break;
+                if (rows[s].size() >= capacity) break;
                 rows[s].push_back({candidate.second, 0.01f});
                 ages[s].push_back(0U);
                 ++report.births;
