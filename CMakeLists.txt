@@ -170,6 +170,8 @@ if(SPIKINGMODEL_ENABLE_QT_CLIENT)
         include/qt/simulation_bridge.h
         src/qt/simulation_client.cpp
         src/qt/simulation_bridge.cpp
+        src/runtime/graft_package.cpp
+        src/topology/topology_io.cpp
         src/qt/qt_dashboard_main.cpp
     )
     target_include_directories(spiking_model_dashboard PRIVATE
@@ -180,6 +182,7 @@ if(SPIKINGMODEL_ENABLE_QT_CLIENT)
         Qt6::Network
         Qt6::Qml
         Qt6::Quick
+        nlohmann_json::nlohmann_json
     )
     target_compile_options(spiking_model_dashboard PRIVATE
         $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
