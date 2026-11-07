@@ -88,6 +88,7 @@ class NeuralChooser {
  }
  int choose(const std::vector<Candidate>& moves){
   if(moves.empty())return -1;
+  runtime_->clear_stimuli();
   const auto start=runtime_->completed_steps();
   for(std::size_t i=0;i<moves.size()&&i<MAX_ACTIONS;++i){
    const double u=std::clamp(moves[i].utility,-25.0,5.0);
