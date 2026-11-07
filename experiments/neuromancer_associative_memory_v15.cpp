@@ -132,6 +132,10 @@ struct PopulationResponse {
 struct CueResult {
     PopulationResponse b, d, f;
     std::uint64_t dropped_events = 0;
+    std::array<float, kObservationSteps> source_a_voltage{};
+    std::array<float, kObservationSteps> target_b_voltage{};
+    std::array<bool, kObservationSteps> source_a_spiked{};
+    std::array<bool, kObservationSteps> target_b_spiked{};
 };
 
 void collect_population_response(const SpikeEventBatch& events,
@@ -157,10 +161,24 @@ CueResult present_partial_cues(CudaSimulationRuntime& runtime) {
     // associations (A and C) and one never-trained control (E).
     for (const auto& pair : kPairs)
         stimulate_group(runtime, pair.first, kCueSize, start);
-    runtime.run_steps(kObservationSteps);
+
+    CueResult result;
+    const std::vector<std::uint32_t> probes{0U, 32U};
+    for (std::uint32_t step = 0; step < kObservationSteps; ++step) {
+        runtime.run_steps(1);
+        const auto samples = runtime.collect_voltage_samples(probes);
+        for (const auto& sample : samples) {
+            if (sample.neuron_id == 0U) {
+                result.source_a_voltage[step] = sample.voltage_mv;
+                result.source_a_spiked[step] = sample.spiked_this_step;
+            } else if (sample.neuron_id == 32U) {
+                result.target_b_voltage[step] = sample.voltage_mv;
+                result.target_b_spiked[step] = sample.spiked_this_step;
+            }
+        }
+    }
 
     const auto events = runtime.collect_spike_events();
-    CueResult result;
     result.dropped_events = events.dropped_events;
     collect_population_response(events, start, kPairs[0].second, result.b);
     collect_population_response(events, start, kPairs[1].second, result.d);
@@ -337,6 +355,15 @@ int main() {
         };
         std::cout << "\nPARTIAL-CUE RECALL (50% input assemblies)\n";
         print_response("A cue -> B", plastic.recall.b);
+        std::cout << "A0/B0 voltage trace (mV; after each 0.5 ms step)\n";
+        for (std::size_t i = 0; i < kObservationSteps; ++i) {
+            std::cout << "  step " << (i + 1)
+                      << ": A0=" << plastic.recall.source_a_voltage[i]
+                      << (plastic.recall.source_a_spiked[i] ? " spike" : "")
+                      << ", B0=" << plastic.recall.target_b_voltage[i]
+                      << (plastic.recall.target_b_spiked[i] ? " spike" : "")
+                      << '\n';
+        }
         print_response("C cue -> D", plastic.recall.d);
         print_response("E cue -> F (untrained)", plastic.recall.f);
         std::cout << "\nCONTROLS\n";
