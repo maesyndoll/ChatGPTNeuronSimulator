@@ -159,6 +159,13 @@ int main(int argc, char** argv) {
             dir, "single_strong", {{0, K, 30.0f, 1}}, 1, 40);
         const auto single_weak = run_trial(
             dir, "single_weak", {{0, K, 0.01f, 1}}, 1, 40);
+        std::vector<Result> weight_sweep;
+        for (const float weight : {0.1f, 0.5f, 1.0f, 2.0f, 5.0f, 10.0f, 20.0f}) {
+            const auto label = std::string("weight_") +
+                std::to_string(static_cast<int>(weight * 10.0f));
+            weight_sweep.push_back(run_trial(
+                dir, label, {{0, K, weight, 1}}, 1, 40));
+        }
 
         // Stage 2: an engineered one-to-one A->B positive control. Only four
         // of eight A neurons receive external current.
@@ -174,9 +181,13 @@ int main(int argc, char** argv) {
         // Stage 4: matched no-path negative control.
         const auto no_path = run_trial(dir, "chain_no_path_negative", {}, 4, 64);
 
-        const std::array<const Result*, 5> results{
-            &single_strong, &single_weak, &assembly, &chain, &no_path
+        std::vector<const Result*> results{
+            &single_strong, &single_weak
         };
+        for (const auto& r : weight_sweep) results.push_back(&r);
+        results.push_back(&assembly);
+        results.push_back(&chain);
+        results.push_back(&no_path);
         std::ofstream csv(dir / "v46_diagnostics.csv");
         if (!csv) throw std::runtime_error("Cannot create V46 diagnostics CSV");
         csv << "condition,source_spikes,B_spikes,B_unique,C_spikes,C_unique,"
@@ -191,6 +202,12 @@ int main(int argc, char** argv) {
         const bool single_pass = single_strong.source_spikes > 0 &&
                                  single_strong.b_spikes > 0;
         const bool weak_suppressed = single_weak.b_spikes < single_strong.b_spikes;
+        bool sweep_monotonic = true;
+        std::uint64_t previous_sweep_spikes = single_weak.b_spikes;
+        for (const auto& r : weight_sweep) {
+            if (r.b_spikes < previous_sweep_spikes) sweep_monotonic = false;
+            previous_sweep_spikes = r.b_spikes;
+        }
         const bool assembly_pass = assembly.source_spikes > 0 &&
                                    assembly.b_unique >= 1;
         const bool chain_pass = chain.b_unique >= 1 && chain.c_unique >= 1;
