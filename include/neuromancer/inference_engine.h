@@ -30,17 +30,17 @@ struct InferenceResult {
 
 class InferenceEngine {
 public:
-    // Loads and validates a persisted SPKCSR model. The model topology is
-    // immutable during inference; each infer() call starts a fresh runtime.
-    explicit InferenceEngine(std::string topology_file,
-                             InferenceConfig config = {});
+    // Loads a versioned .nmc manifest and resolves its CSR path relative to
+    // the manifest. The topology remains immutable during inference.
+    explicit InferenceEngine(std::string manifest_file);
 
     InferenceResult infer(const std::vector<float>& features) const;
-
     std::uint32_t input_size() const noexcept;
     const std::string& model_path() const noexcept;
+    const InferenceConfig& config() const noexcept;
 
 private:
+    std::string manifest_file_;
     std::string topology_file_;
     InferenceConfig config_;
     std::uint32_t excitatory_count_ = 0;
