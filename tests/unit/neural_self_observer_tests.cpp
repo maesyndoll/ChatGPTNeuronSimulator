@@ -67,6 +67,43 @@ int main() {
     catch (const std::invalid_argument&) { bad_threshold_rejected = true; }
     check(bad_threshold_rejected, "rejects negative weak-edge threshold");
 
+
+    // Co-active spike pairs produce a bounded candidate edge, never a live edit.
+    auto advisor_graph = sample();
+    advisor_graph.target_indices = {1, 2, 0, 3, 2};
+    const std::vector<ObservedSpike> recent = {
+        {10, 0}, {11, 3}, {12, 0}, {13, 3}, {14, 1}
+    };
+    const std::vector<std::uint64_t> cumulative = {4, 1, 9, 1};
+    TopologyAdvisorOptions advisor_options;
+    advisor_options.maximum_coactivity_lag = 2;
+    advisor_options.maximum_added_edges = 1;
+    const auto proposal = propose_topology_update(
+        advisor_graph, recent, cumulative, advisor_options);
+    check(proposal.proposed_added_edges == 1,
+          "advisor creates bounded coactivity proposal");
+    check(proposal.candidate.synapse_count() == advisor_graph.synapse_count() + 1,
+          "advisor candidate contains proposed edge");
+    check(advisor_graph.synapse_count() == 5,
+          "advisor leaves source topology unchanged");
+    check(proposal.base_graph_fingerprint != proposal.candidate_graph_fingerprint,
+          "advisor fingerprints changed candidate");
+
+    auto pruning_options = advisor_options;
+    pruning_options.maximum_added_edges = 0;
+    pruning_options.prune_dormant_weak_edges = true;
+    pruning_options.weak_edge_threshold = 0.01f;
+    const auto no_prune = propose_topology_update(
+        advisor_graph, {}, {4, 1, 9, 1}, pruning_options);
+    check(no_prune.proposed_pruned_edges == 0,
+          "advisor preserves weak edges when endpoints have activity");
+
+    bool bad_spike_rejected = false;
+    try {
+        (void)propose_topology_update(advisor_graph, {{1, 99}}, cumulative, advisor_options);
+    } catch (const std::invalid_argument&) { bad_spike_rejected = true; }
+    check(bad_spike_rejected, "advisor rejects out-of-range spike events");
+
     if (failures == 0) {
         std::cout << "NEURAL SELF-OBSERVER TESTS: PASS\n";
         return EXIT_SUCCESS;
