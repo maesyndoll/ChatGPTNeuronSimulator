@@ -844,8 +844,22 @@ ApplicationWindow {
                     }
                     Item { Layout.fillWidth: true }
                     Label {
-                        text: simulation.graftInspectionValid ? "PACKAGE VALIDATED" : "INSPECT ONLY"
-                        color: simulation.graftInspectionValid ? "#8de0ca" : "#e5bd78"
+                        text: {
+                            if (!simulation.graftInspectionValid) return "INSPECT ONLY"
+                            var state = simulation.graftInspection.lifecycle_state || "validated"
+                            if (state === "attached") return "ATTACHED"
+                            if (state === "attaching") return "ATTACHING"
+                            if (state === "ejecting") return "EJECTING"
+                            if (state === "ejected") return "EJECTED"
+                            return "VALIDATED"
+                        }
+                        color: {
+                            var state = simulation.graftInspection.lifecycle_state || "validated"
+                            if (state === "attached") return "#8de0ca"
+                            if (state === "attaching" || state === "ejecting") return "#e5bd78"
+                            if (state === "ejected") return "#9fc4f5"
+                            return simulation.graftInspectionValid ? "#8de0ca" : "#e5bd78"
+                        }
                         font.pixelSize: 10
                         font.bold: true
                     }
@@ -945,7 +959,13 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             visible: simulation.graftInspectionValid
                             text: simulation.graftInspection.status
-                            color: "#e5bd78"
+                            color: {
+                                var state = simulation.graftInspection.lifecycle_state || "validated"
+                                if (state === "attached") return "#8de0ca"
+                                if (state === "ejected") return "#9fc4f5"
+                                if (state === "attaching" || state === "ejecting") return "#e5bd78"
+                                return "#cbd7e5"
+                            }
                             font.pixelSize: 11
                         }
                     }
