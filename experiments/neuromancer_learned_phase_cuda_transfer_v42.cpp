@@ -91,8 +91,12 @@ Result run(const std::string& name,const std::filesystem::path& path,
     CudaSimulationRuntime runtime(make_model(),path.string(),0,true,false);
     std::filesystem::remove(path);
     if(mode!=0) {
+        // The edge's learned preferred lag and the imposed source-target
+        // phase difference must use the same reference. The CUDA gate tests
+        // phase[source] - phase[target] - edge_phase_lag.
         const float source_phase = mode==1 ? learned_lag : learned_lag+kPi;
-        runtime.configure_dynamic_phase_gate({source_phase,0.0f,0.0f},{0.0f},0.03f);
+        runtime.configure_dynamic_phase_gate(
+            {source_phase,0.0f,0.0f},{learned_lag},0.03f);
     }
     const auto start=runtime.completed_steps()+1U;
     runtime.schedule_stimulus(0,start,4,500.0f);
