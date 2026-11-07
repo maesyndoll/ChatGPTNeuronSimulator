@@ -253,6 +253,7 @@ if(SPIKINGMODEL_ENABLE_CUDA)
         src/main.cpp
         src/cuda/neuron_izhikevich.cu
         src/runtime/cuda_simulation_runtime.cu
+        src/runtime/graft_topology.cpp
         src/runtime/simulation_controller.cpp
         src/topology/topology_generator.cpp
         src/topology/topology_io.cpp
