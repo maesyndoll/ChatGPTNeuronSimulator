@@ -334,6 +334,14 @@ void CudaSimulationRuntime::configure_phase_routing(
             throw std::invalid_argument("Preferred phases must be in [0, 2*pi)");
     }
     device_state_->stream.synchronize();
+    if (device_state_->step_graph_exec != nullptr) {
+        SPIKING_CUDA_CHECK(cudaGraphExecDestroy(device_state_->step_graph_exec));
+        device_state_->step_graph_exec = nullptr;
+    }
+    if (device_state_->step_graph != nullptr) {
+        SPIKING_CUDA_CHECK(cudaGraphDestroy(device_state_->step_graph));
+        device_state_->step_graph = nullptr;
+    }
     SPIKING_CUDA_CHECK(cudaMemcpy(
         device_state_->preferred_phase_rad.get(), preferred_phase_rad.data(),
         preferred_phase_rad.size() * sizeof(float), cudaMemcpyHostToDevice));
@@ -343,7 +351,18 @@ void CudaSimulationRuntime::configure_phase_routing(
     phase_gate_half_width_rad_ = half_width_rad;
 }
 
-void CudaSimulationRuntime::disable_phase_routing() noexcept {
+void CudaSimulationRuntime::disable_phase_routing() {
+    if (device_state_) {
+        device_state_->stream.synchronize();
+        if (device_state_->step_graph_exec != nullptr) {
+            SPIKING_CUDA_CHECK(cudaGraphExecDestroy(device_state_->step_graph_exec));
+            device_state_->step_graph_exec = nullptr;
+        }
+        if (device_state_->step_graph != nullptr) {
+            SPIKING_CUDA_CHECK(cudaGraphDestroy(device_state_->step_graph));
+            device_state_->step_graph = nullptr;
+        }
+    }
     preferred_phase_rad_.clear();
     phase_oscillator_period_ms_ = 0.0f;
     phase_reference_rad_ = 0.0f;
