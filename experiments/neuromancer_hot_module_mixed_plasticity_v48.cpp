@@ -43,7 +43,7 @@ CSRTopology make_graph() {
     graph.minimum_delay = graph.maximum_delay = 1;
     graph.row_offsets = {0, 1, 1, 2, 2, 2};
     graph.target_indices = {1, 3};
-    graph.weights = {30.0f, 30.0f};
+    graph.weights = {30.0f, 150.0f};
     graph.delays = {1, 1};
     graph.validate();
     return graph;
@@ -141,7 +141,7 @@ int main(int argc, char** argv) {
         runtime.run_steps(3);
         modules.load(module_path.string());
         std::cout << "module_loaded=" << modules.module_name() << '\n';
-        // Edge 0 remains open; edge 1 is frozen. Both remain transmissive.
+        // Edge 0 starts weak and open; edge 1 starts strong and frozen.
         modules.configure("edge_range", "1:1:0");
         const auto initial = runtime.collect_connectivity();
         train_pair(runtime, modules, 0, 1, 30);
