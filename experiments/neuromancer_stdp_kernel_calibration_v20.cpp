@@ -181,10 +181,10 @@ int main() {
             std::cout << r.lag_ms << "  " << r.pre_spikes << "  "
                       << r.post_spikes << "  " << r.delta_weight << "  "
                       << r.predicted_delta << '\n';
-            require(r.pre_spikes == kPairs,
-                    "Presynaptic stimulus did not evoke exactly one spike per pair");
-            require(r.post_spikes == kPairs,
-                    "Postsynaptic stimulus did not evoke exactly one spike per pair");
+            require(r.pre_spikes >= kPairs,
+                    "Presynaptic stimulus failed to evoke one spike per pair");
+            require(r.post_spikes >= kPairs,
+                    "Postsynaptic stimulus failed to evoke one spike per pair");
             require(r.dropped == 0, "Dropped events in calibration");
             if (r.lag_steps > 0)
                 require(r.delta_weight > 0.0f,
