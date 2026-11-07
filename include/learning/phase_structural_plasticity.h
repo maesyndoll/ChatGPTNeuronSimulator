@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -22,6 +23,9 @@ struct AutonomousPhaseParameters {
     float coupling_learning_rate = 0.002f;
     float maximum_coupling = 2.0f;
     float coupling_decay = 0.00001f;
+    std::uint32_t temporal_association_window_steps = 39;
+    float temporal_lag_learning_rate = 0.10f;
+    float minimum_temporal_confidence = 0.20f;
 };
 
 class AutonomousPopulationPhase {
@@ -33,14 +37,23 @@ public:
           phase_(populations, 0.0f),
           activity_(populations, 0.0f),
           coupling_(static_cast<std::size_t>(populations) * populations, 0.0f),
-          learned_lag_(static_cast<std::size_t>(populations) * populations, 0.0f) {
+          learned_lag_(static_cast<std::size_t>(populations) * populations, 0.0f),
+          lag_cos_(static_cast<std::size_t>(populations) * populations, 0.0f),
+          lag_sin_(static_cast<std::size_t>(populations) * populations, 0.0f),
+          temporal_confidence_(static_cast<std::size_t>(populations) * populations, 0.0f),
+          last_spike_step_(populations, invalid_step()) {
         if (populations < 2 || !std::isfinite(parameters_.dt_ms) ||
             parameters_.dt_ms <= 0.0f ||
             !std::isfinite(parameters_.intrinsic_frequency_hz) ||
             parameters_.intrinsic_frequency_hz <= 0.0f ||
             parameters_.coupling_learning_rate < 0.0f ||
             parameters_.maximum_coupling <= 0.0f ||
-            parameters_.coupling_decay < 0.0f)
+            parameters_.coupling_decay < 0.0f ||
+            parameters_.temporal_association_window_steps == 0 ||
+            parameters_.temporal_lag_learning_rate <= 0.0f ||
+            parameters_.temporal_lag_learning_rate > 1.0f ||
+            parameters_.minimum_temporal_confidence < 0.0f ||
+            parameters_.minimum_temporal_confidence > 1.0f)
             throw std::invalid_argument("Invalid autonomous phase parameters");
     }
 
@@ -53,6 +66,9 @@ public:
     }
     float learned_lag(std::uint32_t source, std::uint32_t target) const {
         return learned_lag_.at(index(source, target));
+    }
+    float temporal_confidence(std::uint32_t source, std::uint32_t target) const {
+        return temporal_confidence_.at(index(source, target));
     }
 
     // Spike counts are observed from the preceding neural integration step.
@@ -81,14 +97,51 @@ public:
         }
         phase_.swap(next);
 
+        // Learn directed temporal associations from observed spike order.
+        // A source event followed by a target event within the configured
+        // window contributes its autonomous phase advance (omega * elapsed
+        // time) to a circular estimate. Randomly varying delays cancel in
+        // the resultant vector instead of being mistaken for a stable lag.
+        if (learn) {
+            for (std::uint32_t source = 0; source < n; ++source) {
+                if (population_spikes[source] == 0U ||
+                    last_spike_step_[source] == invalid_step()) continue;
+                for (std::uint32_t target = 0; target < n; ++target) {
+                    if (source == target || population_spikes[target] == 0U) continue;
+                    const auto elapsed = steps_ - last_spike_step_[source];
+                    if (elapsed == 0U ||
+                        elapsed > parameters_.temporal_association_window_steps) continue;
+                    const auto ij = index(source, target);
+                    const float observed_lag = wrap(
+                        omega * parameters_.dt_ms * static_cast<float>(elapsed));
+                    const float alpha = parameters_.temporal_lag_learning_rate;
+                    lag_cos_[ij] = (1.0f - alpha) * lag_cos_[ij] +
+                                   alpha * std::cos(observed_lag);
+                    lag_sin_[ij] = (1.0f - alpha) * lag_sin_[ij] +
+                                   alpha * std::sin(observed_lag);
+                    temporal_confidence_[ij] = std::clamp(
+                        std::sqrt(lag_cos_[ij] * lag_cos_[ij] +
+                                  lag_sin_[ij] * lag_sin_[ij]), 0.0f, 1.0f);
+                    if (temporal_confidence_[ij] >=
+                        parameters_.minimum_temporal_confidence) {
+                        learned_lag_[ij] = wrap(std::atan2(lag_sin_[ij], lag_cos_[ij]));
+                    }
+                }
+            }
+            for (std::uint32_t source = 0; source < n; ++source)
+                if (population_spikes[source] != 0U)
+                    last_spike_step_[source] = steps_;
+        }
+
         if (learn) {
             for (std::uint32_t i = 0; i < n; ++i) {
                 for (std::uint32_t j = 0; j < n; ++j) {
                     if (i == j) continue;
                     const auto ij = index(i, j);
+                    const float confidence = temporal_confidence_[ij];
                     coupling_[ij] = std::clamp(
                         coupling_[ij] * (1.0f - parameters_.coupling_decay) +
-                        parameters_.coupling_learning_rate *
+                        parameters_.coupling_learning_rate * confidence *
                             activity_[i] * activity_[j] *
                             std::cos(wrap(phase_[i] - phase_[j] -
                                           learned_lag_[ij])),
@@ -109,6 +162,9 @@ public:
     std::uint64_t steps() const noexcept { return steps_; }
 
 private:
+    static constexpr std::uint64_t invalid_step() noexcept {
+        return std::numeric_limits<std::uint64_t>::max();
+    }
     static float wrap(float x) {
         constexpr float tau = 6.2831853071795864769f;
         x = std::fmod(x, tau);
@@ -125,6 +181,10 @@ private:
     std::vector<float> activity_;
     std::vector<float> coupling_;
     std::vector<float> learned_lag_;
+    std::vector<float> lag_cos_;
+    std::vector<float> lag_sin_;
+    std::vector<float> temporal_confidence_;
+    std::vector<std::uint64_t> last_spike_step_;
     std::uint64_t steps_ = 0;
 };
 
