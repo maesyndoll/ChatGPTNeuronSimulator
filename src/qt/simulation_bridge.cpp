@@ -60,6 +60,9 @@ SimulationBridge::SimulationBridge(QObject* parent)
         emit topologyVisualChanged();
         self_observation_.clear();
         emit selfObservationChanged();
+        topology_proposal_.clear();
+        topology_proposal_request_pending_ = false;
+        emit topologyProposalChanged();
         spike_events_.clear();
         spike_event_count_ = QStringLiteral("0");
         spike_events_dropped_ = QStringLiteral("0");
@@ -106,6 +109,10 @@ SimulationBridge::SimulationBridge(QObject* parent)
         } else if (command == QStringLiteral("get_self_observation")) {
             self_observation_ = result.toVariantMap();
             emit selfObservationChanged();
+        } else if (command == QStringLiteral("get_topology_proposal")) {
+            topology_proposal_request_pending_ = false;
+            topology_proposal_ = result.toVariantMap();
+            emit topologyProposalChanged();
         } else if (command == QStringLiteral("get_graft_status")) {
             const bool attached = result.value(QStringLiteral("attached")).toBool();
             graft_inspection_.insert(QStringLiteral("attached"), attached);
@@ -225,6 +232,8 @@ SimulationBridge::SimulationBridge(QObject* parent)
                    const QString& errorCode, const QString& message) {
         if (command == QStringLiteral("get_topology_visual"))
             topology_visual_request_pending_ = false;
+        if (command == QStringLiteral("get_topology_proposal"))
+            topology_proposal_request_pending_ = false;
         const QString combined =
             QStringLiteral("%1 (%2): %3").arg(command, errorCode, message);
         if (command == QStringLiteral("attach_graft") ||
@@ -346,6 +355,10 @@ QVariantMap SimulationBridge::graftInspection() const {
     return graft_inspection_;
 }
 
+QVariantMap SimulationBridge::topologyProposal() const {
+    return topology_proposal_;
+}
+
 bool SimulationBridge::graftInspectionValid() const {
     return graft_inspection_valid_;
 }
@@ -457,6 +470,13 @@ void SimulationBridge::refreshSelfObservation() {
     if (connected_) {
         client_.sendRequest(QStringLiteral("get_self_observation"), {}, 10000);
     }
+}
+
+void SimulationBridge::refreshTopologyProposal() {
+    if (!connected_ || topology_proposal_request_pending_)
+        return;
+    topology_proposal_request_pending_ = true;
+    client_.sendRequest(QStringLiteral("get_topology_proposal"), {}, 15000);
 }
 
 void SimulationBridge::inspectGraftPackage(const QString& packagePath) {
