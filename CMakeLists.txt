@@ -1132,3 +1132,21 @@ if(BUILD_TESTING)
     add_test(NAME neuromancer_learning_primitives_v42
              COMMAND neuromancer_learning_primitives_v42)
 endif()
+
+# V42 CUDA integration test: host-updated endogenous phase state controls
+# relative-phase synaptic transmission in the existing CUDA propagation kernel.
+add_executable(neuromancer_dynamic_phase_runtime_v42
+    experiments/neuromancer_dynamic_phase_runtime_v42.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_dynamic_phase_runtime_v42 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_dynamic_phase_runtime_v42 PRIVATE CUDA::cudart)
+set_target_properties(neuromancer_dynamic_phase_runtime_v42 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
