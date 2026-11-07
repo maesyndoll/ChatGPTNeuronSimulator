@@ -1209,3 +1209,22 @@ if(BUILD_TESTING)
              COMMAND neuromancer_autonomous_phase_learning_v42)
     set_tests_properties(neuromancer_autonomous_phase_learning_v42 PROPERTIES TIMEOUT 60)
 endif()
+
+
+# V42 integrated factorial implementation gate. This deterministic host-side
+# reference combines temporal phase learning, activity-driven CSR rewiring,
+# pair-based STDP, and frozen partial-cue graph recall before CUDA recall is added.
+add_executable(neuromancer_integrated_learning_gate_v42
+    experiments/neuromancer_integrated_learning_gate_v42.cpp
+)
+target_include_directories(neuromancer_integrated_learning_gate_v42 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_options(neuromancer_integrated_learning_gate_v42 PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_integrated_learning_gate_v42
+             COMMAND neuromancer_integrated_learning_gate_v42)
+    set_tests_properties(neuromancer_integrated_learning_gate_v42 PROPERTIES TIMEOUT 120)
+endif()
