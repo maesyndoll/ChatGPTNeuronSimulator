@@ -4,6 +4,8 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QStringList>
+#include <QVariant>
+#include <cmath>
 
 #include <unistd.h>
 
@@ -381,6 +383,51 @@ void SimulationBridge::refreshSpikeEvents() {
             QJsonObject{{QStringLiteral("after_sequence"), QStringLiteral("0")}}
         );
     }
+}
+
+void SimulationBridge::sendVisualGrid(const QVariantList& intensities) {
+    if (!connected_) {
+        setErrorMessage(QStringLiteral("Cannot send visual input: backend disconnected"));
+        return;
+    }
+    if (intensities.size() != 64) {
+        setErrorMessage(QStringLiteral("Visual input must contain exactly 64 cells"));
+        return;
+    }
+
+    bool stepOk = false;
+    const quint64 completed = telemetry_.value(QStringLiteral("completed_steps"))
+        .toString().toULongLong(&stepOk);
+    if (!stepOk) {
+        setErrorMessage(QStringLiteral("Waiting for a valid simulation step counter"));
+        return;
+    }
+
+    QJsonArray stimuli;
+    int activeCells = 0;
+    for (int i = 0; i < 64; ++i) {
+        bool valueOk = false;
+        const double intensity = intensities.at(i).toDouble(&valueOk);
+        if (!valueOk || !std::isfinite(intensity) || intensity < 0.0 || intensity > 1.0) {
+            setErrorMessage(QStringLiteral("Visual cell values must be finite and in [0, 1]"));
+            return;
+        }
+        if (intensity < 0.12)
+            continue;
+
+        stimuli.append(QJsonObject{
+            {QStringLiteral("neuron_id"), i},
+            {QStringLiteral("start_step"), static_cast<qint64>(completed + 1)},
+            {QStringLiteral("duration_steps"), 2},
+            {QStringLiteral("amplitude"), 8.0 + 32.0 * intensity}
+        });
+        ++activeCells;
+    }
+
+    client_.sendRequest(QStringLiteral("schedule_stimuli"),
+                        QJsonObject{{QStringLiteral("stimuli"), stimuli}});
+    setStatusMessage(QStringLiteral("Submitted %1 active visual cells to neurons 0–63")
+                         .arg(activeCells));
 }
 
 void SimulationBridge::reinitializeSimulation() {
