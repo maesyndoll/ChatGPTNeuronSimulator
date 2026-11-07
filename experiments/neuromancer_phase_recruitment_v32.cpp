@@ -3,6 +3,7 @@
 #include "topology/csr_topology.h"
 #include "topology/topology_io.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
