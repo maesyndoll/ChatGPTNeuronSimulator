@@ -195,9 +195,12 @@ Json topology_snapshot_json(const CSRTopology& graph, std::uint64_t step) {
     // surface receives a bounded, deterministic induced subgraph: source
     // neurons are sampled across the full population and every returned edge
     // is copied verbatim from the live CSR arrays.
-    constexpr std::size_t kMaximumSources = 128;
-    constexpr std::size_t kMaximumNodes = 512;
-    constexpr std::size_t kMaximumEdges = 2400;
+    // The temporal embedding renderer can now handle a larger induced
+    // subgraph. Keep this transport snapshot bounded until viewport-driven
+    // LOD and incremental topology streaming are available.
+    constexpr std::size_t kMaximumSources = 512;
+    constexpr std::size_t kMaximumNodes = 2048;
+    constexpr std::size_t kMaximumEdges = 12000;
     const std::uint32_t total = graph.neuron_count();
     const std::size_t source_count = std::min<std::size_t>(kMaximumSources, total);
     std::vector<std::uint32_t> nodes;
