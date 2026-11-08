@@ -46,6 +46,7 @@ std::uint64_t estimate_device_bytes(
     add(neurons, sizeof(std::uint32_t));
     add(neurons, 3ULL * sizeof(float));      // phase, next phase, natural frequency
     add(neurons, sizeof(float));              // STDP spike traces
+    add(neurons, sizeof(std::uint64_t));      // last spike step for structural eligibility
 
     add(1, sizeof(std::uint32_t));             // active spike count
     add(kSpikeEventCapacity64, sizeof(std::uint64_t));
@@ -91,7 +92,7 @@ CudaSimulationRuntime::DeviceState::DeviceState(
       weights(count * adaptive_row_capacity(topology)),
       delays(count * adaptive_row_capacity(topology)),
       phases(count), next_phases(count), natural_frequencies(count),
-      plasticity_traces(count),
+      plasticity_traces(count), last_spike_steps(count),
       neuron_count(count),
       edge_capacity(static_cast<std::uint32_t>(count * adaptive_row_capacity(topology))),
       row_capacity(adaptive_row_capacity(topology)),
@@ -323,6 +324,9 @@ CudaSimulationRuntime::build_device_state(
         next->plasticity_traces.get(), 0,
         next->plasticity_traces.size() * sizeof(float), stream));
     SPIKING_CUDA_CHECK(cudaMemsetAsync(
+        next->last_spike_steps.get(), 0xFF,
+        next->last_spike_steps.size() * sizeof(std::uint64_t), stream));
+    SPIKING_CUDA_CHECK(cudaMemsetAsync(
         next->synaptic_current.get(), 0,
         next->synaptic_current.size() * sizeof(float), stream));
     SPIKING_CUDA_CHECK(cudaMemsetAsync(
@@ -398,6 +402,7 @@ void CudaSimulationRuntime::configure_adaptive_topology(
     if (config.update_interval_steps == 0 ||
         !std::isfinite(config.growth_trace_threshold) ||
         config.growth_trace_threshold <= 0.0f ||
+        config.growth_window_steps == 0 ||
         !std::isfinite(config.prune_weight_threshold) ||
         config.prune_weight_threshold < 0.0f ||
         !std::isfinite(config.growth_weight) || config.growth_weight <= 0.0f) {
@@ -558,6 +563,9 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
             device_state_->stream.get());
 
         if (plasticity_config_.enabled && device_state_->edge_capacity != 0) {
+            update_last_spike_steps(
+                state.spike_flags, device_state_->last_spike_steps.get(),
+                count, completed_steps_ + 1ULL, device_state_->stream.get());
             const float trace_decay = std::exp(
                 -p.dt / plasticity_config_.trace_time_constant_ms);
             update_synaptic_plasticity(
@@ -583,6 +591,9 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
                     device_state_->delays.get(),
                     state.spike_flags,
                     device_state_->plasticity_traces.get(),
+                    device_state_->last_spike_steps.get(),
+                    completed_steps_ + 1ULL,
+                    topology_config_.growth_window_steps,
                     count,
                     active_parameters_.simulation.excitatory_count,
                     device_state_->row_capacity,
