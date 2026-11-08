@@ -20,6 +20,7 @@ ApplicationWindow {
         id: field
         anchors.fill: parent
         topology: simulation.topologySnapshot
+        simulationGeneration: simulation.spikeEventsGeneration
         spikeEvents: simulation.visualSpikeEvents
         rotationX: window.orbitX
         rotationY: window.orbitY
