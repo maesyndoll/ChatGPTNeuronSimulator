@@ -302,6 +302,17 @@ __global__ void stdp_update_kernel(
 }
 
 
+__global__ void update_last_spike_steps_kernel(
+    const std::uint8_t* spike_flags,
+    std::uint64_t* last_spike_steps,
+    std::uint32_t neuron_count,
+    std::uint64_t step_index
+) {
+    const std::uint32_t neuron = blockIdx.x * blockDim.x + threadIdx.x;
+    if (neuron >= neuron_count) return;
+    if (spike_flags[neuron] != 0) last_spike_steps[neuron] = step_index;
+}
+
 __global__ void adaptive_topology_kernel(
     const std::uint32_t* row_offsets,
     std::uint32_t* row_counts,
@@ -310,6 +321,9 @@ __global__ void adaptive_topology_kernel(
     std::uint32_t* delays,
     const std::uint8_t* spike_flags,
     const float* traces,
+    const std::uint64_t* last_spike_steps,
+    std::uint64_t step_index,
+    std::uint32_t growth_window_steps,
     std::uint32_t neuron_count,
     std::uint32_t excitatory_count,
     std::uint32_t row_capacity,
@@ -337,7 +351,13 @@ __global__ void adaptive_topology_kernel(
     count = kept;
     // Associative growth: co-active pre/post traces create missing directed
     // edges. Rows remain sorted so CSR validation and deterministic behavior hold.
-    if (traces[source] >= growth_threshold && count < row_capacity) {
+    const std::uint64_t last_pre_step = last_spike_steps[source];
+    const bool recent_causal_pre =
+        last_pre_step != UINT64_MAX &&
+        last_pre_step <= step_index &&
+        (step_index - last_pre_step) <= growth_window_steps;
+    if (recent_causal_pre && traces[source] >= growth_threshold &&
+        count < row_capacity) {
         const float sign = source < excitatory_count ? 1.0f : -1.0f;
         for (std::uint32_t target = 0;
              target < neuron_count && count < row_capacity; ++target) {
@@ -521,6 +541,22 @@ void update_synaptic_plasticity(
 }
 
 
+void update_last_spike_steps(
+    const std::uint8_t* spike_flags,
+    std::uint64_t* last_spike_steps,
+    std::uint32_t neuron_count,
+    std::uint64_t step_index,
+    cudaStream_t stream
+) {
+    if (!spike_flags || !last_spike_steps || neuron_count == 0)
+        throw std::invalid_argument("Invalid last-spike-step buffers");
+    constexpr int threads = 256;
+    const int blocks = (neuron_count + threads - 1) / threads;
+    update_last_spike_steps_kernel<<<blocks, threads, 0, stream>>>(
+        spike_flags, last_spike_steps, neuron_count, step_index);
+    SPIKING_CUDA_CHECK(cudaGetLastError());
+}
+
 void update_adaptive_topology(
     const std::uint32_t* row_offsets,
     std::uint32_t* row_counts,
@@ -529,6 +565,9 @@ void update_adaptive_topology(
     std::uint32_t* delays,
     const std::uint8_t* spike_flags,
     const float* spike_traces,
+    const std::uint64_t* last_spike_steps,
+    std::uint64_t step_index,
+    std::uint32_t growth_window_steps,
     std::uint32_t neuron_count,
     std::uint32_t excitatory_count,
     std::uint32_t row_capacity,
@@ -539,7 +578,8 @@ void update_adaptive_topology(
     cudaStream_t stream
 ) {
     if (!row_offsets || !row_counts || !target_indices || !weights ||
-        !delays || !spike_flags || !spike_traces || neuron_count == 0 ||
+        !delays || !spike_flags || !spike_traces || !last_spike_steps ||
+        neuron_count == 0 || growth_window_steps == 0 ||
         row_capacity == 0 || excitatory_count > neuron_count ||
         minimum_delay == 0 || !std::isfinite(growth_trace_threshold) ||
         growth_trace_threshold <= 0.0f ||
@@ -550,7 +590,8 @@ void update_adaptive_topology(
     const int blocks = (neuron_count + threads - 1) / threads;
     adaptive_topology_kernel<<<blocks, threads, 0, stream>>>(
         row_offsets, row_counts, target_indices, weights, delays,
-        spike_flags, spike_traces, neuron_count, excitatory_count,
+        spike_flags, spike_traces, last_spike_steps, step_index,
+        growth_window_steps, neuron_count, excitatory_count,
         row_capacity, minimum_delay, growth_trace_threshold,
         prune_weight_threshold, growth_weight);
     SPIKING_CUDA_CHECK(cudaGetLastError());
