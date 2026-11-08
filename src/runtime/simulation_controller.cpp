@@ -182,6 +182,29 @@ SimulationController::configuration_snapshot() const {
     );
 }
 
+std::uint64_t SimulationController::transact_tissue(
+    std::function<void(tissue::TissueModel&)> mutation) {
+    if (!mutation) {
+        throw std::invalid_argument("Tissue transaction callback is empty");
+    }
+    return submit([this, mutation = std::move(mutation)](CudaSimulationRuntime&) mutable {
+        // Validate and mutate an isolated candidate. Any exception leaves the
+        // currently published tissue and revision untouched.
+        tissue::TissueModel candidate = tissue_model_;
+        mutation(candidate);
+        candidate.validate();
+        tissue_model_ = std::move(candidate);
+        return ++tissue_revision_;
+    });
+}
+
+TissueSnapshot SimulationController::tissue_snapshot() const {
+    return const_cast<SimulationController*>(this)->submit(
+        [this](CudaSimulationRuntime&) {
+            return TissueSnapshot{tissue_model_, tissue_revision_};
+        });
+}
+
 ControllerStatus SimulationController::status() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return status_;
