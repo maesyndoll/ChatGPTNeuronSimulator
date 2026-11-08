@@ -60,6 +60,17 @@ std::uint64_t estimate_device_bytes(
     return bytes;
 }
 
+std::uint32_t adaptive_row_capacity(const CSRTopology& topology) {
+    std::uint32_t maximum_degree = 0;
+    for (std::size_t row = 0; row + 1 < topology.row_offsets.size(); ++row)
+        maximum_degree = std::max(maximum_degree,
+            topology.row_offsets[row + 1] - topology.row_offsets[row]);
+    const std::uint64_t proposed = std::max<std::uint64_t>(
+        32ULL, static_cast<std::uint64_t>(maximum_degree) * 2ULL + 8ULL);
+    return static_cast<std::uint32_t>(std::min<std::uint64_t>(
+        proposed, topology.neuron_count() > 0 ? topology.neuron_count() - 1ULL : 0ULL));
+}
+
 std::uint64_t mib(std::uint64_t bytes) {
     return (bytes + 1024ULL * 1024ULL - 1ULL) / (1024ULL * 1024ULL);
 }
@@ -74,14 +85,16 @@ CudaSimulationRuntime::DeviceState::DeviceState(
       active_spike_sources(count), active_spike_count(1),
       spike_event_steps(kSpikeEventCapacity),
       spike_event_neurons(kSpikeEventCapacity), spike_event_count(1),
-      row_offsets(topology.row_offsets.size()),
-      target_indices(topology.target_indices.size()),
-      weights(topology.weights.size()),
-      delays(topology.delays.size()),
+      row_offsets(count),
+      row_counts(count),
+      target_indices(count * adaptive_row_capacity(topology)),
+      weights(count * adaptive_row_capacity(topology)),
+      delays(count * adaptive_row_capacity(topology)),
       phases(count), next_phases(count), natural_frequencies(count),
       plasticity_traces(count),
       neuron_count(count),
       edge_count(static_cast<std::uint32_t>(topology.weights.size())),
+      row_capacity(adaptive_row_capacity(topology)),
       ring_slots(topology.maximum_delay + 1U) {
     if (ring_slots == 0)
         throw std::length_error("Synaptic delay ring slot count overflow");
@@ -422,6 +435,7 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
                 device_state_->next_phases.get(),
                 device_state_->natural_frequencies.get(),
                 device_state_->row_offsets.get(),
+                device_state_->row_counts.get(),
                 device_state_->target_indices.get(),
                 device_state_->weights.get(),
                 count, p.dt, phase_config_.coupling_strength,
@@ -433,6 +447,7 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
         // The remaining CSR and current-ring pointers stay stable.
         const SynapseParametersGPU synapses{
             device_state_->row_offsets.get(),
+            device_state_->row_counts.get(),
             device_state_->target_indices.get(),
             device_state_->weights.get(),
             device_state_->delays.get(),
@@ -468,6 +483,7 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
             update_synaptic_plasticity(
                 device_state_->weights.get(),
                 device_state_->row_offsets.get(),
+                device_state_->row_counts.get(),
                 device_state_->target_indices.get(),
                 state.spike_flags,
                 device_state_->plasticity_traces.get(),
