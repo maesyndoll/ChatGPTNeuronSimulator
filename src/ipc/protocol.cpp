@@ -74,6 +74,83 @@ Json configuration_json(const ControllerConfigurationSnapshot& snapshot) {
     };
 }
 
+const char* cell_kind_name(tissue::CellKind kind) {
+    switch (kind) {
+        case tissue::CellKind::ExcitatoryNeuron: return "excitatory_neuron";
+        case tissue::CellKind::InhibitoryNeuron: return "inhibitory_neuron";
+        case tissue::CellKind::Astrocyte: return "astrocyte";
+        case tissue::CellKind::Microglia: return "microglia";
+        case tissue::CellKind::Oligodendrocyte: return "oligodendrocyte";
+    }
+    return "unknown";
+}
+
+const char* port_direction_name(tissue::PortDirection direction) {
+    return direction == tissue::PortDirection::Output ? "output" : "input";
+}
+
+Json tissue_snapshot_json(const TissueSnapshot& snapshot) {
+    Json modules = Json::array();
+    for (const auto& entry : snapshot.model.modules()) {
+        const auto& module = entry.second;
+        Json populations = Json::array();
+        for (const auto& population : module.populations) {
+            populations.push_back({
+                {"id", std::to_string(population.id)},
+                {"kind", cell_kind_name(population.kind)},
+                {"size", population.size},
+                {"mean_rate_hz", population.mean_rate_hz},
+                {"damage_fraction", population.damage_fraction},
+                {"metabolic_reserve", population.metabolic_reserve},
+                {"immune_activation", population.immune_activation}
+            });
+        }
+
+        Json ports = Json::array();
+        for (const auto& port : module.ports) {
+            ports.push_back({
+                {"id", std::to_string(port.id)},
+                {"population_id", std::to_string(port.population_id)},
+                {"direction", port_direction_name(port.direction)},
+                {"connection_capacity", port.connection_capacity}
+            });
+        }
+
+        modules.push_back({
+            {"id", std::to_string(module.id)},
+            {"name", module.name},
+            {"generation", std::to_string(module.generation)},
+            {"topology", {
+                {"excitatory_count", module.topology.excitatory_count},
+                {"inhibitory_count", module.topology.inhibitory_count},
+                {"synapse_count", module.topology.synapse_count()}
+            }},
+            {"populations", std::move(populations)},
+            {"ports", std::move(ports)}
+        });
+    }
+
+    Json adapters = Json::array();
+    for (const auto& adapter : snapshot.model.adapters()) {
+        adapters.push_back({
+            {"id", std::to_string(adapter.id)},
+            {"source_module_id", std::to_string(adapter.source_module_id)},
+            {"source_port_id", std::to_string(adapter.source_port_id)},
+            {"target_module_id", std::to_string(adapter.target_module_id)},
+            {"target_port_id", std::to_string(adapter.target_port_id)},
+            {"gain", adapter.gain},
+            {"delay_steps", adapter.delay_steps},
+            {"enabled", adapter.enabled}
+        });
+    }
+
+    return {
+        {"revision", std::to_string(snapshot.revision)},
+        {"modules", std::move(modules)},
+        {"adapters", std::move(adapters)}
+    };
+}
+
 Json telemetry_json(const TelemetrySnapshot& snapshot) {
     const auto& m = snapshot.metrics;
     return {
@@ -203,6 +280,33 @@ Json handle_request(SimulationController& controller, const Json& request) {
 
         const std::string command = request.at("command").get<std::string>();
         const Json& payload = request.at("payload");
+
+        if (command == "get_tissue") {
+            const auto snapshot = controller.tissue_snapshot();
+            if (payload.contains("after_revision")) {
+                const auto& value = payload.at("after_revision");
+                if (!value.is_string()) {
+                    throw std::invalid_argument(
+                        "after_revision must be a decimal string");
+                }
+                const auto text = value.get<std::string>();
+                if (text.empty() ||
+                    text.find_first_not_of("0123456789") != std::string::npos) {
+                    throw std::invalid_argument(
+                        "after_revision must be a decimal string");
+                }
+                const auto requested_revision = std::stoull(text);
+                if (requested_revision == snapshot.revision) {
+                    return success_response(request_id, {
+                        {"unchanged", true},
+                        {"revision", std::to_string(snapshot.revision)}
+                    });
+                }
+            }
+            Json result = tissue_snapshot_json(snapshot);
+            result["unchanged"] = false;
+            return success_response(request_id, std::move(result));
+        }
 
         if (command == "get_status") {
             return success_response(request_id, {
