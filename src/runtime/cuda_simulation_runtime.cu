@@ -22,6 +22,10 @@ constexpr std::uint64_t kSpikeEventCapacity64 = 4ULL * 1024ULL * 1024ULL;
 // temporary CUDA/runtime allocations instead of trusting cudaMalloc to fail.
 std::uint64_t estimate_device_bytes(
     std::uint64_t neurons, std::uint64_t edges, std::uint64_t ring_slots) {
+    if (ring_slots != 0 &&
+        neurons > std::numeric_limits<std::uint64_t>::max() / ring_slots) {
+        throw std::length_error("Estimated synaptic ring element count overflows");
+    }
     std::uint64_t bytes = 0;
     const auto add = [&bytes](std::uint64_t count, std::uint64_t element_size) {
         if (element_size != 0 &&
@@ -128,6 +132,71 @@ CudaSimulationRuntime::build_device_state(const ModelParameters& parameters) {
     const auto& p = parameters.simulation;
     const std::uint32_t total = p.neuron_count();
     if (total == 0) throw std::invalid_argument("Cannot initialize an empty network");
+
+    // Reject obviously oversized configurations before the host-side CSR
+    // generator allocates potentially hundreds of MiB of edge arrays.
+    const auto& tp = parameters.topology;
+    const long double e = p.excitatory_count;
+    const long double i = p.inhibitory_count;
+    const long double probabilities[] = {tp.p_ee, tp.p_ei, tp.p_ie, tp.p_ii};
+    for (const auto probability : probabilities) {
+        if (!std::isfinite(probability) || probability < 0.0L || probability > 1.0L)
+            throw std::invalid_argument("Connection probabilities must be finite and in [0, 1]");
+    }
+    const long double means[] = {
+        e * (e - 1.0L) * tp.p_ee,
+        e * i * tp.p_ei,
+        i * e * tp.p_ie,
+        i * (i - 1.0L) * tp.p_ii
+    };
+    long double expected_edges = 0.0L;
+    long double edge_variance = 0.0L;
+    for (int k = 0; k < 4; ++k) {
+        expected_edges += means[k];
+        edge_variance += means[k] * (1.0L - probabilities[k]);
+    }
+    const long double upper_edges_ld = std::ceil(
+        expected_edges + 6.0L * std::sqrt(edge_variance) + 64.0L);
+    if (!std::isfinite(static_cast<double>(upper_edges_ld)) ||
+        upper_edges_ld > static_cast<long double>(
+            std::numeric_limits<std::uint32_t>::max())) {
+        throw std::length_error("Estimated topology exceeds the 32-bit CSR edge limit");
+    }
+    const auto upper_edges = static_cast<std::uint64_t>(upper_edges_ld);
+    const std::uint64_t row_bytes =
+        (static_cast<std::uint64_t>(total) + 1ULL) * sizeof(std::uint32_t);
+    const std::uint64_t csr_bytes_per_edge =
+        sizeof(std::uint32_t) + sizeof(float) + sizeof(std::uint32_t);
+    if (row_bytes > tp.memory_budget_bytes ||
+        upper_edges > (tp.memory_budget_bytes - row_bytes) / csr_bytes_per_edge) {
+        throw std::length_error(
+            "Estimated network topology exceeds the configured host topology memory budget. "
+            "Reduce neuron counts or connection probabilities.");
+    }
+
+    const std::uint64_t ring_slots_estimate =
+        static_cast<std::uint64_t>(tp.maximum_delay) + 1ULL;
+    const std::uint64_t estimated_device_bytes = estimate_device_bytes(
+        total, upper_edges, ring_slots_estimate);
+    std::size_t preflight_free_bytes = 0;
+    std::size_t preflight_total_bytes = 0;
+    SPIKING_CUDA_CHECK(cudaMemGetInfo(
+        &preflight_free_bytes, &preflight_total_bytes));
+    const std::uint64_t preflight_reserve = std::max<std::uint64_t>(
+        256ULL * 1024ULL * 1024ULL,
+        static_cast<std::uint64_t>(preflight_total_bytes) / 10ULL);
+    const std::uint64_t preflight_usable =
+        preflight_free_bytes > preflight_reserve
+            ? preflight_free_bytes - preflight_reserve : 0ULL;
+    if (estimated_device_bytes > preflight_usable) {
+        throw std::length_error(
+            "Estimated network needs approximately " +
+            std::to_string(mib(estimated_device_bytes)) +
+            " MiB of GPU memory; only " +
+            std::to_string(mib(preflight_usable)) +
+            " MiB is safely available. Reduce neuron counts, connection "
+            "probabilities, or maximum synaptic delay.");
+    }
 
     const CSRTopology topology =
         generate_random_sparse_topology(p, parameters.topology);
