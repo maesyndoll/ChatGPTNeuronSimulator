@@ -117,10 +117,11 @@ ConnectomeField::ConnectomeField(QQuickItem* parent) : QQuickItem(parent) {
             }
         }
 
-        previous_temporal_positions_ = temporal_positions_;
+        const bool sameNeuronOrder = embedded_node_ids_ == nodes_;
+        previous_temporal_positions_ = sameNeuronOrder
+            ? temporal_positions_ : QVector<RenderPosition>{};
         temporal_positions_ = std::move(next);
-        if (previous_temporal_positions_.size() != temporal_positions_.size())
-            previous_temporal_positions_.clear();
+        embedded_node_ids_ = nodes_;
         embedding_transition_started_ms_ =
             QDateTime::currentMSecsSinceEpoch();
         update();
@@ -217,6 +218,7 @@ void ConnectomeField::setTopology(const QVariantMap& value) {
         embedding_watcher_generation_ = embedding_request_generation_;
         previous_temporal_positions_.clear();
         temporal_positions_.clear();
+        embedded_node_ids_.clear();
     }
     emit topologyChanged();
     update();
