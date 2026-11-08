@@ -21,6 +21,7 @@ SimulationBridge::SimulationBridge(QObject* parent)
         client_.sendRequest(QStringLiteral("subscribe_spike_events"));
         refreshConfiguration();
         refreshSpikeEvents();
+        refreshTissue();
     });
 
     connect(&client_, &SimulationClient::disconnected, this, [this]() {
@@ -34,6 +35,8 @@ SimulationBridge::SimulationBridge(QObject* parent)
         spike_events_generation_ = QStringLiteral("—");
         last_spike_event_sequence_ = 0;
         emit spikeEventsChanged();
+        tissue_snapshot_ = {};
+        emit tissueChanged();
         setStatusMessage(QStringLiteral("Disconnected from simulation server"));
     });
 
@@ -61,6 +64,10 @@ SimulationBridge::SimulationBridge(QObject* parent)
             updateConfiguration(result);
         } else if (command == QStringLiteral("get_spike_events")) {
             updateSpikeEvents(result);
+        } else if (command == QStringLiteral("get_tissue")) {
+            if (!result.value(QStringLiteral("unchanged")).toBool(false)) {
+                updateTissue(result);
+            }
         } else {
             const QJsonValue configurationValue =
                 result.value(QStringLiteral("configuration"));
@@ -250,6 +257,14 @@ QString SimulationBridge::spikeEventsGeneration() const {
     return spike_events_generation_;
 }
 
+QVariantMap SimulationBridge::tissueSnapshot() const {
+    return tissue_snapshot_.toVariantMap();
+}
+
+QString SimulationBridge::tissueRevision() const {
+    return tissue_snapshot_.value(QStringLiteral("revision")).toString(QStringLiteral("0"));
+}
+
 void SimulationBridge::connectToServer(const QString& socketPath) {
     if (connected_ || connection_status_ == QStringLiteral("Connecting...")) {
         return;
@@ -318,6 +333,13 @@ void SimulationBridge::applyParameters(const QVariantMap& parameters) {
         QJsonObject{
             {QStringLiteral("parameters"), parameterObject}
         });
+}
+
+void SimulationBridge::refreshTissue() {
+    if (connected_) {
+        client_.sendRequest(QStringLiteral("get_tissue"),
+            QJsonObject{{QStringLiteral("after_revision"), tissueRevision()}});
+    }
 }
 
 void SimulationBridge::refreshSpikeEvents() {
@@ -435,6 +457,11 @@ void SimulationBridge::updateSpikeEvents(const QJsonObject& spikeEvents) {
     }
 
     emit spikeEventsChanged();
+}
+
+void SimulationBridge::updateTissue(const QJsonObject& tissue) {
+    tissue_snapshot_ = tissue;
+    emit tissueChanged();
 }
 
 void SimulationBridge::updateConfiguration(
