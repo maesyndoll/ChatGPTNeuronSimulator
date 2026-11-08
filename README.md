@@ -48,10 +48,13 @@ ctest --test-dir build-cuda --output-on-failure
 
 The CUDA CTest includes `cuda_runtime_smoke`, which exercises initialization,
 step-boundary parameter updates, continued execution, full reinitialization,
-phase synchronization, and an STDP learning/control experiment. The STDP
-experiment checks that repeated activity changes mean absolute synaptic weight
-while a zero-learning control remains unchanged and configured bounds are
-respected.
+phase synchronization, STDP weight adaptation, and an associative-recall
+experiment. The runtime API accepts a per-neuron external-current vector that
+is copied to GPU memory and added during neuron integration. The recall test
+repeatedly co-activates two populations (A+B), then stimulates A alone and
+compares activity in the trained B population against an untrained C population
+and an identically seeded zero-STDP control. It tests a functional response,
+not merely a change in mean synaptic weight.
 The CPU-only tests do not verify CUDA compilation or GPU execution. See
 [`docs/RUNTIME_FOUNDATION.md`](docs/RUNTIME_FOUNDATION.md) for implementation
 notes and lifecycle semantics.
