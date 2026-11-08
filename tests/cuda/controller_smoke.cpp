@@ -78,6 +78,57 @@ int main() {
 
         SimulationController controller(parameters, 0, 2, 4);
 
+        // Tissue edits are serialized through the same worker that owns CUDA.
+        // A rejected candidate must not alter either the published tissue or
+        // its monotonically increasing revision.
+        const auto make_module = [](const std::string& name, bool output) {
+            tissue::NeuralModule module;
+            module.name = name;
+            module.topology.excitatory_count = 2;
+            module.topology.inhibitory_count = 1;
+            module.topology.row_offsets = {0, 1, 1, 1};
+            module.topology.target_indices = {1};
+            module.topology.weights = {0.1f};
+            module.topology.delays = {1};
+            module.populations = {
+                {1, tissue::CellKind::ExcitatoryNeuron, 2, 0, 0, 1, 0},
+                {2, tissue::CellKind::InhibitoryNeuron, 1, 0, 0, 1, 0}
+            };
+            module.ports = {{1, 1,
+                output ? tissue::PortDirection::Output : tissue::PortDirection::Input, 1}};
+            return module;
+        };
+
+        const auto tissue_revision = controller.transact_tissue(
+            [&](tissue::TissueModel& model) {
+                const auto source = model.add_module(make_module("source", true));
+                const auto target = model.add_module(make_module("target", false));
+                model.connect({0, source, 1, target, 1, 0.8f, 1, true});
+            });
+        const auto committed_tissue = controller.tissue_snapshot();
+        if (tissue_revision != 1 || committed_tissue.revision != 1 ||
+            committed_tissue.model.modules().size() != 2 ||
+            committed_tissue.model.adapters().size() != 1) {
+            std::cerr << "Controller tissue transaction commit failed\\n";
+            return EXIT_FAILURE;
+        }
+
+        bool tissue_rejected = false;
+        try {
+            controller.transact_tissue([](tissue::TissueModel& model) {
+                model.connect({0, 1, 1, 2, 1, 1.0f, 1, true});
+            });
+        } catch (const std::invalid_argument&) {
+            tissue_rejected = true;
+        }
+        const auto rolled_back_tissue = controller.tissue_snapshot();
+        if (!tissue_rejected || rolled_back_tissue.revision != 1 ||
+            rolled_back_tissue.model.modules().size() != 2 ||
+            rolled_back_tissue.model.adapters().size() != 1) {
+            std::cerr << "Controller tissue transaction rollback failed\\n";
+            return EXIT_FAILURE;
+        }
+
         if (controller.status() != ControllerStatus::Ready) {
             std::cerr << "Controller did not initialize in Ready state\n";
             return EXIT_FAILURE;
