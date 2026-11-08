@@ -711,6 +711,8 @@ int main() {
         association_control.run_steps(120);
         const auto active_recall = association_active.collect_spike_events();
         const auto control_recall = association_control.collect_spike_events();
+        const auto active_recall_voltage = association_active.collect_neuron_voltages();
+        const auto control_recall_voltage = association_control.collect_neuron_voltages();
 
         const auto count_group_spikes = [](const SpikeEventBatch& batch,
                                            std::uint32_t first,
@@ -732,6 +734,15 @@ int main() {
             control_recall, association_group_size, 2 * association_group_size);
         const auto control_c = count_group_spikes(
             control_recall, 2 * association_group_size, 3 * association_group_size);
+        const auto mean_group_voltage = [](const std::vector<float>& voltage,
+                                           std::uint32_t first, std::uint32_t last) {
+            double sum = 0.0;
+            for (std::uint32_t i = first; i < last; ++i) sum += voltage.at(i);
+            return sum / static_cast<double>(last - first);
+        };
+        const double active_a_voltage = mean_group_voltage(active_recall_voltage, 0, association_group_size);
+        const double active_b_voltage = mean_group_voltage(active_recall_voltage, association_group_size, 2 * association_group_size);
+        const double control_b_voltage = mean_group_voltage(control_recall_voltage, association_group_size, 2 * association_group_size);
         const auto active_recall_metrics = association_active.collect_metrics();
         const auto control_recall_metrics = association_control.collect_metrics();
         if (!active_recall_metrics.finite_state ||
@@ -746,6 +757,8 @@ int main() {
                       << "Training mean |w| active/control: "
                       << active_training_metrics.mean_absolute_synaptic_weight << "/"
                       << control_training_metrics.mean_absolute_synaptic_weight << '\n'
+                      << "Recall mean voltage A/B active: " << active_a_voltage << "/" << active_b_voltage << '\n'
+                      << "Recall mean voltage B control: " << control_b_voltage << '\n'
                       << "Recall A spikes active/control: " << active_recall_a << "/"
                       << control_recall_a << '\n'
                       << "Learned B response: " << learned_b << '\n'
