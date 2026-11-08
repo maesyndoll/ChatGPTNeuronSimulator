@@ -39,7 +39,7 @@ std::uint64_t estimate_device_bytes(
 
     // Neuron parameters (a,b,c,d,current), state (voltage,recovery),
     // spike counts/flags, and active-spike source list.
-    add(neurons, 5ULL * sizeof(float));
+    add(neurons, 6ULL * sizeof(float));
     add(neurons, 2ULL * sizeof(float));
     add(neurons, sizeof(std::uint32_t));
     add(neurons, sizeof(std::uint8_t));
@@ -68,6 +68,7 @@ std::uint64_t mib(std::uint64_t bytes) {
 CudaSimulationRuntime::DeviceState::DeviceState(
     std::size_t count, const CSRTopology& topology)
     : a(count), b(count), c(count), d(count), current(count),
+      external_current(count),
       voltage(count), recovery(count), spike_counts(count),
       spike_flags(count),
       active_spike_sources(count), active_spike_count(1),
@@ -260,6 +261,9 @@ CudaSimulationRuntime::build_device_state(const ModelParameters& parameters) {
     }
 
     SPIKING_CUDA_CHECK(cudaMemsetAsync(
+        next->external_current.get(), 0,
+        next->external_current.size() * sizeof(float), stream));
+    SPIKING_CUDA_CHECK(cudaMemsetAsync(
         next->plasticity_traces.get(), 0,
         next->plasticity_traces.size() * sizeof(float), stream));
     SPIKING_CUDA_CHECK(cudaMemsetAsync(
@@ -347,6 +351,21 @@ void CudaSimulationRuntime::configure_phase_dynamics(
     phase_config_ = config;
 }
 
+void CudaSimulationRuntime::set_external_current(
+    const std::vector<float>& current) {
+    if (!device_state_ || current.size() != device_state_->neuron_count)
+        throw std::invalid_argument("External current vector must match neuron count");
+    for (const float value : current) {
+        if (!std::isfinite(value))
+            throw std::invalid_argument("External current values must be finite");
+    }
+    device_state_->stream.synchronize();
+    SPIKING_CUDA_CHECK(cudaMemcpyAsync(
+        device_state_->external_current.get(), current.data(),
+        current.size() * sizeof(float), cudaMemcpyHostToDevice,
+        device_state_->stream.get()));
+}
+
 void CudaSimulationRuntime::run() {
     run_steps(active_parameters_.simulation.steps);
 }
@@ -403,7 +422,8 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
 
         simulate_neurons(
             params, state, count, p.dt, p.threshold,
-            device_state_->synaptic_current.get(), ring_slot,
+            device_state_->synaptic_current.get(),
+            device_state_->external_current.get(), ring_slot,
             completed_steps_ + 1ULL,
             device_state_->stream.get());
 
