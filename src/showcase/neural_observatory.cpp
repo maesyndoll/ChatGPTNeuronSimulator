@@ -1,9 +1,10 @@
 #include "runtime/cuda_simulation_runtime.cuh"
+#include "cuda/cuda_check.cuh"
 
 #include <cuda_runtime.h>
 
 #include <algorithm>
-#include <cmath>
+#include <cstdlib>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -90,11 +91,11 @@ void write_report(const std::filesystem::path& directory,
     if (!html) throw std::runtime_error("could not create " + html_path.string());
 
     constexpr double width = 1200.0;
-    constexpr double height = 760.0;
+    constexpr double height = 860.0;
     constexpr double left = 76.0;
     constexpr double right = 28.0;
     constexpr double top = 100.0;
-    constexpr double plot_height = 500.0;
+    constexpr double plot_height = 480.0;
     const double plot_width = width - left - right;
     const std::size_t maximum_rendered_events = 250000;
     const std::size_t stride = std::max<std::size_t>(
@@ -168,11 +169,38 @@ void write_report(const std::filesystem::path& directory,
          << "\" y=\"" << top + plot_height + 52
          << "\" text-anchor=\"middle\">Simulation step</text>"
          << "<text class=\"tick\" transform=\"translate(18 "
-         << top + plot_height / 2 << ") rotate(-90)\" text-anchor=\"middle\">Neuron ID</text>"
-         << "<circle class=\"exc\" cx=\"930\" cy=\"700\" r=\"5\"/>"
-         << "<text class=\"tick\" x=\"942\" y=\"704\">Excitatory</text>"
-         << "<circle class=\"inh\" cx=\"1050\" cy=\"700\" r=\"5\"/>"
-         << "<text class=\"tick\" x=\"1062\" y=\"704\">Inhibitory</text>"
+         << top + plot_height / 2 << ") rotate(-90)\" text-anchor=\"middle\">Neuron ID</text>";
+
+    const auto maximum_bin = std::max(
+        *std::max_element(excitatory_bins.begin(), excitatory_bins.end()),
+        *std::max_element(inhibitory_bins.begin(), inhibitory_bins.end()));
+    const double activity_top = 690.0;
+    const double activity_height = 82.0;
+    const double bin_width = plot_width / static_cast<double>(excitatory_bins.size());
+    const double bar_width = bin_width * 0.34;
+    html << "<text class=\"tick\" x=\"" << left
+         << "\" y=\"678\">Spike activity per time window</text>"
+         << "<line class=\"axis\" x1=\"" << left << "\" y1=\"780\" x2=\""
+         << left + plot_width << "\" y2=\"780\"/>";
+    for (std::size_t bin = 0; bin < excitatory_bins.size(); ++bin) {
+        const double x = left + bin_width * static_cast<double>(bin);
+        const double exc_height = maximum_bin == 0 ? 0.0 :
+            activity_height * static_cast<double>(excitatory_bins[bin]) /
+            static_cast<double>(maximum_bin);
+        const double inh_height = maximum_bin == 0 ? 0.0 :
+            activity_height * static_cast<double>(inhibitory_bins[bin]) /
+            static_cast<double>(maximum_bin);
+        html << "<rect class=\"exc\" x=\"" << x + bin_width * 0.10
+             << "\" y=\"" << 780.0 - exc_height << "\" width=\"" << bar_width
+             << "\" height=\"" << exc_height << "\"/>"
+             << "<rect class=\"inh\" x=\"" << x + bin_width * 0.54
+             << "\" y=\"" << 780.0 - inh_height << "\" width=\"" << bar_width
+             << "\" height=\"" << inh_height << "\"/>";
+    }
+    html << "<circle class=\"exc\" cx=\"930\" cy=\"830\" r=\"5\"/>"
+         << "<text class=\"tick\" x=\"942\" y=\"834\">Excitatory</text>"
+         << "<circle class=\"inh\" cx=\"1050\" cy=\"830\" r=\"5\"/>"
+         << "<text class=\"tick\" x=\"1062\" y=\"834\">Inhibitory</text>"
          << "</svg></section><p class=\"muted\">Each dot is a GPU-recorded spike. "
          << "The raster is capped at " << maximum_rendered_events
          << " rendered points for browser responsiveness; the CSV contains every recorded event. "
