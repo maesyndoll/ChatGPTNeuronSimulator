@@ -461,8 +461,15 @@ int main() {
         const auto base_opposed_spikes = count_meta_target_spikes(meta_base_spikes, 2);
         const auto gated_aligned_spikes = count_meta_target_spikes(meta_gated_spikes, 1);
         const auto gated_opposed_spikes = count_meta_target_spikes(meta_gated_spikes, 2);
+        const auto count_meta_source_spikes = [](const SpikeEventBatch& batch) {
+            std::uint64_t count = 0;
+            for (const auto& event : batch.events)
+                if (event.neuron_id == 0) ++count;
+            return count;
+        };
         if (!meta_base_metrics.finite_state || !meta_gated_metrics.finite_state ||
-            !source_spiked(meta_base_spikes) || !source_spiked(meta_gated_spikes) ||
+            count_meta_source_spikes(meta_base_spikes) == 0 ||
+            count_meta_source_spikes(meta_gated_spikes) == 0 ||
             meta_base_spikes.dropped_events != 0 || meta_gated_spikes.dropped_events != 0 ||
             base_aligned_spikes == 0 || base_opposed_spikes == 0 ||
             gated_aligned_spikes == 0 || gated_opposed_spikes != 0) {
