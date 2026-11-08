@@ -21,6 +21,7 @@ ApplicationWindow {
     property real cloudRotation: 0
     property var activeNeuronIds: ({})
     property int cloudNodeCount: 180
+    property int selectedNeuronId: -1
     property var rateHistory: []
     property int historyLimit: 1200
     property bool parametersInitialized: false
@@ -437,7 +438,13 @@ ApplicationWindow {
                                 color: neuronId < excitatoryCount ? "#54cbb5" : "#f0a45e"
                                 opacity: firing ? 1.0 : 0.22 + (zDepth + 1) * 0.13
                                 border.width: firing ? 2 : 0
-                                border.color: "#e8f5ff"
+                                border.color: window.selectedNeuronId === neuronId ? "#ffffff" : "#e8f5ff"
+                                border.width: window.selectedNeuronId === neuronId ? 3 : (firing ? 2 : 0)
+                                MouseArea {
+                                    anchors.fill: parent
+                                    anchors.margins: -5
+                                    onClicked: window.selectedNeuronId = neuronId
+                                }
                             }
                         }
                         Label {
@@ -508,6 +515,41 @@ ApplicationWindow {
 
             // Each Dial is a normalized control; the displayed number is the
             // physical parameter value sent to the server, not the dial fraction.
+            Rectangle {
+                Layout.fillWidth: true
+                radius: 12
+                color: "#192433"
+                border.color: "#2b3a4d"
+                implicitHeight: stimulationColumn.implicitHeight + 24
+                ColumnLayout {
+                    id: stimulationColumn
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    spacing: 8
+                    Label { text: "Neural intervention"; color: "#f0f4fa"; font.pixelSize: 15; font.bold: true }
+                    Label {
+                        text: selectedNeuronId >= 0 ? "Selected neuron " + selectedNeuronId : "Click a neuron in the 3D field to select it"
+                        color: "#8de0ca"; font.pixelSize: 12
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Label { text: "Current"; color: "#a9bbcf" }
+                        SpinBox { id: stimulusAmplitude; from: -500; to: 500; value: 100; editable: true }
+                        Label { text: "Duration (steps)"; color: "#a9bbcf" }
+                        SpinBox { id: stimulusDuration; from: 1; to: 100000; value: 20; editable: true }
+                        Button {
+                            text: "Inject pulse"
+                            enabled: simulation.connected && simulation.simulationStatus === "running" && selectedNeuronId >= 0
+                            onClicked: simulation.stimulateNeurons([selectedNeuronId], stimulusAmplitude.value, stimulusDuration.value)
+                        }
+                    }
+                    Label {
+                        text: "External input is applied asynchronously at a simulation batch boundary."
+                        color: "#71839a"; font.pixelSize: 10
+                    }
+                }
+            }
+
             Rectangle {
                 Layout.fillWidth: true
                 radius: 12
