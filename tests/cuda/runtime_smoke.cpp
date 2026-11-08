@@ -2,7 +2,8 @@
 
 #include <cmath>
 #include <cstdlib>
-#include <iostream>\n#include <stdexcept>
+#include <iostream>
+#include <stdexcept>
 
 int main() {
     using namespace spiking;
