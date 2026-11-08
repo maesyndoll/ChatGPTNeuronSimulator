@@ -44,6 +44,18 @@ if(BUILD_TESTING)
     add_dependencies(topology_tests check_parameter_schema)
     add_test(NAME topology_tests COMMAND topology_tests)
 
+    add_executable(temporal_embedding_tests
+        tests/unit/temporal_embedding_tests.cpp
+        src/connectome/temporal_embedding.cpp
+    )
+    target_include_directories(temporal_embedding_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_compile_options(temporal_embedding_tests PRIVATE
+        $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+    )
+    add_test(NAME temporal_embedding_tests COMMAND temporal_embedding_tests)
+
     add_executable(tissue_model_tests
         tests/unit/tissue_model_tests.cpp
         src/tissue/tissue_model.cpp
