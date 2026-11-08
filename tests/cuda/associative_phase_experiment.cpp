@@ -185,10 +185,31 @@ int main() {
         Condition plastic_phase("plastic_phase", true, true, parameters, graph);
         Condition plastic_open("plastic_open_loop", true, false, parameters, graph);
         Condition fixed_phase("fixed_phase_control", false, true, parameters, graph);
+        Condition pruning_probe("pruning_probe", true, false, parameters, graph);
+        auto pruning_learning = pruning_probe.runtime.synaptic_plasticity();
+        pruning_learning.potentiation_rate = 0.0f;
+        pruning_learning.depression_rate = 0.0f;
+        pruning_probe.runtime.configure_synaptic_plasticity(pruning_learning);
+        AdaptiveTopologyConfig pruning_config;
+        pruning_config.enabled = true;
+        pruning_config.update_interval_steps = 8;
+        pruning_config.growth_trace_threshold = 100.0f;
+        pruning_config.prune_weight_threshold = 0.06f;
+        pruning_config.growth_weight = 0.025f;
+        pruning_probe.runtime.configure_adaptive_topology(pruning_config);
 
         const auto a_input = group_current(kA, 100.0f);
         const auto b_input = group_current(kB, 100.0f);
         const std::vector<float> silence(kExcitatory + kInhibitory, 0.0f);
+
+        // Explicit structural-shrink probe: with growth disabled by a high
+        // co-activity threshold, sub-threshold edges must be removed on GPU.
+        SpikeEventBatch pruning_events;
+        run_batch(pruning_probe, a_input, 4, pruning_events);
+        run_batch(pruning_probe, b_input, 4, pruning_events);
+        const auto pruned_metrics = pruning_probe.runtime.collect_metrics();
+        if (pruned_metrics.active_synapses != 0)
+            throw std::runtime_error("Adaptive CSR pruning did not remove weak edges");
 
         std::ofstream csv("associative_phase_experiment.csv");
         if (!csv) throw std::runtime_error("Could not create experiment CSV");
@@ -210,6 +231,8 @@ int main() {
             }
         }
 
+        const auto learned_graph = plastic_phase.runtime.collect_topology();
+        learned_graph.validate();
         const auto learned_topology = plastic_phase.runtime.collect_metrics();
         const auto fixed_topology = fixed_phase.runtime.collect_metrics();
         if (learned_topology.active_synapses <= graph.synapse_count())
