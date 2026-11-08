@@ -233,6 +233,16 @@ int main() {
 
         const auto learned_graph = plastic_phase.runtime.collect_topology();
         learned_graph.validate();
+        for (std::uint32_t source = kA; source < kA + kGroup; ++source) {
+            if (learned_graph.row_offsets[source + 1] -
+                    learned_graph.row_offsets[source] <= 1)
+                throw std::runtime_error("Causal A-to-B structural growth was not learned");
+        }
+        for (std::uint32_t source = kB; source < kB + kGroup; ++source) {
+            if (learned_graph.row_offsets[source + 1] -
+                    learned_graph.row_offsets[source] > 1)
+                throw std::runtime_error("Structural growth created an untrained B-to-A pathway");
+        }
         const auto learned_topology = plastic_phase.runtime.collect_metrics();
         const auto fixed_topology = fixed_phase.runtime.collect_metrics();
         if (learned_topology.active_synapses <= graph.synapse_count())
