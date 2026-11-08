@@ -44,6 +44,7 @@ std::uint64_t estimate_device_bytes(
     add(neurons, sizeof(std::uint32_t));
     add(neurons, sizeof(std::uint8_t));
     add(neurons, sizeof(std::uint32_t));
+    add(neurons, 3ULL * sizeof(float));      // phase, next phase, natural frequency
 
     add(1, sizeof(std::uint32_t));             // active spike count
     add(kSpikeEventCapacity64, sizeof(std::uint64_t));
@@ -334,18 +335,6 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
     const auto state = device_state_->neuron_state();
     const auto count = static_cast<std::uint32_t>(device_state_->neuron_count);
 
-    const SynapseParametersGPU synapses{
-        device_state_->row_offsets.get(),
-        device_state_->target_indices.get(),
-        device_state_->weights.get(),
-        device_state_->delays.get(),
-        device_state_->edge_count,
-        device_state_->synaptic_current.get(),
-        device_state_->ring_slots,
-        phase_config_.enabled ? device_state_->phases.get() : nullptr,
-        phase_config_.enabled ? phase_config_.modulation_strength : 0.0f
-    };
-
     for (std::uint32_t i = 0; i < steps; ++i) {
         const std::uint32_t ring_slot = static_cast<std::uint32_t>(
             completed_steps_ % device_state_->ring_slots);
@@ -362,6 +351,20 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
                 device_state_->stream.get());
             device_state_->phases.swap(device_state_->next_phases);
         }
+
+        // Refresh the phase pointer after the ping-pong buffer swap.
+        // The remaining CSR and current-ring pointers stay stable.
+        const SynapseParametersGPU synapses{
+            device_state_->row_offsets.get(),
+            device_state_->target_indices.get(),
+            device_state_->weights.get(),
+            device_state_->delays.get(),
+            device_state_->edge_count,
+            device_state_->synaptic_current.get(),
+            device_state_->ring_slots,
+            phase_config_.enabled ? device_state_->phases.get() : nullptr,
+            phase_config_.enabled ? phase_config_.modulation_strength : 0.0f
+        };
 
         // The flags still describe spikes from the preceding integration.
         // Both kernels execute in-order on the same stream.
