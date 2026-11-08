@@ -105,6 +105,7 @@ void symmetric_eigen(std::vector<double> matrix, std::size_t n,
 void embed_component(const std::vector<std::uint32_t>& members,
                      const std::vector<std::vector<Arc>>& forward_graph,
                      const std::vector<std::vector<Arc>>& reverse_graph,
+                     const std::vector<std::vector<Arc>>& weak_graph,
                      std::uint32_t component_id,
                      const std::vector<std::uint32_t>& component,
                      std::size_t landmark_limit,
@@ -120,18 +121,20 @@ void embed_component(const std::vector<std::uint32_t>& members,
         landmarks.push_back(members[index]);
     }
 
-    std::vector<std::vector<double>> from(m), to(m);
+    std::vector<std::vector<double>> from(m), to(m), weak_distances(m);
     for (std::size_t i = 0; i < m; ++i) {
         from[i] = dijkstra(landmarks[i], forward_graph, component, component_id);
         to[i] = dijkstra(landmarks[i], reverse_graph, component, component_id);
+        weak_distances[i] = dijkstra(landmarks[i], weak_graph, component, component_id);
     }
 
     std::vector<double> distances(m*m, 0.0);
     double max_distance = 1.0;
     for (std::size_t i = 0; i < m; ++i) {
         for (std::size_t j = 0; j < m; ++j) {
-            const double d = symmetric_distance(
+            double d = symmetric_distance(
                 from[i][landmarks[j]], to[i][landmarks[j]]);
+            if (!std::isfinite(d)) d = weak_distances[i][landmarks[j]];
             distances[i*m+j] = std::isfinite(d) ? d : 0.0;
             max_distance = std::max(max_distance, distances[i*m+j]);
         }
@@ -167,8 +170,10 @@ void embed_component(const std::vector<std::uint32_t>& members,
 
     // Landmark nodes have exact MDS coordinates. Other nodes are trilaterated
     // from their temporal distances to the landmark set.
-    for (std::size_t i = 0; i < m; ++i)
+    for (std::size_t i = 0; i < m; ++i) {
         output[landmarks[i]] = landmark_positions[i];
+        output[landmarks[i]].x += offset;
+    }
 
     for (const auto node : members) {
         bool is_landmark = false;
@@ -176,10 +181,12 @@ void embed_component(const std::vector<std::uint32_t>& members,
         if (is_landmark) continue;
         std::vector<double> normal(9, 0.0), rhs(3, 0.0);
         std::size_t usable = 0;
-        const double d0 = symmetric_distance(from[0][node], to[0][node]);
-        if (!std::isfinite(d0)) { output[node] = {0,0,0}; continue; }
+        double d0 = symmetric_distance(from[0][node], to[0][node]);
+        if (!std::isfinite(d0)) d0 = weak_distances[0][node];
+        if (!std::isfinite(d0)) { output[node] = {offset,0,0}; continue; }
         for (std::size_t k = 1; k < m; ++k) {
-            const double dk = symmetric_distance(from[k][node], to[k][node]);
+            double dk = symmetric_distance(from[k][node], to[k][node]);
+            if (!std::isfinite(dk)) dk = weak_distances[k][node];
             if (!std::isfinite(dk)) continue;
             const Vec3 a = landmark_positions[k], b = landmark_positions[0];
             const double row[3] = {2.0*(a.x-b.x), 2.0*(a.y-b.y), 2.0*(a.z-b.z)};
@@ -273,7 +280,7 @@ EmbeddingResult embed_temporal_graph(std::size_t node_count,
     double offset = 0.0;
     const auto landmark_count = std::max<std::size_t>(4, options.landmark_count);
     for (std::uint32_t id = 0; id < members.size(); ++id) {
-        embed_component(members[id], forward, reverse, id, result.components,
+        embed_component(members[id], forward, reverse, weak, id, result.components,
                         landmark_count, offset, result.positions);
         offset += 2.0 + std::max(0.0, options.component_gap);
     }
