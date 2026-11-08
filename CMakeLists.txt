@@ -162,6 +162,27 @@ if(SPIKINGMODEL_ENABLE_CUDA)
     set_target_properties(spiking_model PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
     add_dependencies(spiking_model check_parameter_schema)
 
+    # Standalone, reproducible GPU spike-raster showcase with HTML/CSV output.
+    add_executable(neural_observatory
+        src/showcase/neural_observatory.cpp
+        src/cuda/neuron_izhikevich.cu
+        src/runtime/cuda_simulation_runtime.cu
+        src/topology/topology_generator.cpp
+    )
+    target_include_directories(neural_observatory PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(neural_observatory PRIVATE CUDA::cudart)
+    target_compile_options(neural_observatory PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+    )
+    set_target_properties(neural_observatory PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+    )
+    add_dependencies(neural_observatory check_parameter_schema)
+
     if(BUILD_TESTING)
         add_executable(cuda_runtime_smoke
             tests/cuda/runtime_smoke.cpp
@@ -177,6 +198,25 @@ if(SPIKINGMODEL_ENABLE_CUDA)
             CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
         )
         add_test(NAME cuda_runtime_smoke COMMAND cuda_runtime_smoke)
+
+        # Larger associative-memory and adaptive phase-routing experiment.
+        add_executable(associative_phase_experiment
+            tests/cuda/associative_phase_experiment.cpp
+            src/cuda/neuron_izhikevich.cu
+            src/runtime/cuda_simulation_runtime.cu
+            src/topology/topology_generator.cpp
+        )
+        target_include_directories(associative_phase_experiment PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+        target_link_libraries(associative_phase_experiment PRIVATE CUDA::cudart)
+        set_target_properties(associative_phase_experiment PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON
+            CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+        )
+        add_test(NAME associative_phase_experiment COMMAND associative_phase_experiment)
+        set_tests_properties(associative_phase_experiment PROPERTIES TIMEOUT 180)
+        add_dependencies(associative_phase_experiment check_parameter_schema)
         add_dependencies(cuda_runtime_smoke check_parameter_schema)
 
         add_executable(controller_smoke

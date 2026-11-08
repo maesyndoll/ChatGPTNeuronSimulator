@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <stdexcept>
+#include <vector>
 
 int main() {
     using namespace spiking;
@@ -379,6 +381,501 @@ int main() {
         }
 
         std::cout << "GPU delay-ring reuse test passed\n";
+
+        // Phase-gated meta-topology experiment. One source projects to two
+        // identical targets. The test verifies actual target spikes, not only
+        // a tiny final-voltage difference: aligned routing should recruit its
+        // target, while anti-phase routing should suppress that same pathway.
+        auto make_meta_topology_parameters = [] {
+            ModelParameters p;
+            p.simulation.excitatory_count = 3;
+            p.simulation.inhibitory_count = 1;
+            p.simulation.steps = 1;
+            p.simulation.dt = 0.25f;
+            p.simulation.threshold = -64.9995f;
+            p.simulation.initial_voltage_min = -65.0f;
+            p.simulation.initial_voltage_max = -65.0f;
+            p.simulation.excitatory_current_min = 0.0f;
+            p.simulation.excitatory_current_max = 0.0f;
+            p.simulation.inhibitory_current_min = 0.0f;
+            p.simulation.inhibitory_current_max = 0.0f;
+            p.simulation.random_seed = 12345U;
+            p.topology.p_ee = 0.0;
+            p.topology.p_ei = 0.0;
+            p.topology.p_ie = 0.0;
+            p.topology.p_ii = 0.0;
+            p.topology.minimum_delay = 1;
+            p.topology.maximum_delay = 1;
+            p.topology.fibonacci_delays = {1};
+            p.topology.fibonacci_weights = {1.0};
+            return p;
+        };
+        auto make_meta_topology = [] {
+            CSRTopology graph;
+            graph.excitatory_count = 3;
+            graph.inhibitory_count = 1;
+            graph.minimum_delay = 1;
+            graph.maximum_delay = 1;
+            graph.row_offsets = {0, 2, 2, 2, 2};
+            graph.target_indices = {1, 2};
+            graph.weights = {40.0f, 40.0f};
+            graph.delays = {1, 1};
+            graph.validate();
+            return graph;
+        };
+        CudaSimulationRuntime meta_unmodulated(
+            make_meta_topology_parameters(), make_meta_topology());
+        CudaSimulationRuntime meta_gated(
+            make_meta_topology_parameters(), make_meta_topology());
+        std::vector<float> meta_input(4, 0.0f);
+        meta_input[0] = 4.0f;
+        meta_unmodulated.set_external_current(meta_input);
+        meta_gated.set_external_current(meta_input);
+        const std::vector<float> aligned_and_opposed_phases{
+            0.0f, 0.0f, 3.14159265358979323846f, 0.0f};
+        meta_unmodulated.set_neuron_phases(aligned_and_opposed_phases);
+        meta_gated.set_neuron_phases(aligned_and_opposed_phases);
+        PhaseDynamicsConfig meta_config;
+        meta_config.enabled = true;
+        meta_config.coupling_strength = 0.0f;
+        meta_config.modulation_strength = 1.0f;
+        meta_config.evolve_phases = false;
+        meta_gated.configure_phase_dynamics(meta_config);
+
+        // Step 1 creates a source spike. On step 2 the delay-1 event is
+        // delivered using the phase relationship currently stored on the GPU.
+        meta_unmodulated.run_steps(2);
+        meta_gated.run_steps(2);
+        const auto meta_base_metrics = meta_unmodulated.collect_metrics();
+        const auto meta_gated_metrics = meta_gated.collect_metrics();
+        const auto meta_base_spikes = meta_unmodulated.collect_spike_events();
+        const auto meta_gated_spikes = meta_gated.collect_spike_events();
+        const auto count_meta_target_spikes = [](const SpikeEventBatch& batch,
+                                                  std::uint32_t target) {
+            std::uint64_t count = 0;
+            for (const auto& event : batch.events)
+                if (event.neuron_id == target) ++count;
+            return count;
+        };
+        const auto base_aligned_spikes = count_meta_target_spikes(meta_base_spikes, 1);
+        const auto base_opposed_spikes = count_meta_target_spikes(meta_base_spikes, 2);
+        const auto gated_aligned_spikes = count_meta_target_spikes(meta_gated_spikes, 1);
+        const auto gated_opposed_spikes = count_meta_target_spikes(meta_gated_spikes, 2);
+        const auto count_meta_source_spikes = [](const SpikeEventBatch& batch) {
+            std::uint64_t count = 0;
+            for (const auto& event : batch.events)
+                if (event.neuron_id == 0) ++count;
+            return count;
+        };
+        if (!meta_base_metrics.finite_state || !meta_gated_metrics.finite_state ||
+            count_meta_source_spikes(meta_base_spikes) == 0 ||
+            count_meta_source_spikes(meta_gated_spikes) == 0 ||
+            meta_base_spikes.dropped_events != 0 || meta_gated_spikes.dropped_events != 0 ||
+            base_aligned_spikes == 0 || base_opposed_spikes == 0 ||
+            gated_aligned_spikes == 0 || gated_opposed_spikes != 0) {
+            std::cerr << "GPU phase-gated meta-topology experiment failed\n"
+                      << "Ungated aligned/opposed target spikes: "
+                      << base_aligned_spikes << "/" << base_opposed_spikes << '\n'
+                      << "Gated aligned/opposed target spikes: "
+                      << gated_aligned_spikes << "/" << gated_opposed_spikes << '\n';
+            return EXIT_FAILURE;
+        }
+        std::cout << "GPU phase-gated meta-topology test passed; "
+                  << "ungated target spikes=" << base_aligned_spikes
+                  << "/" << base_opposed_spikes
+                  << ", gated target spikes=" << gated_aligned_spikes
+                  << "/" << gated_opposed_spikes << '\n';
+
+        // Phase dynamics test: the same deterministic delayed connection
+        // must remain excitatory, while phase gating attenuates its delivered
+        // current relative to the unmodulated baseline.
+        CudaSimulationRuntime phase_baseline(make_propagation_parameters(true));
+        CudaSimulationRuntime phase_gated(make_propagation_parameters(true));
+        CudaSimulationRuntime phase_disconnected(make_propagation_parameters(false));
+        CudaSimulationRuntime phase_uncoupled(make_propagation_parameters(true));
+        PhaseDynamicsConfig phase_config;
+        phase_config.enabled = true;
+        phase_config.coupling_strength = 50.0f;
+        phase_config.modulation_strength = 1.0f;
+        phase_gated.configure_phase_dynamics(phase_config);
+        auto uncoupled_config = phase_config;
+        uncoupled_config.coupling_strength = 0.0f;
+        phase_uncoupled.configure_phase_dynamics(uncoupled_config);
+        phase_baseline.run_steps(3);
+        phase_gated.run_steps(3);
+        phase_disconnected.run_steps(3);
+        phase_uncoupled.run_steps(3);
+        const auto baseline_phase_metrics = phase_baseline.collect_metrics();
+        const auto gated_phase_metrics = phase_gated.collect_metrics();
+        const auto disconnected_phase_metrics = phase_disconnected.collect_metrics();
+        const auto uncoupled_phase_metrics = phase_uncoupled.collect_metrics();
+        if (!baseline_phase_metrics.finite_state ||
+            !gated_phase_metrics.finite_state ||
+            !disconnected_phase_metrics.finite_state ||
+            !uncoupled_phase_metrics.finite_state ||
+            baseline_phase_metrics.completed_steps != 3 ||
+            gated_phase_metrics.completed_steps != 3 ||
+            disconnected_phase_metrics.completed_steps != 3 ||
+            uncoupled_phase_metrics.completed_steps != 3 ||
+            gated_phase_metrics.mean_voltage_mv <=
+                disconnected_phase_metrics.mean_voltage_mv + 1.0e-7 ||
+            gated_phase_metrics.mean_voltage_mv <=
+                uncoupled_phase_metrics.mean_voltage_mv + 1.0e-7 ||
+            gated_phase_metrics.mean_voltage_mv >=
+                baseline_phase_metrics.mean_voltage_mv - 1.0e-7) {
+            std::cerr << "GPU phase-gated synaptic routing test failed\n"
+                      << "Baseline mean voltage: "
+                      << baseline_phase_metrics.mean_voltage_mv << '\n'
+                      << "Phase-gated mean voltage: "
+                      << gated_phase_metrics.mean_voltage_mv << '\n';
+            return EXIT_FAILURE;
+        }
+
+        bool rejected_invalid_phase_config = false;
+        try {
+            PhaseDynamicsConfig invalid_phase_config;
+            invalid_phase_config.enabled = true;
+            invalid_phase_config.modulation_strength = 1.5f;
+            phase_gated.configure_phase_dynamics(invalid_phase_config);
+        } catch (const std::invalid_argument&) {
+            rejected_invalid_phase_config = true;
+        }
+        if (!rejected_invalid_phase_config) {
+            std::cerr << "Invalid phase modulation configuration was accepted\n";
+            return EXIT_FAILURE;
+        }
+
+        // A fully connected excitatory population should synchronize under
+        // strong positive coupling. Controls share identical initial phases.
+        auto make_coherence_parameters = [] {
+            ModelParameters p;
+            p.simulation.excitatory_count = 48;
+            p.simulation.inhibitory_count = 1;
+            p.simulation.steps = 1;
+            p.simulation.dt = 0.01f;
+            p.simulation.threshold = 100.0f;
+            p.simulation.initial_voltage_min = -65.0f;
+            p.simulation.initial_voltage_max = -65.0f;
+            p.simulation.excitatory_current_min = 0.0f;
+            p.simulation.excitatory_current_max = 0.0f;
+            p.simulation.inhibitory_current_min = 0.0f;
+            p.simulation.inhibitory_current_max = 0.0f;
+            p.simulation.random_seed = 424242U;
+            p.topology.p_ee = 1.0;
+            p.topology.p_ei = 0.0;
+            p.topology.p_ie = 0.0;
+            p.topology.p_ii = 0.0;
+            p.topology.topology_seed = 10101ULL;
+            p.topology.delay_seed = 20202ULL;
+            p.topology.delay_distribution = DelayDistribution::Uniform;
+            p.topology.minimum_delay = 1;
+            p.topology.maximum_delay = 1;
+            p.topology.fibonacci_delays = {1};
+            p.topology.fibonacci_weights = {1.0};
+            return p;
+        };
+        CudaSimulationRuntime coherence_coupled_a(make_coherence_parameters());
+        CudaSimulationRuntime coherence_coupled_b(make_coherence_parameters());
+        CudaSimulationRuntime coherence_uncoupled(make_coherence_parameters());
+        PhaseDynamicsConfig coherence_config;
+        coherence_config.enabled = true;
+        coherence_config.coupling_strength = 50.0f;
+        coherence_config.modulation_strength = 0.0f;
+        coherence_coupled_a.configure_phase_dynamics(coherence_config);
+        coherence_coupled_b.configure_phase_dynamics(coherence_config);
+        auto no_coupling_config = coherence_config;
+        no_coupling_config.coupling_strength = 0.0f;
+        coherence_uncoupled.configure_phase_dynamics(no_coupling_config);
+        coherence_coupled_a.run_steps(1000);
+        coherence_coupled_b.run_steps(1000);
+        coherence_uncoupled.run_steps(1000);
+        const auto coherence_a = coherence_coupled_a.collect_metrics();
+        const auto coherence_b = coherence_coupled_b.collect_metrics();
+        const auto coherence_control = coherence_uncoupled.collect_metrics();
+        if (!coherence_a.finite_state || !coherence_b.finite_state ||
+            !coherence_control.finite_state ||
+            coherence_a.phase_coherence < 0.0 ||
+            coherence_a.phase_coherence > 1.000001 ||
+            coherence_a.phase_coherence <= coherence_control.phase_coherence + 0.1 ||
+            std::abs(coherence_a.phase_coherence -
+                     coherence_b.phase_coherence) > 1.0e-6) {
+            std::cerr << "GPU phase synchronization experiment failed\n"
+                      << "Coupled coherence: " << coherence_a.phase_coherence << '\n'
+                      << "Uncoupled coherence: " << coherence_control.phase_coherence << '\n'
+                      << "Repeat coherence: " << coherence_b.phase_coherence << '\n';
+            return EXIT_FAILURE;
+        }
+        std::cout << "GPU phase synchronization test passed; coupled R="
+                  << coherence_a.phase_coherence
+                  << ", uncoupled R=" << coherence_control.phase_coherence
+                  << '\n';
+
+        std::cout << "GPU phase dynamics and phase-gated routing tests passed; "
+                  << "baseline=" << baseline_phase_metrics.mean_voltage_mv
+                  << " mV, gated=" << gated_phase_metrics.mean_voltage_mv
+                  << " mV\n";
+
+        // Pair-based STDP experiment. Identical seeded networks provide an
+        // active-learning condition and a zero-learning control.
+        auto make_plasticity_parameters = [] {
+            ModelParameters p;
+            p.simulation.excitatory_count = 2;
+            p.simulation.inhibitory_count = 1;
+            p.simulation.steps = 1;
+            p.simulation.dt = 0.25f;
+            p.simulation.threshold = -64.9995f;
+            p.simulation.initial_voltage_min = -65.0f;
+            p.simulation.initial_voltage_max = -65.0f;
+            p.simulation.excitatory_current_min = 4.0f;
+            p.simulation.excitatory_current_max = 4.0f;
+            p.simulation.inhibitory_current_min = 0.0f;
+            p.simulation.inhibitory_current_max = 0.0f;
+            p.simulation.random_seed = 7654321U;
+            p.topology.p_ee = 1.0;
+            p.topology.p_ei = 0.0;
+            p.topology.p_ie = 0.0;
+            p.topology.p_ii = 0.0;
+            p.topology.topology_seed = 1234567ULL;
+            p.topology.delay_seed = 7654321ULL;
+            p.topology.delay_distribution = DelayDistribution::Uniform;
+            p.topology.minimum_delay = 1;
+            p.topology.maximum_delay = 1;
+            p.topology.fibonacci_delays = {1};
+            p.topology.fibonacci_weights = {1.0};
+            return p;
+        };
+        CudaSimulationRuntime plasticity_active(make_plasticity_parameters());
+        CudaSimulationRuntime plasticity_control(make_plasticity_parameters());
+        SynapticPlasticityConfig learning_config;
+        learning_config.enabled = true;
+        learning_config.trace_time_constant_ms = 30.0f;
+        learning_config.potentiation_rate = 0.02f;
+        learning_config.depression_rate = 0.002f;
+        learning_config.minimum_weight_magnitude = 0.005f;
+        learning_config.maximum_weight_magnitude = 0.20f;
+        plasticity_active.configure_synaptic_plasticity(learning_config);
+        auto no_learning_config = learning_config;
+        no_learning_config.potentiation_rate = 0.0f;
+        no_learning_config.depression_rate = 0.0f;
+        plasticity_control.configure_synaptic_plasticity(no_learning_config);
+        const auto initial_learning_metrics = plasticity_active.collect_metrics();
+        const auto initial_control_metrics = plasticity_control.collect_metrics();
+        plasticity_active.run_steps(1000);
+        plasticity_control.run_steps(1000);
+        const auto learned_metrics = plasticity_active.collect_metrics();
+        const auto control_learning_metrics = plasticity_control.collect_metrics();
+        if (!initial_learning_metrics.finite_state ||
+            !initial_control_metrics.finite_state ||
+            !learned_metrics.finite_state ||
+            !control_learning_metrics.finite_state ||
+            learned_metrics.excitatory_spikes == 0 ||
+            learned_metrics.mean_absolute_synaptic_weight <=
+                initial_learning_metrics.mean_absolute_synaptic_weight + 1.0e-6 ||
+            std::abs(control_learning_metrics.mean_absolute_synaptic_weight -
+                     initial_control_metrics.mean_absolute_synaptic_weight) > 1.0e-7 ||
+            learned_metrics.mean_absolute_synaptic_weight > 0.20 + 1.0e-6) {
+            std::cerr << "GPU STDP learning experiment failed\n"
+                      << "Initial mean |w|: "
+                      << initial_learning_metrics.mean_absolute_synaptic_weight << '\n'
+                      << "Learned mean |w|: "
+                      << learned_metrics.mean_absolute_synaptic_weight << '\n'
+                      << "Control mean |w|: "
+                      << control_learning_metrics.mean_absolute_synaptic_weight << '\n'
+                      << "Excitatory spikes: " << learned_metrics.excitatory_spikes << '\n';
+            return EXIT_FAILURE;
+        }
+        std::cout << "GPU STDP learning experiment passed; mean |w| "
+                  << initial_learning_metrics.mean_absolute_synaptic_weight
+                  << " -> " << learned_metrics.mean_absolute_synaptic_weight
+                  << ", zero-learning control="
+                  << control_learning_metrics.mean_absolute_synaptic_weight
+                  << ", spikes=" << learned_metrics.excitatory_spikes << '\n';
+
+        // Associative recall: repeatedly co-activate populations A and B,
+        // then stimulate A alone. A learned A->B pathway should recruit B
+        // more strongly than an untrained population C and a zero-STDP control.
+        auto make_association_parameters = [] {
+            ModelParameters p;
+            p.simulation.excitatory_count = 24;
+            p.simulation.inhibitory_count = 1;
+            p.simulation.steps = 1;
+            p.simulation.dt = 0.25f;
+            p.simulation.threshold = 30.0f;
+            p.simulation.initial_voltage_min = -65.0f;
+            p.simulation.initial_voltage_max = -65.0f;
+            p.simulation.excitatory_current_min = 0.0f;
+            p.simulation.excitatory_current_max = 0.0f;
+            p.simulation.inhibitory_current_min = 0.0f;
+            p.simulation.inhibitory_current_max = 0.0f;
+            p.simulation.random_seed = 24681357U;
+            p.topology.p_ee = 1.0;
+            p.topology.p_ei = 0.0;
+            p.topology.p_ie = 0.0;
+            p.topology.p_ii = 0.0;
+            p.topology.topology_seed = 975318642ULL;
+            p.topology.delay_seed = 864213579ULL;
+            p.topology.delay_distribution = DelayDistribution::Uniform;
+            p.topology.minimum_delay = 1;
+            p.topology.maximum_delay = 1;
+            p.topology.fibonacci_delays = {1};
+            p.topology.fibonacci_weights = {1.0};
+            return p;
+        };
+        auto make_association_topology = [] {
+            CSRTopology graph;
+            graph.excitatory_count = 24;
+            graph.inhibitory_count = 1;
+            graph.minimum_delay = 1;
+            graph.maximum_delay = 1;
+            graph.row_offsets.resize(26, 0);
+            // Only A (0..7) projects to B (8..15). C (16..23) has
+            // deliberately no incoming edges and is a true untrained control.
+            for (std::uint32_t source = 0; source < 24; ++source) {
+                if (source < 8) {
+                    for (std::uint32_t target = 8; target < 16; ++target) {
+                        graph.target_indices.push_back(target);
+                        graph.weights.push_back(0.05f);
+                        graph.delays.push_back(1);
+                    }
+                }
+                graph.row_offsets[source + 1] =
+                    static_cast<std::uint32_t>(graph.target_indices.size());
+            }
+            graph.row_offsets[25] = static_cast<std::uint32_t>(graph.target_indices.size());
+            graph.validate();
+            return graph;
+        };
+        CudaSimulationRuntime association_active(
+            make_association_parameters(), make_association_topology());
+        CudaSimulationRuntime association_control(
+            make_association_parameters(), make_association_topology());
+        SynapticPlasticityConfig association_learning;
+        association_learning.enabled = true;
+        association_learning.trace_time_constant_ms = 30.0f;
+        association_learning.potentiation_rate = 0.25f;
+        association_learning.depression_rate = 0.002f;
+        association_learning.minimum_weight_magnitude = 0.005f;
+        association_learning.maximum_weight_magnitude = 5.0f;
+        association_active.configure_synaptic_plasticity(association_learning);
+        auto association_no_learning = association_learning;
+        association_no_learning.potentiation_rate = 0.0f;
+        association_no_learning.depression_rate = 0.0f;
+        association_control.configure_synaptic_plasticity(association_no_learning);
+
+        constexpr std::uint32_t association_group_size = 8;
+        constexpr float association_input = 100.0f;
+        std::vector<float> a_input(25, 0.0f);
+        std::vector<float> b_input(25, 0.0f);
+        std::vector<float> recall_input(25, 0.0f);
+        for (std::uint32_t neuron = 0; neuron < association_group_size; ++neuron) {
+            a_input[neuron] = association_input;
+            b_input[association_group_size + neuron] = association_input;
+            recall_input[neuron] = association_input;
+        }
+
+        // The implemented STDP rule potentiates an A->B edge when A's
+        // presynaptic trace is present at B's later postsynaptic spike.
+        // Train with a causal A-then-B sequence, not simultaneous co-spiking.
+        for (int repetition = 0; repetition < 10; ++repetition) {
+            association_active.set_external_current(a_input);
+            association_control.set_external_current(a_input);
+            association_active.run_steps(4);
+            association_control.run_steps(4);
+            association_active.set_external_current(b_input);
+            association_control.set_external_current(b_input);
+            association_active.run_steps(4);
+            association_control.run_steps(4);
+            association_active.set_external_current(std::vector<float>(25, 0.0f));
+            association_control.set_external_current(std::vector<float>(25, 0.0f));
+            association_active.run_steps(20);
+            association_control.run_steps(20);
+        }
+        // Capture activity and learned-weight diagnostics before freezing.
+        const auto active_training_metrics = association_active.collect_metrics();
+        const auto control_training_metrics = association_control.collect_metrics();
+        const auto active_training = association_active.collect_spike_events();
+        const auto control_training = association_control.collect_spike_events();
+        if (active_training.events.empty() || control_training.events.empty() ||
+            active_training.dropped_events != 0 || control_training.dropped_events != 0) {
+            std::cerr << "GPU associative training produced no usable spike events; active="
+                      << active_training.events.size() << ", control="
+                      << control_training.events.size() << '\n';
+            return EXIT_FAILURE;
+        }
+
+        // Freeze weights during recall so the probe measures the learned state,
+        // rather than additional learning caused by the test stimulus.
+        auto frozen_learning = association_learning;
+        frozen_learning.enabled = false;
+        association_active.configure_synaptic_plasticity(frozen_learning);
+        association_control.configure_synaptic_plasticity(frozen_learning);
+        association_active.set_external_current(recall_input);
+        association_control.set_external_current(recall_input);
+        association_active.run_steps(120);
+        association_control.run_steps(120);
+        const auto active_recall = association_active.collect_spike_events();
+        const auto control_recall = association_control.collect_spike_events();
+        const auto active_recall_voltage = association_active.collect_neuron_voltages();
+        const auto control_recall_voltage = association_control.collect_neuron_voltages();
+
+        const auto count_group_spikes = [](const SpikeEventBatch& batch,
+                                           std::uint32_t first,
+                                           std::uint32_t last) {
+            std::uint64_t count = 0;
+            for (const auto& event : batch.events) {
+                if (event.neuron_id >= first && event.neuron_id < last)
+                    ++count;
+            }
+            return count;
+        };
+        const auto active_recall_a = count_group_spikes(active_recall, 0, association_group_size);
+        const auto control_recall_a = count_group_spikes(control_recall, 0, association_group_size);
+        const auto learned_b = count_group_spikes(
+            active_recall, association_group_size, 2 * association_group_size);
+        const auto untrained_c = count_group_spikes(
+            active_recall, 2 * association_group_size, 3 * association_group_size);
+        const auto control_b = count_group_spikes(
+            control_recall, association_group_size, 2 * association_group_size);
+        const auto control_c = count_group_spikes(
+            control_recall, 2 * association_group_size, 3 * association_group_size);
+        const auto mean_group_voltage = [](const std::vector<float>& voltage,
+                                           std::uint32_t first, std::uint32_t last) {
+            double sum = 0.0;
+            for (std::uint32_t i = first; i < last; ++i) sum += voltage.at(i);
+            return sum / static_cast<double>(last - first);
+        };
+        const double active_a_voltage = mean_group_voltage(active_recall_voltage, 0, association_group_size);
+        const double active_b_voltage = mean_group_voltage(active_recall_voltage, association_group_size, 2 * association_group_size);
+        const double control_b_voltage = mean_group_voltage(control_recall_voltage, association_group_size, 2 * association_group_size);
+        const auto active_recall_metrics = association_active.collect_metrics();
+        const auto control_recall_metrics = association_control.collect_metrics();
+        if (!active_recall_metrics.finite_state ||
+            !control_recall_metrics.finite_state ||
+            active_recall.dropped_events != 0 || control_recall.dropped_events != 0 ||
+            learned_b <= untrained_c || learned_b <= control_b) {
+            std::cerr << "GPU associative recall experiment failed\n"
+                      << "Training A/B spikes: "
+                      << count_group_spikes(active_training, 0, association_group_size)
+                      << "/" << count_group_spikes(active_training, association_group_size,
+                                                     2 * association_group_size) << '\n'
+                      << "Training mean |w| active/control: "
+                      << active_training_metrics.mean_absolute_synaptic_weight << "/"
+                      << control_training_metrics.mean_absolute_synaptic_weight << '\n'
+                      << "Recall mean voltage A/B active: " << active_a_voltage << "/" << active_b_voltage << '\n'
+                      << "Recall mean voltage B control: " << control_b_voltage << '\n'
+                      << "Recall A spikes active/control: " << active_recall_a << "/"
+                      << control_recall_a << '\n'
+                      << "Learned B response: " << learned_b << '\n'
+                      << "Untrained C response: " << untrained_c << '\n'
+                      << "Zero-STDP B response: " << control_b << '\n'
+                      << "Zero-STDP C response: " << control_c << '\n';
+            return EXIT_FAILURE;
+        }
+        std::cout << "GPU associative recall experiment passed; training events="
+                  << active_training.events.size() << ", trained B=" << learned_b
+                  << ", untrained C=" << untrained_c
+                  << ", zero-STDP B=" << control_b
+                  << ", zero-STDP C=" << control_c << '\n';
 
         ModelParameters parameters;
         parameters.simulation = SimulationParameters::small_test();

@@ -282,7 +282,7 @@ void SimulationBridge::startSimulation() {
 void SimulationBridge::pauseSimulation() {
     if (connected_) {
         setErrorMessage({});
-        client_.sendRequest(QStringLiteral("pause"));
+        client_.sendRequest(QStringLiteral("pause"), QJsonObject{}, 30000);
     }
 }
 

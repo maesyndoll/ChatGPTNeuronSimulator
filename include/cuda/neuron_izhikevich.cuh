@@ -32,12 +32,15 @@ struct NeuronStateGPU {
 
 struct SynapseParametersGPU {
     const std::uint32_t* row_offsets = nullptr;
+    const std::uint32_t* row_counts = nullptr;
     const std::uint32_t* target_indices = nullptr;
     const float* weights = nullptr;
     const std::uint32_t* delays = nullptr;
-    std::uint32_t edge_count = 0;
+    std::uint32_t edge_capacity = 0;
     float* pending_current = nullptr;
     std::uint32_t ring_slots = 0;
+    const float* phases = nullptr;
+    float phase_modulation_strength = 0.0f;
 };
 
 void initialize_neurons(
@@ -55,11 +58,68 @@ void initialize_neurons(
     cudaStream_t stream = nullptr
 );
 
+void initialize_phase_state(
+    float* phases,
+    float* natural_frequencies,
+    std::uint32_t neuron_count,
+    std::uint32_t seed,
+    cudaStream_t stream = nullptr
+);
+
+void advance_phase_state(
+    const float* phases,
+    float* next_phases,
+    const float* natural_frequencies,
+    const std::uint32_t* row_offsets,
+    const std::uint32_t* row_counts,
+    const std::uint32_t* target_indices,
+    const float* weights,
+    std::uint32_t neuron_count,
+    float dt,
+    float coupling_strength,
+    cudaStream_t stream = nullptr
+);
+
 void propagate_spikes(
     NeuronStateGPU state,
     SynapseParametersGPU synapses,
     std::uint32_t neuron_count,
     std::uint64_t step_index,
+    cudaStream_t stream = nullptr
+);
+
+void update_synaptic_plasticity(
+    float* weights,
+    const std::uint32_t* row_offsets,
+    const std::uint32_t* row_counts,
+    const std::uint32_t* target_indices,
+    const std::uint8_t* spike_flags,
+    float* spike_traces,
+    std::uint32_t neuron_count,
+    float dt,
+    float trace_decay,
+    float potentiation_rate,
+    float depression_rate,
+    float minimum_magnitude,
+    float maximum_magnitude,
+    cudaStream_t stream = nullptr
+);
+
+void update_adaptive_topology(
+    const std::uint32_t* row_offsets,
+    std::uint32_t* row_counts,
+    std::uint32_t* target_indices,
+    float* weights,
+    std::uint32_t* delays,
+    const std::uint8_t* spike_flags,
+    const float* spike_traces,
+    std::uint32_t neuron_count,
+    std::uint32_t excitatory_count,
+    std::uint32_t row_capacity,
+    std::uint32_t minimum_delay,
+    float growth_trace_threshold,
+    float prune_weight_threshold,
+    float growth_weight,
     cudaStream_t stream = nullptr
 );
 
@@ -70,6 +130,7 @@ void simulate_neurons(
     float dt,
     float threshold,
     float* synaptic_current,
+    const float* external_current,
     std::uint32_t ring_slot,
     std::uint64_t step_index,
     cudaStream_t stream = nullptr

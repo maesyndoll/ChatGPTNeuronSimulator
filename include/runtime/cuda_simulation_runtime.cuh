@@ -24,8 +24,37 @@ struct SpikeEventBatch {
     std::uint64_t dropped_events = 0;
 };
 
+struct PhaseDynamicsConfig {
+    bool enabled = false;
+    // Coupling and natural frequencies are measured in radians per simulated ms.
+    float coupling_strength = 0.01f;
+    // [0, 1]: zero disables routing modulation; one gives full cosine gating.
+    float modulation_strength = 1.0f;
+    // Keep phases fixed while still applying phase-dependent synaptic gates.
+    bool evolve_phases = true;
+};
+
+struct SynapticPlasticityConfig {
+    bool enabled = false;
+    float trace_time_constant_ms = 20.0f;
+    float potentiation_rate = 0.012f;
+    float depression_rate = 0.010f;
+    float minimum_weight_magnitude = 0.01f;
+    float maximum_weight_magnitude = 5.0f;
+};
+
+struct AdaptiveTopologyConfig {
+    bool enabled = false;
+    std::uint32_t update_interval_steps = 8;
+    float growth_trace_threshold = 0.75f;
+    float prune_weight_threshold = 0.012f;
+    float growth_weight = 0.025f;
+};
+
 struct SimulationMetrics {
     std::uint64_t completed_steps = 0;
+    std::uint64_t active_synapses = 0;
+    std::uint64_t synapse_capacity = 0;
     std::uint64_t excitatory_spikes = 0;
     std::uint64_t inhibitory_spikes = 0;
     std::uint64_t last_step_excitatory_spikes = 0;
@@ -33,6 +62,10 @@ struct SimulationMetrics {
     double mean_voltage_mv = 0.0;
     double excitatory_rate_hz = 0.0;
     double inhibitory_rate_hz = 0.0;
+    // Kuramoto order parameter R in [0, 1], computed from GPU phase state.
+    double phase_coherence = 0.0;
+    // Mean absolute weight across currently active CSR edges.
+    double mean_absolute_synaptic_weight = 0.0;
     bool finite_state = true;
 };
 
@@ -40,6 +73,9 @@ class CudaSimulationRuntime {
 public:
     explicit CudaSimulationRuntime(ModelParameters defaults = ModelParameters{},
                                    int device = 0);
+    // Test/experiment constructor for a caller-supplied, validated CSR graph.
+    CudaSimulationRuntime(ModelParameters defaults, CSRTopology topology,
+                         int device = 0);
     ~CudaSimulationRuntime() = default;
 
     CudaSimulationRuntime(const CudaSimulationRuntime&) = delete;
@@ -48,10 +84,26 @@ public:
     ParameterUpdateResult apply_parameters(const ModelParameters& candidate);
     ParameterUpdateResult reset_parameters_to_defaults();
     void reinitialize_simulation();
+    void configure_phase_dynamics(const PhaseDynamicsConfig& config);
+    PhaseDynamicsConfig phase_dynamics() const noexcept { return phase_config_; }
+    void configure_synaptic_plasticity(const SynapticPlasticityConfig& config);
+    SynapticPlasticityConfig synaptic_plasticity() const noexcept {
+        return plasticity_config_;
+    }
+    void configure_adaptive_topology(const AdaptiveTopologyConfig& config);
+    AdaptiveTopologyConfig adaptive_topology() const noexcept {
+        return topology_config_;
+    }
+    CSRTopology collect_topology();
 
+    // Replace the per-neuron external input-current vector (model current units).
+    void set_external_current(const std::vector<float>& current);
+    // Deterministic phase assignment for controlled routing experiments.
+    void set_neuron_phases(const std::vector<float>& phases);
     void run();
     void run_steps(std::uint32_t steps);
     SimulationMetrics collect_metrics();
+    std::vector<float> collect_neuron_voltages();
     SpikeEventBatch collect_spike_events();
 
     ModelParameters active_parameters() const;
@@ -69,6 +121,7 @@ private:
         DeviceState(std::size_t count, const CSRTopology& topology);
         CudaStream stream;
         DeviceBuffer<float> a, b, c, d, current;
+        DeviceBuffer<float> external_current;
         DeviceBuffer<float> voltage, recovery;
         DeviceBuffer<std::uint32_t> spike_counts;
         DeviceBuffer<std::uint8_t> spike_flags;
@@ -84,25 +137,37 @@ private:
 
         // Persistent source-oriented CSR connectivity on the GPU.
         DeviceBuffer<std::uint32_t> row_offsets;
+        DeviceBuffer<std::uint32_t> row_counts;
         DeviceBuffer<std::uint32_t> target_indices;
         DeviceBuffer<float> weights;
         DeviceBuffer<std::uint32_t> delays;
 
+        // GPU-resident oscillator state and natural angular frequencies.
+        DeviceBuffer<float> phases, next_phases, natural_frequencies;
+        // Per-neuron exponentially decaying spike traces used by GPU STDP.
+        DeviceBuffer<float> plasticity_traces;
+
         // Dense target-current ring: [ring_slot][neuron].
         DeviceBuffer<float> synaptic_current;
         std::size_t neuron_count;
-        std::uint32_t edge_count;
+        std::uint32_t edge_capacity;
+        std::uint32_t row_capacity;
         std::uint32_t ring_slots;
 
         NeuronParametersGPU neuron_parameters() noexcept;
         NeuronStateGPU neuron_state() noexcept;
     };
 
-    std::unique_ptr<DeviceState> build_device_state(const ModelParameters& parameters);
+    std::unique_ptr<DeviceState> build_device_state(
+        const ModelParameters& parameters,
+        const CSRTopology* topology_override = nullptr);
 
     ParameterManager parameter_manager_;
     ModelParameters active_parameters_;
     std::unique_ptr<DeviceState> device_state_;
+    PhaseDynamicsConfig phase_config_;
+    SynapticPlasticityConfig plasticity_config_;
+    AdaptiveTopologyConfig topology_config_;
     std::uint64_t completed_steps_ = 0;
     std::uint64_t spike_event_read_cursor_ = 0;
     double elapsed_simulation_ms_ = 0.0;
