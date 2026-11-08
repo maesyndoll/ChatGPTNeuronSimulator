@@ -154,6 +154,7 @@ QSGNode* ConnectomeField::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*
     const int nodeCount = nodes_.size();
     auto* edgeGeometry = root->edges->geometry();
     auto* nodeGeometry = root->neurons->geometry();
+    auto* pulseGeometry = root->pulses->geometry();
     edgeGeometry->allocate(edgeCount * 2);
     nodeGeometry->allocate(nodeCount * 6);
 
@@ -165,12 +166,22 @@ QSGNode* ConnectomeField::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
 
     std::unordered_map<std::uint32_t, float> activity;
+    std::unordered_map<std::uint32_t, QVector<qint64>> pulseTimes;
     activity.reserve(static_cast<std::size_t>(spikes_.size()));
+    pulseTimes.reserve(static_cast<std::size_t>(spikes_.size()));
     for (const auto& spike : spikes_) {
         const qint64 age = now - spike.received_ms;
-        if (age >= 0 && age < 2600)
+        if (age >= 0 && age < 2600) {
             activity[spike.neuron] += std::exp(-float(age) / 720.0f);
+            auto& times = pulseTimes[spike.neuron];
+            if (times.size() < 8) times.push_back(spike.received_ms);
+        }
     }
+
+    std::uint32_t maxDelay = 1;
+    for (const auto& edge : edges_) maxDelay = std::max(maxDelay, edge.delay);
+    QVector<Point> pulseVertices;
+    pulseVertices.reserve(std::min(edgeCount * 6, 12000));
 
     struct Position { float x, y, z, scale, intensity; };
     std::unordered_map<std::uint32_t, Position> positions;
