@@ -21,6 +21,7 @@ ApplicationWindow {
         anchors.fill: parent
         topology: simulation.topologySnapshot
         simulationGeneration: simulation.spikeEventsGeneration
+        simulationStep: simulation.completedSteps
         spikeEvents: simulation.visualSpikeEvents
         rotationX: window.orbitX
         rotationY: window.orbitY
