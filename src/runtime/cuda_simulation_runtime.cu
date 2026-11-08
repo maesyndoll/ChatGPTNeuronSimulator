@@ -360,10 +360,9 @@ void CudaSimulationRuntime::set_external_current(
             throw std::invalid_argument("External current values must be finite");
     }
     device_state_->stream.synchronize();
-    SPIKING_CUDA_CHECK(cudaMemcpyAsync(
+    SPIKING_CUDA_CHECK(cudaMemcpy(
         device_state_->external_current.get(), current.data(),
-        current.size() * sizeof(float), cudaMemcpyHostToDevice,
-        device_state_->stream.get()));
+        current.size() * sizeof(float), cudaMemcpyHostToDevice));
 }
 
 void CudaSimulationRuntime::run() {
