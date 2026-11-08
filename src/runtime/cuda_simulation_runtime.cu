@@ -496,7 +496,7 @@ SimulationMetrics CudaSimulationRuntime::collect_metrics() {
     std::vector<float> phases;
     std::vector<float> weights;
     if (phase_config_.enabled) phases.resize(count);
-    if (plasticity_config_.enabled) weights.resize(device_state_->edge_count);
+    // Report the persistent CSR weights even after plasticity is frozen.\n    // Disabling updates must not make the learned network appear to have zero weights.\n    weights.resize(device_state_->edge_count);
     SPIKING_CUDA_CHECK(cudaMemcpy(voltage.data(), device_state_->voltage.get(),
                                   count * sizeof(float), cudaMemcpyDeviceToHost));
     SPIKING_CUDA_CHECK(cudaMemcpy(recovery.data(), device_state_->recovery.get(),
