@@ -30,6 +30,8 @@ struct PhaseDynamicsConfig {
     float coupling_strength = 0.01f;
     // [0, 1]: zero disables routing modulation; one gives full cosine gating.
     float modulation_strength = 1.0f;
+    // Keep phases fixed while still applying phase-dependent synaptic gates.
+    bool evolve_phases = true;
 };
 
 struct SynapticPlasticityConfig {
@@ -81,6 +83,8 @@ public:
 
     // Replace the per-neuron external input-current vector (model current units).
     void set_external_current(const std::vector<float>& current);
+    // Deterministic phase assignment for controlled routing experiments.
+    void set_neuron_phases(const std::vector<float>& phases);
     void run();
     void run_steps(std::uint32_t steps);
     SimulationMetrics collect_metrics();
