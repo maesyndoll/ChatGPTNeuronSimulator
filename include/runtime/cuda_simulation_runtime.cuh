@@ -64,7 +64,7 @@ struct SimulationMetrics {
     double inhibitory_rate_hz = 0.0;
     // Kuramoto order parameter R in [0, 1], computed from GPU phase state.
     double phase_coherence = 0.0;
-    // Mean absolute CSR weight; populated when plasticity is enabled.
+    // Mean absolute weight across currently active CSR edges.
     double mean_absolute_synaptic_weight = 0.0;
     bool finite_state = true;
 };
@@ -150,7 +150,7 @@ private:
         // Dense target-current ring: [ring_slot][neuron].
         DeviceBuffer<float> synaptic_current;
         std::size_t neuron_count;
-        std::uint32_t edge_count;
+        std::uint32_t edge_capacity;
         std::uint32_t row_capacity;
         std::uint32_t ring_slots;
 
