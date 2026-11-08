@@ -72,9 +72,13 @@ ConnectomeField::ConnectomeField(QQuickItem* parent) : QQuickItem(parent) {
 void ConnectomeField::setTopology(const QVariantMap& value) {
     QMutexLocker locker(&mutex_);
     if (topology_ == value) return;
+    if (!topology_.isEmpty() &&
+        topology_.value(QStringLiteral("revision")) ==
+            value.value(QStringLiteral("revision"))) {
+        topology_ = value;
+        return;
+    }
     const auto previousEdges = edges_;
-    const auto previousPositions = temporal_positions_;
-    const auto previousNodes = nodes_;
     topology_ = value;
     nodes_.clear();
     edges_.clear();
