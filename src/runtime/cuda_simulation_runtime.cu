@@ -590,7 +590,6 @@ SimulationMetrics CudaSimulationRuntime::collect_metrics() {
         weights.size() * sizeof(float), cudaMemcpyDeviceToHost));
     std::uint64_t active_synapses = 0;
     for (const auto degree : row_counts) active_synapses += degree;
-    weights.resize(static_cast<std::size_t>(active_synapses));
     std::vector<float> active_weights;
     active_weights.reserve(static_cast<std::size_t>(active_synapses));
     for (std::uint32_t row = 0; row < count; ++row) {
