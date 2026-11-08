@@ -37,7 +37,7 @@ std::uint64_t estimate_device_bytes(
         bytes += count * element_size;
     };
 
-    // Neuron parameters (a,b,c,d,current), state (voltage,recovery),
+    // Neuron parameters (a,b,c,d,current), external input, and state (voltage,recovery),
     // spike counts/flags, and active-spike source list.
     add(neurons, 6ULL * sizeof(float));
     add(neurons, 2ULL * sizeof(float));
