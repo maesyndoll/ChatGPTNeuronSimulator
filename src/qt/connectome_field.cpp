@@ -78,6 +78,7 @@ void ConnectomeField::setTopology(const QVariantMap& value) {
         topology_ = value;
         return;
     }
+    const bool hadPreviousTopology = !topology_.isEmpty();
     const auto previousEdges = edges_;
     topology_ = value;
     nodes_.clear();
@@ -122,19 +123,21 @@ void ConnectomeField::setTopology(const QVariantMap& value) {
     for (const auto& edge : edges_) currentByKey.emplace(edgeKey(edge), edge);
     const qint64 transitionTime = QDateTime::currentMSecsSinceEpoch();
     QVector<EdgeTransition> nextTransitions;
-    nextTransitions.reserve(std::min(12000,
+    nextTransitions.reserve(std::min<qsizetype>(12000,
         edge_transitions_.size() + previousEdges.size() + edges_.size()));
     for (const auto& transition : edge_transitions_) {
         if (transition.created_ms + 1800 > transitionTime)
             nextTransitions.push_back(transition);
     }
-    for (const auto& edge : edges_) {
-        if (previousByKey.find(edgeKey(edge)) == previousByKey.end())
-            nextTransitions.push_back({edge, transitionTime, true});
-    }
-    for (const auto& edge : previousEdges) {
-        if (currentByKey.find(edgeKey(edge)) == currentByKey.end())
-            nextTransitions.push_back({edge, transitionTime, false});
+    if (hadPreviousTopology) {
+        for (const auto& edge : edges_) {
+            if (previousByKey.find(edgeKey(edge)) == previousByKey.end())
+                nextTransitions.push_back({edge, transitionTime, true});
+        }
+        for (const auto& edge : previousEdges) {
+            if (currentByKey.find(edgeKey(edge)) == currentByKey.end())
+                nextTransitions.push_back({edge, transitionTime, false});
+        }
     }
     if (nextTransitions.size() > 12000)
         nextTransitions.remove(0, nextTransitions.size() - 12000);
