@@ -273,7 +273,6 @@ __global__ void stdp_update_kernel(
     const std::uint32_t* row_offsets,
     const std::uint32_t* row_counts,
     const std::uint32_t* target_indices,
-    const std::uint8_t* spike_flags,
     const float* traces,
     std::uint32_t neuron_count,
     float potentiation_rate,
@@ -459,7 +458,7 @@ void propagate_spikes(
     std::uint64_t step_index,
     cudaStream_t stream
 ) {
-    if (synapses.edge_count == 0) return;
+    if (synapses.edge_capacity == 0) return;
     if (synapses.ring_slots == 0 || synapses.pending_current == nullptr)
         throw std::invalid_argument("Invalid synaptic delay ring");
     if (state.active_spike_count == nullptr ||
@@ -527,7 +526,6 @@ void update_adaptive_topology(
     std::uint32_t* target_indices,
     float* weights,
     std::uint32_t* delays,
-    const std::uint8_t* spike_flags,
     const float* spike_traces,
     std::uint32_t neuron_count,
     std::uint32_t excitatory_count,
@@ -539,7 +537,7 @@ void update_adaptive_topology(
     cudaStream_t stream
 ) {
     if (!row_offsets || !row_counts || !target_indices || !weights ||
-        !delays || !spike_flags || !spike_traces || neuron_count == 0 ||
+        !delays || !spike_traces || neuron_count == 0 ||
         row_capacity == 0 || excitatory_count > neuron_count ||
         minimum_delay == 0 || !std::isfinite(growth_trace_threshold) ||
         growth_trace_threshold <= 0.0f ||
@@ -550,7 +548,7 @@ void update_adaptive_topology(
     const int blocks = (neuron_count + threads - 1) / threads;
     adaptive_topology_kernel<<<blocks, threads, 0, stream>>>(
         row_offsets, row_counts, target_indices, weights, delays,
-        spike_flags, spike_traces, neuron_count, excitatory_count,
+        spike_traces, neuron_count, excitatory_count,
         row_capacity, minimum_delay, growth_trace_threshold,
         prune_weight_threshold, growth_weight);
     SPIKING_CUDA_CHECK(cudaGetLastError());
