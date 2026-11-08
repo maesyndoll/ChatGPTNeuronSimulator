@@ -16,15 +16,23 @@ Blackwell (`sm_120` by default).
   probabilities, signed excitatory/inhibitory weights, and configurable delays.
 - GPU-resident spike queues, delayed synaptic-current rings, CUDA spike
   propagation, and a bounded GPU spike-event recorder.
+- Bounded-capacity GPU CSR connectome with per-row active edge counts. Associative
+  co-activity can add missing directed edges; weak edges are pruned in-place.
+  Propagation, phase coupling, and STDP all consume the active GPU CSR rows.
 - A standalone Neural Observatory experiment that exports a spike raster as
   an HTML report and every captured event as CSV.
 
 The runtime now supports opt-in GPU-resident pair-based spike-timing-dependent
 plasticity (STDP). Per-neuron spike traces remain on the GPU, updates preserve
 the excitatory/inhibitory sign of each CSR edge, and configurable magnitude
-bounds prevent unbounded weight growth. Plasticity is disabled by default.
-Learned-weight checkpoint persistence and inference-oriented memory management
-are not yet implemented. The Qt client/dashboard is optional.
+bounds prevent unbounded weight growth. An opt-in structural-plasticity pass
+uses those traces to grow connections between co-active neurons and prunes
+sub-threshold edges. CSR storage is GPU-resident and reserves bounded per-row
+capacity so structural updates do not require a CPU graph rebuild or per-step
+host synchronization. Both weight and topology plasticity are disabled by
+default. Learned-connectome checkpoint persistence and automatic capacity
+reallocation when a row saturates are not yet implemented. The Qt
+client/dashboard is optional.
 
 ## CPU-only configuration tests
 
@@ -48,8 +56,8 @@ ctest --test-dir build-cuda --output-on-failure
 
 The CUDA CTest includes `cuda_runtime_smoke`, which exercises initialization,
 step-boundary parameter updates, continued execution, full reinitialization,
-phase synchronization, STDP weight adaptation, and an associative-recall
-experiment. The runtime API accepts a per-neuron external-current vector that
+phase synchronization, STDP weight adaptation, associative CSR
+growth, and structural pruning experiments. The runtime API accepts a per-neuron external-current vector that
 is copied to GPU memory and added during neuron integration. The recall test uses an explicit structured CSR graph in which A projects to B
 and C has no incoming edges. Training presents A before B to create the causal
 pre/post timing required by the current pair-based STDP rule; recall then
@@ -62,10 +70,11 @@ notes and lifecycle semantics.
 
 ## Neural Observatory showcase
 
-The standalone experiment exercises the existing GPU-resident CSR network and
+The standalone showcase exercises the GPU-resident CSR network and
 spike-propagation path, then writes a browser-viewable spike raster and raw
-event log. It does not claim to train the network; synaptic weights are fixed
-for this experiment.
+event log. The separate `associative_phase_experiment` target exercises
+GPU-side weight plasticity plus bounded CSR growth/pruning, and exports
+per-epoch edge-count and activity telemetry to CSV.
 
 Build it with the same CUDA configuration:
 
