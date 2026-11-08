@@ -162,6 +162,27 @@ if(SPIKINGMODEL_ENABLE_CUDA)
     set_target_properties(spiking_model PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
     add_dependencies(spiking_model check_parameter_schema)
 
+    # Standalone, reproducible GPU spike-raster showcase with HTML/CSV output.
+    add_executable(neural_observatory
+        src/showcase/neural_observatory.cpp
+        src/cuda/neuron_izhikevich.cu
+        src/runtime/cuda_simulation_runtime.cu
+        src/topology/topology_generator.cpp
+    )
+    target_include_directories(neural_observatory PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(neural_observatory PRIVATE CUDA::cudart)
+    target_compile_options(neural_observatory PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+    )
+    set_target_properties(neural_observatory PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+    )
+    add_dependencies(neural_observatory check_parameter_schema)
+
     if(BUILD_TESTING)
         add_executable(cuda_runtime_smoke
             tests/cuda/runtime_smoke.cpp
