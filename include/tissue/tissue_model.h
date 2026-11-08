@@ -42,6 +42,36 @@ private:
     std::map<std::uint64_t,NeuralModule> modules_;
     std::vector<BindingAdapter> adapters_;
 };
+// Pairwise coactivity is a row-major N x N matrix with values in [0, 1].
+// It is supplied by the runtime/experiment layer; this routine does not
+// fabricate correlations from mean firing rates.
+struct StructuralPlasticityPolicy {
+    float learning_rate = 0.05f;
+    float coactivity_baseline = 0.25f;
+    float prune_coactivity_below = 0.05f;
+    float prune_weight_below = 0.02f;
+    float sprout_coactivity_at_or_above = 0.75f;
+    float initial_sprout_weight = 0.05f;
+    float minimum_weight_magnitude = 0.001f;
+    float maximum_weight_magnitude = 3.0f;
+    std::uint32_t maximum_out_degree = 64;
+    std::uint32_t sprout_delay_steps = 1;
+};
+
+struct StructuralPlasticityReport {
+    std::uint64_t potentiated = 0;
+    std::uint64_t depressed = 0;
+    std::uint64_t pruned = 0;
+    std::uint64_t sprouted = 0;
+};
+
+// Deterministic, bounded CSR remodeling. The input coactivity matrix must
+// contain N*N finite values in [0,1]. Invalid input leaves topology unchanged.
+StructuralPlasticityReport apply_structural_plasticity(
+    CSRTopology& topology,
+    const std::vector<float>& pair_coactivity,
+    const StructuralPlasticityPolicy& policy = {});
+
 struct CandidateMetrics {
     double prediction_error=1.0, retention_score=1.0, stability_score=1.0;
     double energy_cost=0.0, structural_cost=0.0, damaged_fraction=0.0;
