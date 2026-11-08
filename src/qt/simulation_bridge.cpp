@@ -336,10 +336,15 @@ void SimulationBridge::applyParameters(const QVariantMap& parameters) {
 }
 
 void SimulationBridge::refreshTissue() {
-    if (connected_) {
-        client_.sendRequest(QStringLiteral("get_tissue"),
-            QJsonObject{{QStringLiteral("after_revision"), tissueRevision()}});
+    if (!connected_) {
+        return;
     }
+
+    QJsonObject payload;
+    if (tissue_snapshot_.contains(QStringLiteral("revision"))) {
+        payload.insert(QStringLiteral("after_revision"), tissueRevision());
+    }
+    client_.sendRequest(QStringLiteral("get_tissue"), payload);
 }
 
 void SimulationBridge::refreshSpikeEvents() {
