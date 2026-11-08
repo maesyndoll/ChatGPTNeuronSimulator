@@ -76,6 +76,8 @@ public:
         return plasticity_config_;
     }
 
+    // Replace the per-neuron external input-current vector (model current units).
+    void set_external_current(const std::vector<float>& current);
     void run();
     void run_steps(std::uint32_t steps);
     SimulationMetrics collect_metrics();
@@ -96,6 +98,7 @@ private:
         DeviceState(std::size_t count, const CSRTopology& topology);
         CudaStream stream;
         DeviceBuffer<float> a, b, c, d, current;
+        DeviceBuffer<float> external_current;
         DeviceBuffer<float> voltage, recovery;
         DeviceBuffer<std::uint32_t> spike_counts;
         DeviceBuffer<std::uint8_t> spike_flags;
