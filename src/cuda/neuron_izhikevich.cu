@@ -340,7 +340,7 @@ __global__ void adaptive_topology_kernel(
         const float sign = source < excitatory_count ? 1.0f : -1.0f;
         for (std::uint32_t target = 0;
              target < neuron_count && count < row_capacity; ++target) {
-            if (target == source || traces[target] < growth_threshold) continue;
+            if (target == source || spike_flags[target] == 0) continue;
             std::uint32_t position = 0;
             while (position < count && targets[base + position] < target) ++position;
             if (position < count && targets[base + position] == target) continue;
@@ -537,7 +537,7 @@ void update_adaptive_topology(
     cudaStream_t stream
 ) {
     if (!row_offsets || !row_counts || !target_indices || !weights ||
-        !delays || !spike_traces || neuron_count == 0 ||
+        !delays || !spike_flags || !spike_traces || neuron_count == 0 ||
         row_capacity == 0 || excitatory_count > neuron_count ||
         minimum_delay == 0 || !std::isfinite(growth_trace_threshold) ||
         growth_trace_threshold <= 0.0f ||
@@ -548,7 +548,7 @@ void update_adaptive_topology(
     const int blocks = (neuron_count + threads - 1) / threads;
     adaptive_topology_kernel<<<blocks, threads, 0, stream>>>(
         row_offsets, row_counts, target_indices, weights, delays,
-        spike_traces, neuron_count, excitatory_count,
+        spike_flags, spike_traces, neuron_count, excitatory_count,
         row_capacity, minimum_delay, growth_trace_threshold,
         prune_weight_threshold, growth_weight);
     SPIKING_CUDA_CHECK(cudaGetLastError());
