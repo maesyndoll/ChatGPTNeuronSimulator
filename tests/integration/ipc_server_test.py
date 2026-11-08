@@ -310,6 +310,27 @@ def main():
                         assert "simulation_generation" in payload
                         assert isinstance(payload["events"], list)
 
+                # Verify a zero-based selected-neuron stimulus is accepted
+                # and that the simulation continues through its requested duration.
+                stimulus = send_request(
+                    client, reader, "stimulate_neurons",
+                    {
+                        "neuron_ids": [0],
+                        "amplitude": 1.5,
+                        "duration_steps": 2,
+                    },
+                    "selected-neuron-stimulus",
+                )
+                assert stimulus["accepted"] is True, stimulus
+                assert stimulus["selected_neurons"] == 1, stimulus
+                assert stimulus["duration_steps"] == 2, stimulus
+
+                stimulated_step = send_request(
+                    client, reader, "step", {"steps": 3},
+                    "step-with-stimulus",
+                )
+                assert stimulated_step["telemetry"]["completed_steps"] == "4"
+
                 spike_unsubscription = send_request(
                     client, reader, "unsubscribe_spike_events", {},
                     "unsubscribe-spikes"
