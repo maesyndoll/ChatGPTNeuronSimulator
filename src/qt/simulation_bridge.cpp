@@ -454,7 +454,7 @@ void SimulationBridge::updateSpikeEvents(const QJsonObject& spikeEvents) {
         last_spike_event_sequence_ = 0;
     }
 
-    spike_events_generation_ = incomingGeneration;
+    visual_spike_events_.clear();\n    spike_events_generation_ = incomingGeneration;
     spike_event_count_ =
         spikeEvents.value(QStringLiteral("total_events")).toString(
             spike_event_count_);
@@ -490,7 +490,7 @@ void SimulationBridge::updateSpikeEvents(const QJsonObject& spikeEvents) {
                     event.value(QStringLiteral("step")).toString());
         item.insert(QStringLiteral("neuron_id"),
                     event.value(QStringLiteral("neuron_id")).toInt());
-        spike_events_.append(item);
+        spike_events_.append(item);\n        visual_spike_events_.append(item);
         last_spike_event_sequence_ = sequence;
     }
 
@@ -500,7 +500,7 @@ void SimulationBridge::updateSpikeEvents(const QJsonObject& spikeEvents) {
         spike_events_.remove(0, excess);
     }
 
-    emit spikeEventsChanged();
+    emit spikeEventsChanged();\n    if (!visual_spike_events_.isEmpty()) emit visualSpikeEventsChanged();
 }
 
 void SimulationBridge::updateTopology(const QJsonObject& topology) {
