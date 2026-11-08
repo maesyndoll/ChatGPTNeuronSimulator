@@ -194,7 +194,7 @@ int main() {
         if (!csv) throw std::runtime_error("Could not create experiment CSV");
         csv << "condition,stage,epoch,step,A_spikes,B_spikes,C_spikes,"
                "A_mean_mV,B_mean_mV,C_mean_mV,mean_abs_weight,"
-               "global_phase_coherence,dropped_events\n";
+               "active_synapses,synapse_capacity,global_phase_coherence,dropped_events\n";
 
         // Repeated causal pairing: activate A, then B, then allow a quiet
         // interval. This trains A->B rather than forcing both groups at once.
