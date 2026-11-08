@@ -122,6 +122,7 @@ struct Condition {
         topology.enabled = plastic;
         topology.update_interval_steps = 8;
         topology.growth_trace_threshold = 0.75f;
+        topology.growth_window_steps = 4;
         topology.prune_weight_threshold = 0.012f;
         topology.growth_weight = 0.025f;
         runtime.configure_adaptive_topology(topology);
@@ -194,6 +195,7 @@ int main() {
         pruning_config.enabled = true;
         pruning_config.update_interval_steps = 8;
         pruning_config.growth_trace_threshold = 100.0f;
+        pruning_config.growth_window_steps = 4;
         pruning_config.prune_weight_threshold = 0.06f;
         pruning_config.growth_weight = 0.025f;
         pruning_probe.runtime.configure_adaptive_topology(pruning_config);
