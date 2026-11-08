@@ -36,7 +36,7 @@ struct SynapseParametersGPU {
     const std::uint32_t* target_indices = nullptr;
     const float* weights = nullptr;
     const std::uint32_t* delays = nullptr;
-    std::uint32_t edge_count = 0;
+    std::uint32_t edge_capacity = 0;
     float* pending_current = nullptr;
     std::uint32_t ring_slots = 0;
     const float* phases = nullptr;
@@ -111,7 +111,6 @@ void update_adaptive_topology(
     std::uint32_t* target_indices,
     float* weights,
     std::uint32_t* delays,
-    const std::uint8_t* spike_flags,
     const float* spike_traces,
     std::uint32_t neuron_count,
     std::uint32_t excitatory_count,
