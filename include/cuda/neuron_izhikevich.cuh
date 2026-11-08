@@ -105,6 +105,14 @@ void update_synaptic_plasticity(
     cudaStream_t stream = nullptr
 );
 
+void update_last_spike_steps(
+    const std::uint8_t* spike_flags,
+    std::uint64_t* last_spike_steps,
+    std::uint32_t neuron_count,
+    std::uint64_t step_index,
+    cudaStream_t stream = nullptr
+);
+
 void update_adaptive_topology(
     const std::uint32_t* row_offsets,
     std::uint32_t* row_counts,
@@ -113,6 +121,9 @@ void update_adaptive_topology(
     std::uint32_t* delays,
     const std::uint8_t* spike_flags,
     const float* spike_traces,
+    const std::uint64_t* last_spike_steps,
+    std::uint64_t step_index,
+    std::uint32_t growth_window_steps,
     std::uint32_t neuron_count,
     std::uint32_t excitatory_count,
     std::uint32_t row_capacity,
