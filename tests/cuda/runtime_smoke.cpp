@@ -439,6 +439,72 @@ int main() {
             std::cerr << "Invalid phase modulation configuration was accepted\n";
             return EXIT_FAILURE;
         }
+
+        // A fully connected excitatory population should synchronize under
+        // strong positive coupling. Controls share identical initial phases.
+        auto make_coherence_parameters = [] {
+            ModelParameters p;
+            p.simulation.excitatory_count = 48;
+            p.simulation.inhibitory_count = 1;
+            p.simulation.steps = 1;
+            p.simulation.dt = 0.01f;
+            p.simulation.threshold = 1000.0f;
+            p.simulation.initial_voltage_min = -65.0f;
+            p.simulation.initial_voltage_max = -65.0f;
+            p.simulation.excitatory_current_min = 0.0f;
+            p.simulation.excitatory_current_max = 0.0f;
+            p.simulation.inhibitory_current_min = 0.0f;
+            p.simulation.inhibitory_current_max = 0.0f;
+            p.simulation.random_seed = 424242U;
+            p.topology.p_ee = 1.0;
+            p.topology.p_ei = 0.0;
+            p.topology.p_ie = 0.0;
+            p.topology.p_ii = 0.0;
+            p.topology.topology_seed = 10101ULL;
+            p.topology.delay_seed = 20202ULL;
+            p.topology.delay_distribution = DelayDistribution::Uniform;
+            p.topology.minimum_delay = 1;
+            p.topology.maximum_delay = 1;
+            p.topology.fibonacci_delays = {1};
+            p.topology.fibonacci_weights = {1.0};
+            return p;
+        };
+        CudaSimulationRuntime coherence_coupled_a(make_coherence_parameters());
+        CudaSimulationRuntime coherence_coupled_b(make_coherence_parameters());
+        CudaSimulationRuntime coherence_uncoupled(make_coherence_parameters());
+        PhaseDynamicsConfig coherence_config;
+        coherence_config.enabled = true;
+        coherence_config.coupling_strength = 50.0f;
+        coherence_config.modulation_strength = 0.0f;
+        coherence_coupled_a.configure_phase_dynamics(coherence_config);
+        coherence_coupled_b.configure_phase_dynamics(coherence_config);
+        auto no_coupling_config = coherence_config;
+        no_coupling_config.coupling_strength = 0.0f;
+        coherence_uncoupled.configure_phase_dynamics(no_coupling_config);
+        coherence_coupled_a.run_steps(1000);
+        coherence_coupled_b.run_steps(1000);
+        coherence_uncoupled.run_steps(1000);
+        const auto coherence_a = coherence_coupled_a.collect_metrics();
+        const auto coherence_b = coherence_coupled_b.collect_metrics();
+        const auto coherence_control = coherence_uncoupled.collect_metrics();
+        if (!coherence_a.finite_state || !coherence_b.finite_state ||
+            !coherence_control.finite_state ||
+            coherence_a.phase_coherence < 0.0 ||
+            coherence_a.phase_coherence > 1.000001 ||
+            coherence_a.phase_coherence <= coherence_control.phase_coherence + 0.1 ||
+            std::abs(coherence_a.phase_coherence -
+                     coherence_b.phase_coherence) > 1.0e-6) {
+            std::cerr << "GPU phase synchronization experiment failed\n"
+                      << "Coupled coherence: " << coherence_a.phase_coherence << '\n'
+                      << "Uncoupled coherence: " << coherence_control.phase_coherence << '\n'
+                      << "Repeat coherence: " << coherence_b.phase_coherence << '\n';
+            return EXIT_FAILURE;
+        }
+        std::cout << "GPU phase synchronization test passed; coupled R="
+                  << coherence_a.phase_coherence
+                  << ", uncoupled R=" << coherence_control.phase_coherence
+                  << '\n';
+
         std::cout << "GPU phase dynamics and phase-gated routing tests passed; "
                   << "baseline=" << baseline_phase_metrics.mean_voltage_mv
                   << " mV, gated=" << gated_phase_metrics.mean_voltage_mv
