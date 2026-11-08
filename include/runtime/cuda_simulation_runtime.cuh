@@ -43,8 +43,18 @@ struct SynapticPlasticityConfig {
     float maximum_weight_magnitude = 5.0f;
 };
 
+struct AdaptiveTopologyConfig {
+    bool enabled = false;
+    std::uint32_t update_interval_steps = 8;
+    float growth_trace_threshold = 0.75f;
+    float prune_weight_threshold = 0.012f;
+    float growth_weight = 0.025f;
+};
+
 struct SimulationMetrics {
     std::uint64_t completed_steps = 0;
+    std::uint64_t active_synapses = 0;
+    std::uint64_t synapse_capacity = 0;
     std::uint64_t excitatory_spikes = 0;
     std::uint64_t inhibitory_spikes = 0;
     std::uint64_t last_step_excitatory_spikes = 0;
@@ -80,6 +90,11 @@ public:
     SynapticPlasticityConfig synaptic_plasticity() const noexcept {
         return plasticity_config_;
     }
+    void configure_adaptive_topology(const AdaptiveTopologyConfig& config);
+    AdaptiveTopologyConfig adaptive_topology() const noexcept {
+        return topology_config_;
+    }
+    CSRTopology collect_topology();
 
     // Replace the per-neuron external input-current vector (model current units).
     void set_external_current(const std::vector<float>& current);
@@ -122,6 +137,7 @@ private:
 
         // Persistent source-oriented CSR connectivity on the GPU.
         DeviceBuffer<std::uint32_t> row_offsets;
+        DeviceBuffer<std::uint32_t> row_counts;
         DeviceBuffer<std::uint32_t> target_indices;
         DeviceBuffer<float> weights;
         DeviceBuffer<std::uint32_t> delays;
@@ -135,6 +151,7 @@ private:
         DeviceBuffer<float> synaptic_current;
         std::size_t neuron_count;
         std::uint32_t edge_count;
+        std::uint32_t row_capacity;
         std::uint32_t ring_slots;
 
         NeuronParametersGPU neuron_parameters() noexcept;
@@ -150,6 +167,7 @@ private:
     std::unique_ptr<DeviceState> device_state_;
     PhaseDynamicsConfig phase_config_;
     SynapticPlasticityConfig plasticity_config_;
+    AdaptiveTopologyConfig topology_config_;
     std::uint64_t completed_steps_ = 0;
     std::uint64_t spike_event_read_cursor_ = 0;
     double elapsed_simulation_ms_ = 0.0;
