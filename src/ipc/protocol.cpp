@@ -3,6 +3,7 @@
 #include "ipc/parameter_json.h"
 
 #include <limits>
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <string>
@@ -189,6 +190,69 @@ Json spike_events_json(const SpikeEventSnapshot& snapshot) {
     };
 }
 
+Json topology_snapshot_json(const CSRTopology& graph, std::uint64_t step) {
+    // The runtime may contain millions of neurons and synapses. The visual
+    // surface receives a bounded, deterministic induced subgraph: source
+    // neurons are sampled across the full population and every returned edge
+    // is copied verbatim from the live CSR arrays.
+    constexpr std::size_t kMaximumSources = 128;
+    constexpr std::size_t kMaximumNodes = 512;
+    constexpr std::size_t kMaximumEdges = 2400;
+    const std::uint32_t total = graph.neuron_count();
+    const std::size_t source_count = std::min<std::size_t>(kMaximumSources, total);
+    std::vector<std::uint32_t> nodes;
+    nodes.reserve(kMaximumNodes);
+    std::vector<std::uint32_t> sources;
+    sources.reserve(source_count);
+    for (std::size_t i = 0; i < source_count; ++i) {
+        const auto source = static_cast<std::uint32_t>(
+            (static_cast<std::uint64_t>(i) * total) / source_count);
+        sources.push_back(source);
+        nodes.push_back(source);
+    }
+
+    struct EdgeView { std::uint32_t source, target, delay; float weight; };
+    std::vector<EdgeView> edges;
+    edges.reserve(kMaximumEdges);
+    for (const auto source : sources) {
+        for (std::uint32_t edge = graph.row_offsets[source];
+             edge < graph.row_offsets[source + 1] && edges.size() < kMaximumEdges;
+             ++edge) {
+            const auto target = graph.target_indices[edge];
+            const auto found = std::find(nodes.begin(), nodes.end(), target);
+            if (found == nodes.end()) {
+                if (nodes.size() >= kMaximumNodes) continue;
+                nodes.push_back(target);
+            }
+            edges.push_back({source, target, graph.delays[edge], graph.weights[edge]});
+        }
+        if (edges.size() >= kMaximumEdges) break;
+    }
+
+    Json node_array = Json::array();
+    for (const auto id : nodes) node_array.push_back(id);
+    Json edge_array = Json::array();
+    for (const auto& edge : edges) {
+        edge_array.push_back({
+            {"source", edge.source}, {"target", edge.target},
+            {"weight", edge.weight}, {"delay", edge.delay},
+            {"excitatory", edge.weight > 0.0f}
+        });
+    }
+    return {
+        {"revision", std::to_string(step)},
+        {"completed_steps", std::to_string(step)},
+        {"total_neurons", total},
+        {"total_synapses", graph.synapse_count()},
+        {"rendered_neurons", nodes.size()},
+        {"rendered_synapses", edges.size()},
+        {"excitatory_count", graph.excitatory_count},
+        {"inhibitory_count", graph.inhibitory_count},
+        {"nodes", std::move(node_array)},
+        {"edges", std::move(edge_array)}
+    };
+}
+
 Json success_response(const Json& request_id, Json result) {
     return {
         {"protocol_version", kProtocolVersion},
@@ -324,6 +388,12 @@ Json handle_request(SimulationController& controller, const Json& request) {
         if (command == "get_telemetry") {
             return success_response(
                 request_id, telemetry_json(controller.telemetry_snapshot()));
+        }
+
+        if (command == "get_topology") {
+            const auto graph = controller.topology_snapshot();
+            return success_response(request_id, topology_snapshot_json(
+                graph, controller.telemetry_snapshot().metrics.completed_steps));
         }
 
         if (command == "get_spike_events") {
