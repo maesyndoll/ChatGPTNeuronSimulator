@@ -71,6 +71,7 @@ void advance_phase_state(
     float* next_phases,
     const float* natural_frequencies,
     const std::uint32_t* row_offsets,
+    const std::uint32_t* row_counts,
     const std::uint32_t* target_indices,
     const float* weights,
     std::uint32_t neuron_count,
@@ -90,6 +91,7 @@ void propagate_spikes(
 void update_synaptic_plasticity(
     float* weights,
     const std::uint32_t* row_offsets,
+    const std::uint32_t* row_counts,
     const std::uint32_t* target_indices,
     const std::uint8_t* spike_flags,
     float* spike_traces,
