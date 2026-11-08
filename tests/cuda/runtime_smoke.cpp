@@ -380,6 +380,54 @@ int main() {
 
         std::cout << "GPU delay-ring reuse test passed\n";
 
+        // Phase dynamics test: the same deterministic delayed connection
+        // must remain excitatory, while phase gating attenuates its delivered
+        // current relative to the unmodulated baseline.
+        CudaSimulationRuntime phase_baseline(make_propagation_parameters(true));
+        CudaSimulationRuntime phase_gated(make_propagation_parameters(true));
+        PhaseDynamicsConfig phase_config;
+        phase_config.enabled = true;
+        phase_config.coupling_strength = 0.05f;
+        phase_config.modulation_strength = 1.0f;
+        phase_gated.configure_phase_dynamics(phase_config);
+        phase_baseline.run_steps(3);
+        phase_gated.run_steps(3);
+        const auto baseline_phase_metrics = phase_baseline.collect_metrics();
+        const auto gated_phase_metrics = phase_gated.collect_metrics();
+        if (!baseline_phase_metrics.finite_state ||
+            !gated_phase_metrics.finite_state ||
+            baseline_phase_metrics.completed_steps != 3 ||
+            gated_phase_metrics.completed_steps != 3 ||
+            gated_phase_metrics.mean_voltage_mv <=
+                make_propagation_parameters(false).simulation.initial_voltage_min - 1.0e-5 ||
+            gated_phase_metrics.mean_voltage_mv >=
+                baseline_phase_metrics.mean_voltage_mv - 1.0e-7) {
+            std::cerr << "GPU phase-gated synaptic routing test failed\\n"
+                      << "Baseline mean voltage: "
+                      << baseline_phase_metrics.mean_voltage_mv << '\\n'
+                      << "Phase-gated mean voltage: "
+                      << gated_phase_metrics.mean_voltage_mv << '\\n';
+            return EXIT_FAILURE;
+        }
+
+        bool rejected_invalid_phase_config = false;
+        try {
+            PhaseDynamicsConfig invalid_phase_config;
+            invalid_phase_config.enabled = true;
+            invalid_phase_config.modulation_strength = 1.5f;
+            phase_gated.configure_phase_dynamics(invalid_phase_config);
+        } catch (const std::invalid_argument&) {
+            rejected_invalid_phase_config = true;
+        }
+        if (!rejected_invalid_phase_config) {
+            std::cerr << "Invalid phase modulation configuration was accepted\\n";
+            return EXIT_FAILURE;
+        }
+        std::cout << "GPU phase dynamics and phase-gated routing tests passed; "
+                  << "baseline=" << baseline_phase_metrics.mean_voltage_mv
+                  << " mV, gated=" << gated_phase_metrics.mean_voltage_mv
+                  << " mV\\n";
+
         ModelParameters parameters;
         parameters.simulation = SimulationParameters::small_test();
         parameters.simulation.steps = 2;
