@@ -165,7 +165,7 @@ ApplicationWindow {
     }
 
     Timer {
-        interval: 10000
+        interval: 1000
         repeat: true
         running: simulation.connected
         onTriggered: simulation.refreshTopology()
