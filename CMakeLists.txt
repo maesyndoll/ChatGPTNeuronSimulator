@@ -233,6 +233,7 @@ if(SPIKINGMODEL_ENABLE_CUDA)
             src/cuda/neuron_izhikevich.cu
             src/runtime/cuda_simulation_runtime.cu
             src/runtime/simulation_controller.cpp
+            src/tissue/tissue_model.cpp
             src/topology/topology_generator.cpp
         )
         target_include_directories(controller_smoke PRIVATE
