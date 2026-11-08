@@ -16,7 +16,8 @@
 namespace {
 struct FieldNode final : QSGNode {
     QSGGeometryNode* edges = nullptr;
-    QSGGeometryNode* neurons = nullptr;\n    QSGGeometryNode* pulses = nullptr;
+    QSGGeometryNode* neurons = nullptr;
+    QSGGeometryNode* pulses = nullptr;
 
     FieldNode() {
         edges = new QSGGeometryNode;
