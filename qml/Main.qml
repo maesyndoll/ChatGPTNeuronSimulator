@@ -437,7 +437,6 @@ ApplicationWindow {
                                    perspective - width / 2
                                 color: neuronId < excitatoryCount ? "#54cbb5" : "#f0a45e"
                                 opacity: firing ? 1.0 : 0.22 + (zDepth + 1) * 0.13
-                                border.width: firing ? 2 : 0
                                 border.color: window.selectedNeuronId === neuronId ? "#ffffff" : "#e8f5ff"
                                 border.width: window.selectedNeuronId === neuronId ? 3 : (firing ? 2 : 0)
                                 MouseArea {
