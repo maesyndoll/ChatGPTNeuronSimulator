@@ -26,6 +26,39 @@ int main(){try{
  auto detached=tissue.excise_module(b);check(tissue.adapters().empty(),"excision removes dangling adapters");
  check(!tissue.modules().count(b),"excised module removed");auto grafted=tissue.graft_module(detached);
  check(grafted==b,"graft preserves module identity");tissue.connect(BindingAdapter{0,a,1,grafted,1,0.5f,1,true});tissue.validate();
+ // Structural plasticity potentiates coactive edges, prunes inactive
+ // edges, and sprouts bounded new connections while preserving E/I signs.
+ auto plastic = sample("plastic", true).topology;
+ std::vector<float> activity(9, 0.0f);
+ activity[1] = 0.90f; // existing excitatory edge 0 -> 1
+ activity[2] = 0.95f; // candidate excitatory sprout 0 -> 2
+ activity[6] = 0.80f; // candidate inhibitory sprout 2 -> 0
+ StructuralPlasticityPolicy plasticity;
+ plasticity.maximum_out_degree = 2;
+ const auto remodeled = apply_structural_plasticity(plastic, activity, plasticity);
+ check(remodeled.potentiated == 1, "coactive edge potentiated");
+ check(remodeled.sprouted == 2, "high-coactivity edges sprouted");
+ plastic.validate();
+ check(plastic.row_offsets[1] == 2, "out-degree bound respected");
+ check(plastic.weights[0] > 0.0f && plastic.weights[1] > 0.0f,
+       "excitatory source retains positive weights");
+ bool inhibitory_signed = false;
+ for (std::uint32_t edge = plastic.row_offsets[2];
+      edge < plastic.row_offsets[3]; ++edge) {
+  if (plastic.target_indices[edge] == 0) inhibitory_signed = plastic.weights[edge] < 0.0f;
+ }
+ check(inhibitory_signed, "inhibitory sprout receives negative weight");
+ std::vector<float> silence(9, 0.0f);
+ plasticity.sprout_coactivity_at_or_above = 1.0f;
+ const auto pruned = apply_structural_plasticity(plastic, silence, plasticity);
+ check(pruned.pruned == 3, "inactive synapses pruned");
+ check(plastic.synapse_count() == 0, "pruned topology is empty");
+ const auto before_invalid = plastic.synapse_count();
+ bool bad_matrix_rejected = false;
+ try { apply_structural_plasticity(plastic, std::vector<float>{1.0f}, plasticity); }
+ catch (const std::invalid_argument&) { bad_matrix_rejected = true; }
+ check(bad_matrix_rejected && plastic.synapse_count() == before_invalid,
+       "invalid coactivity rejected without topology mutation");
  CandidateMetrics base{0.30,0.98,0.98,0.50,0.40,0.01},good{0.24,0.97,0.97,0.45,0.35,0.01},bad{0.18,0.70,0.60,0.40,0.30,0.02};
  check(candidate_is_promotable(base,good),"valid improvement promoted");check(!candidate_is_promotable(base,bad),"unstable candidate rejected");
  bool rejected=false;try{tissue.connect(BindingAdapter{0,a,1,grafted,1,1,1,true});}catch(const std::invalid_argument&){rejected=true;}
