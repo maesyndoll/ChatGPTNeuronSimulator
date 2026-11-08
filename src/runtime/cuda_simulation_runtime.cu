@@ -366,6 +366,27 @@ void CudaSimulationRuntime::configure_phase_dynamics(
     phase_config_ = config;
 }
 
+void CudaSimulationRuntime::set_neuron_phases(
+    const std::vector<float>& phases) {
+    if (!device_state_ || phases.size() != device_state_->neuron_count)
+        throw std::invalid_argument("Phase vector must match neuron count");
+    constexpr float two_pi = 6.28318530717958647692f;
+    std::vector<float> wrapped(phases.size());
+    for (std::size_t i = 0; i < phases.size(); ++i) {
+        if (!std::isfinite(phases[i]))
+            throw std::invalid_argument("Neuron phases must be finite");
+        wrapped[i] = std::fmod(phases[i], two_pi);
+        if (wrapped[i] < 0.0f) wrapped[i] += two_pi;
+    }
+    device_state_->stream.synchronize();
+    SPIKING_CUDA_CHECK(cudaMemcpy(
+        device_state_->phases.get(), wrapped.data(),
+        wrapped.size() * sizeof(float), cudaMemcpyHostToDevice));
+    SPIKING_CUDA_CHECK(cudaMemcpy(
+        device_state_->next_phases.get(), wrapped.data(),
+        wrapped.size() * sizeof(float), cudaMemcpyHostToDevice));
+}
+
 void CudaSimulationRuntime::set_external_current(
     const std::vector<float>& current) {
     if (!device_state_ || current.size() != device_state_->neuron_count)
@@ -395,7 +416,7 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
         const std::uint32_t ring_slot = static_cast<std::uint32_t>(
             completed_steps_ % device_state_->ring_slots);
 
-        if (phase_config_.enabled) {
+        if (phase_config_.enabled && phase_config_.evolve_phases) {
             advance_phase_state(
                 device_state_->phases.get(),
                 device_state_->next_phases.get(),
