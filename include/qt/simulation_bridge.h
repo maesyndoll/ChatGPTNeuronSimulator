@@ -47,6 +47,7 @@ class SimulationBridge : public QObject {
                NOTIFY spikeEventsChanged)
 
     Q_PROPERTY(QVariantMap tissueSnapshot READ tissueSnapshot NOTIFY tissueChanged)
+    Q_PROPERTY(QVariantMap topologySnapshot READ topologySnapshot NOTIFY topologyChanged)
     Q_PROPERTY(QString tissueRevision READ tissueRevision NOTIFY tissueChanged)
 
 public:
@@ -79,6 +80,7 @@ public:
     QString spikeEventsGeneration() const;
 
     QVariantMap tissueSnapshot() const;
+    QVariantMap topologySnapshot() const;
     QString tissueRevision() const;
 
     Q_INVOKABLE void connectToServer(const QString& socketPath = {});
@@ -93,6 +95,7 @@ public:
     Q_INVOKABLE void reinitializeSimulation();
     Q_INVOKABLE void refreshSpikeEvents();
     Q_INVOKABLE void refreshTissue();
+    Q_INVOKABLE void refreshTopology();
 
 signals:
     void connectionChanged();
@@ -103,6 +106,7 @@ signals:
     void configurationChanged();
     void spikeEventsChanged();
     void tissueChanged();
+    void topologyChanged();
     void errorOccurred(const QString& message);
 
 private:
@@ -112,6 +116,7 @@ private:
     void updateConfiguration(const QJsonObject& configuration);
     void updateSpikeEvents(const QJsonObject& spikeEvents);
     void updateTissue(const QJsonObject& tissue);
+    void updateTopology(const QJsonObject& topology);
 
     SimulationClient client_;
     bool connected_ = false;
@@ -128,4 +133,5 @@ private:
     QString spike_events_generation_ = QStringLiteral("—");
     quint64 last_spike_event_sequence_ = 0;
     QJsonObject tissue_snapshot_;
+    QJsonObject topology_snapshot_;
 };
