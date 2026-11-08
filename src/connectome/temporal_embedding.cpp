@@ -281,13 +281,77 @@ EmbeddingResult embed_temporal_graph(std::size_t node_count,
         }
     }
     result.component_count = members.size();
-    double offset = 0.0;
+    // Embed each weak component independently, then arrange components as
+    // a compact 3D field. The previous linear X offsets made a single isolated
+    // neuron determine the scale of the entire scene and collapse the main
+    // connectome into a tiny central knot.
     const auto landmark_count = std::max<std::size_t>(4, options.landmark_count);
     for (std::uint32_t id = 0; id < members.size(); ++id) {
         embed_component(members[id], forward, reverse, weak, id, result.components,
-                        landmark_count, offset, result.positions);
-        offset += 2.0 + std::max(0.0, options.component_gap);
+                        landmark_count, 0.0, result.positions);
     }
+
+    if (!members.empty()) {
+        const auto largest = static_cast<std::size_t>(std::distance(
+            members.begin(), std::max_element(members.begin(), members.end(),
+                [](const auto& a, const auto& b) { return a.size() < b.size(); })));
+        const double largest_size = static_cast<double>(members[largest].size());
+        const double gap = std::max(0.12, std::max(0.0, options.component_gap) * 0.12);
+
+        // The dominant component anchors the field at the origin. Smaller
+        // components retain their own internal geometry but shrink with the
+        // cube root of population size, then occupy deterministic Fibonacci
+        // sphere positions around the anchor.
+        for (std::size_t component_id = 0; component_id < members.size(); ++component_id) {
+            const auto& group = members[component_id];
+            Vec3 center{};
+            for (const auto node : group) {
+                center.x += result.positions[node].x;
+                center.y += result.positions[node].y;
+                center.z += result.positions[node].z;
+            }
+            const double inverse_count = 1.0 / static_cast<double>(group.size());
+            center.x *= inverse_count;
+            center.y *= inverse_count;
+            center.z *= inverse_count;
+
+            double radius = 0.0;
+            for (const auto node : group) {
+                const auto& p = result.positions[node];
+                const double dx = p.x - center.x;
+                const double dy = p.y - center.y;
+                const double dz = p.z - center.z;
+                radius = std::max(radius, std::sqrt(dx*dx + dy*dy + dz*dz));
+            }
+
+            const double scale = component_id == largest ? 1.0 :
+                std::clamp(0.72 * std::cbrt(
+                    static_cast<double>(group.size()) / largest_size), 0.045, 0.72);
+            Vec3 destination{};
+            if (component_id != largest) {
+                const double ordinal = static_cast<double>(
+                    component_id < largest ? component_id : component_id - 1);
+                const double total = static_cast<double>(
+                    std::max<std::size_t>(1, members.size() - 1));
+                const double y = 1.0 - 2.0 * (ordinal + 0.5) / total;
+                const double radial = std::sqrt(std::max(0.0, 1.0 - y*y));
+                const double angle = ordinal * 2.399963229728653;
+                const double shell = 1.0 + scale + gap +
+                    0.10 * std::sqrt(ordinal);
+                destination = {shell * radial * std::cos(angle),
+                               shell * y,
+                               shell * radial * std::sin(angle)};
+            }
+
+            for (const auto node : group) {
+                auto& p = result.positions[node];
+                p.x = destination.x + (p.x - center.x) * scale;
+                p.y = destination.y + (p.y - center.y) * scale;
+                p.z = destination.z + (p.z - center.z) * scale;
+            }
+        }
+    }
+
     for (const auto& p : result.positions)
         if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z))
             throw std::runtime_error("temporal embedding produced non-finite coordinates");
