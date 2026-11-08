@@ -43,6 +43,13 @@ if(BUILD_TESTING)
     target_include_directories(topology_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     add_dependencies(topology_tests check_parameter_schema)
     add_test(NAME topology_tests COMMAND topology_tests)
+
+    add_executable(tissue_model_tests
+        tests/unit/tissue_model_tests.cpp
+        src/tissue/tissue_model.cpp
+    )
+    target_include_directories(tissue_model_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    add_test(NAME tissue_model_tests COMMAND tissue_model_tests)
 endif()
 
 option(SPIKINGMODEL_ENABLE_QT_CLIENT "Build the optional Qt IPC client" OFF)
