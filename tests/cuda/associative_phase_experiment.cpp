@@ -58,17 +58,15 @@ CSRTopology make_association_graph() {
     // causal A-then-B protocol; B->A is expected to undergo LTD.
     for (std::uint32_t source = 0; source < total; ++source) {
         if (source < kA + kGroup) {
-            for (std::uint32_t target = kB; target < kB + kGroup; ++target) {
-                graph.target_indices.push_back(target);
-                graph.weights.push_back(0.05f);
-                graph.delays.push_back(1);
-            }
+            const std::uint32_t target = kB + (source - kA);
+            graph.target_indices.push_back(target);
+            graph.weights.push_back(0.05f);
+            graph.delays.push_back(1);
         } else if (source >= kB && source < kB + kGroup) {
-            for (std::uint32_t target = kA; target < kA + kGroup; ++target) {
-                graph.target_indices.push_back(target);
-                graph.weights.push_back(0.05f);
-                graph.delays.push_back(1);
-            }
+            const std::uint32_t target = kA + (source - kB);
+            graph.target_indices.push_back(target);
+            graph.weights.push_back(0.05f);
+            graph.delays.push_back(1);
         }
         graph.row_offsets[source + 1] =
             static_cast<std::uint32_t>(graph.target_indices.size());
@@ -120,6 +118,14 @@ struct Condition {
         learning.maximum_weight_magnitude = 1.5f;
         runtime.configure_synaptic_plasticity(learning);
 
+        AdaptiveTopologyConfig topology;
+        topology.enabled = plastic;
+        topology.update_interval_steps = 8;
+        topology.growth_trace_threshold = 0.75f;
+        topology.prune_weight_threshold = 0.012f;
+        topology.growth_weight = 0.025f;
+        runtime.configure_adaptive_topology(topology);
+
         PhaseDynamicsConfig phases;
         phases.enabled = phase;
         phases.coupling_strength = 0.20f;
@@ -150,12 +156,14 @@ void write_record(std::ofstream& csv, Condition& condition,
         << c_spikes << ',' << std::setprecision(9)
         << a_v << ',' << b_v << ',' << c_v << ','
         << metrics.mean_absolute_synaptic_weight << ','
+        << metrics.active_synapses << ',' << metrics.synapse_capacity << ','
         << metrics.phase_coherence << ',' << events.dropped_events << '\n';
 
     std::cout << condition.name << " " << stage << " " << epoch
               << ": A/B/C spikes=" << a_spikes << "/" << b_spikes
               << "/" << c_spikes << ", mean|w|="
               << metrics.mean_absolute_synaptic_weight
+              << ", edges=" << metrics.active_synapses << "/" << metrics.synapse_capacity
               << ", phase R=" << metrics.phase_coherence << '\n';
 }
 
@@ -201,6 +209,13 @@ int main() {
                 write_record(csv, *condition, "training", epoch, events);
             }
         }
+
+        const auto learned_topology = plastic_phase.runtime.collect_metrics();
+        const auto fixed_topology = fixed_phase.runtime.collect_metrics();
+        if (learned_topology.active_synapses <= graph.synapse_count())
+            throw std::runtime_error("Associative training did not grow the CSR connectome");
+        if (fixed_topology.active_synapses != graph.synapse_count())
+            throw std::runtime_error("Fixed-topology control changed its CSR edge count");
 
         // Freeze plasticity for all recall probes. Phase dynamics remain
         // active in the phase conditions so effective connectivity can still
