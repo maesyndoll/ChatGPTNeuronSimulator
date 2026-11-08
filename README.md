@@ -50,11 +50,12 @@ The CUDA CTest includes `cuda_runtime_smoke`, which exercises initialization,
 step-boundary parameter updates, continued execution, full reinitialization,
 phase synchronization, STDP weight adaptation, and an associative-recall
 experiment. The runtime API accepts a per-neuron external-current vector that
-is copied to GPU memory and added during neuron integration. The recall test
-repeatedly co-activates two populations (A+B), then stimulates A alone and
-compares activity in the trained B population against an untrained C population
-and an identically seeded zero-STDP control. It tests a functional response,
-not merely a change in mean synaptic weight.
+is copied to GPU memory and added during neuron integration. The recall test uses an explicit structured CSR graph in which A projects to B
+and C has no incoming edges. Training presents A before B to create the causal
+pre/post timing required by the current pair-based STDP rule; recall then
+stimulates A alone and compares B activity against C and an identically seeded
+zero-STDP control. It also checks that training generated spike events. This is
+a controlled functional test, not evidence of general intelligence.
 The CPU-only tests do not verify CUDA compilation or GPU execution. See
 [`docs/RUNTIME_FOUNDATION.md`](docs/RUNTIME_FOUNDATION.md) for implementation
 notes and lifecycle semantics.
