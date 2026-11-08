@@ -500,6 +500,9 @@ void SimulationBridge::updateSpikeEvents(const QJsonObject& spikeEvents) {
         last_spike_event_sequence_ = sequence;
     }
 
+    if (visual_spike_events_.size() > 4096)
+        visual_spike_events_.remove(0, visual_spike_events_.size() - 4096);
+
     if (spike_events_.size() > kMaximumDashboardEvents) {
         const qsizetype excess =
             spike_events_.size() - kMaximumDashboardEvents;
