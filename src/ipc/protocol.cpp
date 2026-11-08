@@ -409,6 +409,29 @@ Json handle_request(SimulationController& controller, const Json& request) {
             });
         }
 
+        if (command == "stimulate_neurons") {
+            if (!payload.contains("neuron_ids") || !payload.at("neuron_ids").is_array() ||
+                payload.at("neuron_ids").empty())
+                throw std::invalid_argument("stimulate_neurons requires a non-empty neuron_ids array");
+            if (!payload.contains("amplitude") || !payload.at("amplitude").is_number())
+                throw std::invalid_argument("stimulate_neurons requires numeric amplitude");
+            if (!payload.contains("duration_steps"))
+                throw std::invalid_argument("stimulate_neurons requires duration_steps");
+            std::vector<std::uint32_t> neuron_ids;
+            neuron_ids.reserve(payload.at("neuron_ids").size());
+            for (const auto& id : payload.at("neuron_ids"))
+                neuron_ids.push_back(read_positive_u32(id.is_number_unsigned() ? id :
+                    (id.is_number_integer() && id.get<std::int64_t>() >= 0 ? id : Json(nullptr)), "neuron_id") - 1U);
+            const double amplitude = payload.at("amplitude").get<double>();
+            if (!std::isfinite(amplitude) || amplitude == 0.0)
+                throw std::invalid_argument("amplitude must be finite and non-zero");
+            const auto duration = read_positive_u32(payload.at("duration_steps"), "duration_steps");
+            controller.stimulate_neurons(neuron_ids, static_cast<float>(amplitude), duration);
+            return success_response(request_id, {{"accepted", true},
+                {"selected_neurons", neuron_ids.size()},
+                {"amplitude", amplitude}, {"duration_steps", duration}});
+        }
+
         if (command == "step") {
             if (!payload.contains("steps")) {
                 throw std::invalid_argument("step requires payload.steps");
