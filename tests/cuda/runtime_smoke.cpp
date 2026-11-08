@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 
 int main() {
     using namespace spiking;
@@ -585,6 +586,123 @@ int main() {
                   << ", zero-learning control="
                   << control_learning_metrics.mean_absolute_synaptic_weight
                   << ", spikes=" << learned_metrics.excitatory_spikes << '\n';
+
+        // Associative recall: repeatedly co-activate populations A and B,
+        // then stimulate A alone. A learned A->B pathway should recruit B
+        // more strongly than an untrained population C and a zero-STDP control.
+        auto make_association_parameters = [] {
+            ModelParameters p;
+            p.simulation.excitatory_count = 24;
+            p.simulation.inhibitory_count = 1;
+            p.simulation.steps = 1;
+            p.simulation.dt = 0.25f;
+            p.simulation.threshold = 30.0f;
+            p.simulation.initial_voltage_min = -65.0f;
+            p.simulation.initial_voltage_max = -65.0f;
+            p.simulation.excitatory_current_min = 0.0f;
+            p.simulation.excitatory_current_max = 0.0f;
+            p.simulation.inhibitory_current_min = 0.0f;
+            p.simulation.inhibitory_current_max = 0.0f;
+            p.simulation.random_seed = 24681357U;
+            p.topology.p_ee = 1.0;
+            p.topology.p_ei = 0.0;
+            p.topology.p_ie = 0.0;
+            p.topology.p_ii = 0.0;
+            p.topology.topology_seed = 975318642ULL;
+            p.topology.delay_seed = 864213579ULL;
+            p.topology.delay_distribution = DelayDistribution::Uniform;
+            p.topology.minimum_delay = 1;
+            p.topology.maximum_delay = 1;
+            p.topology.fibonacci_delays = {1};
+            p.topology.fibonacci_weights = {1.0};
+            return p;
+        };
+        CudaSimulationRuntime association_active(make_association_parameters());
+        CudaSimulationRuntime association_control(make_association_parameters());
+        SynapticPlasticityConfig association_learning;
+        association_learning.enabled = true;
+        association_learning.trace_time_constant_ms = 30.0f;
+        association_learning.potentiation_rate = 0.025f;
+        association_learning.depression_rate = 0.002f;
+        association_learning.minimum_weight_magnitude = 0.005f;
+        association_learning.maximum_weight_magnitude = 0.50f;
+        association_active.configure_synaptic_plasticity(association_learning);
+        auto association_no_learning = association_learning;
+        association_no_learning.potentiation_rate = 0.0f;
+        association_no_learning.depression_rate = 0.0f;
+        association_control.configure_synaptic_plasticity(association_no_learning);
+
+        constexpr std::uint32_t association_group_size = 8;
+        constexpr float association_input = 25.0f;
+        std::vector<float> paired_input(25, 0.0f);
+        for (std::uint32_t neuron = 0; neuron < 2 * association_group_size; ++neuron)
+            paired_input[neuron] = association_input;
+        std::vector<float> recall_input(25, 0.0f);
+        for (std::uint32_t neuron = 0; neuron < association_group_size; ++neuron)
+            recall_input[neuron] = association_input;
+
+        for (int repetition = 0; repetition < 4; ++repetition) {
+            association_active.set_external_current(paired_input);
+            association_control.set_external_current(paired_input);
+            association_active.run_steps(60);
+            association_control.run_steps(60);
+            association_active.set_external_current(std::vector<float>(25, 0.0f));
+            association_control.set_external_current(std::vector<float>(25, 0.0f));
+            association_active.run_steps(20);
+            association_control.run_steps(20);
+        }
+        // Drain training events; recall counts below include only the probe.
+        (void)association_active.collect_spike_events();
+        (void)association_control.collect_spike_events();
+
+        // Freeze weights during recall so the probe measures the learned state,
+        // rather than additional learning caused by the test stimulus.
+        auto frozen_learning = association_learning;
+        frozen_learning.enabled = false;
+        association_active.configure_synaptic_plasticity(frozen_learning);
+        association_control.configure_synaptic_plasticity(frozen_learning);
+        association_active.set_external_current(recall_input);
+        association_control.set_external_current(recall_input);
+        association_active.run_steps(120);
+        association_control.run_steps(120);
+        const auto active_recall = association_active.collect_spike_events();
+        const auto control_recall = association_control.collect_spike_events();
+
+        const auto count_group_spikes = [](const SpikeEventBatch& batch,
+                                           std::uint32_t first,
+                                           std::uint32_t last) {
+            std::uint64_t count = 0;
+            for (const auto& event : batch.events) {
+                if (event.neuron_id >= first && event.neuron_id < last)
+                    ++count;
+            }
+            return count;
+        };
+        const auto learned_b = count_group_spikes(
+            active_recall, association_group_size, 2 * association_group_size);
+        const auto untrained_c = count_group_spikes(
+            active_recall, 2 * association_group_size, 3 * association_group_size);
+        const auto control_b = count_group_spikes(
+            control_recall, association_group_size, 2 * association_group_size);
+        const auto control_c = count_group_spikes(
+            control_recall, 2 * association_group_size, 3 * association_group_size);
+        const auto active_recall_metrics = association_active.collect_metrics();
+        const auto control_recall_metrics = association_control.collect_metrics();
+        if (!active_recall_metrics.finite_state ||
+            !control_recall_metrics.finite_state ||
+            active_recall.dropped_events != 0 || control_recall.dropped_events != 0 ||
+            learned_b <= untrained_c || learned_b <= control_b) {
+            std::cerr << "GPU associative recall experiment failed\n"
+                      << "Learned B response: " << learned_b << '\n'
+                      << "Untrained C response: " << untrained_c << '\n'
+                      << "Zero-STDP B response: " << control_b << '\n'
+                      << "Zero-STDP C response: " << control_c << '\n';
+            return EXIT_FAILURE;
+        }
+        std::cout << "GPU associative recall experiment passed; trained B="
+                  << learned_b << ", untrained C=" << untrained_c
+                  << ", zero-STDP B=" << control_b
+                  << ", zero-STDP C=" << control_c << '\n';
 
         ModelParameters parameters;
         parameters.simulation = SimulationParameters::small_test();
