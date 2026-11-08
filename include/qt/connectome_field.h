@@ -71,6 +71,7 @@ private:
     QVector<EdgeTransition> edge_transitions_;
     QVector<RenderPosition> temporal_positions_;
     QVector<RenderPosition> previous_temporal_positions_;
+    QVector<std::uint32_t> embedded_node_ids_;
     QFutureWatcher<connectome::EmbeddingResult> embedding_watcher_;
     quint64 embedding_request_generation_ = 0;
     quint64 embedding_watcher_generation_ = 0;
