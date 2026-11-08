@@ -448,7 +448,7 @@ int main() {
             p.simulation.inhibitory_count = 1;
             p.simulation.steps = 1;
             p.simulation.dt = 0.01f;
-            p.simulation.threshold = 1000.0f;
+            p.simulation.threshold = 100.0f;
             p.simulation.initial_voltage_min = -65.0f;
             p.simulation.initial_voltage_max = -65.0f;
             p.simulation.excitatory_current_min = 0.0f;
