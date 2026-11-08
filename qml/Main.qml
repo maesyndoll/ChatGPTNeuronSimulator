@@ -1305,11 +1305,14 @@ ApplicationWindow {
                 }
             }
 
-            NumberAnimation on cloudRotation {
+            NumberAnimation {
+                target: window
+                property: "cloudRotation"
                 from: 0
                 to: 360
                 duration: 45000
                 loops: Animation.Infinite
+                running: true
             }
         }
 
