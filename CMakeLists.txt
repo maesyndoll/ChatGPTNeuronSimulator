@@ -198,6 +198,25 @@ if(SPIKINGMODEL_ENABLE_CUDA)
             CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
         )
         add_test(NAME cuda_runtime_smoke COMMAND cuda_runtime_smoke)
+
+        # Larger associative-memory and adaptive phase-routing experiment.
+        add_executable(associative_phase_experiment
+            tests/cuda/associative_phase_experiment.cpp
+            src/cuda/neuron_izhikevich.cu
+            src/runtime/cuda_simulation_runtime.cu
+            src/topology/topology_generator.cpp
+        )
+        target_include_directories(associative_phase_experiment PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+        target_link_libraries(associative_phase_experiment PRIVATE CUDA::cudart)
+        set_target_properties(associative_phase_experiment PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON
+            CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+        )
+        add_test(NAME associative_phase_experiment COMMAND associative_phase_experiment)
+        set_tests_properties(associative_phase_experiment PROPERTIES TIMEOUT 180)
+        add_dependencies(associative_phase_experiment check_parameter_schema)
         add_dependencies(cuda_runtime_smoke check_parameter_schema)
 
         add_executable(controller_smoke
