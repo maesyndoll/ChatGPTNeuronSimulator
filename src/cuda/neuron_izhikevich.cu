@@ -190,6 +190,7 @@ __global__ void neuron_step_kernel(
     float dt,
     float threshold,
     float* synaptic_current,
+    const float* external_current,
     std::uint32_t ring_slot,
     std::uint64_t step_index
 ) {
@@ -210,8 +211,9 @@ __global__ void neuron_step_kernel(
     const float d = p.d[id];
     const std::size_t current_offset =
         static_cast<std::size_t>(ring_slot) * count + id;
-    const float current =
-        p.current[id] + synaptic_current[current_offset];
+    const float current = p.current[id] +
+        (external_current != nullptr ? external_current[id] : 0.0f) +
+        synaptic_current[current_offset];
 
     // Consume this slot exactly once. Propagation and integration are
     // ordered in the same CUDA stream.
@@ -463,6 +465,7 @@ void simulate_neurons(
     float dt,
     float threshold,
     float* synaptic_current,
+    const float* external_current,
     std::uint32_t ring_slot,
     std::uint64_t step_index,
     cudaStream_t stream
@@ -472,7 +475,7 @@ void simulate_neurons(
 
     neuron_step_kernel<<<blocks, threads, 0, stream>>>(
         parameters, state, neuron_count, dt, threshold,
-        synaptic_current, ring_slot, step_index
+        synaptic_current, external_current, ring_slot, step_index
     );
     SPIKING_CUDA_CHECK(cudaGetLastError());
 }
