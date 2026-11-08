@@ -233,6 +233,32 @@ void ConnectomeField::setSimulationGeneration(const QString& value) {
     update();
 }
 
+void ConnectomeField::setSimulationStep(const QString& value) {
+    bool ok = false;
+    const std::uint64_t nextStep = value.toULongLong(&ok);
+    if (!ok) return;
+    QMutexLocker locker(&mutex_);
+    if (simulation_step_text_ == value) return;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (step_clock_updated_ms_ > 0 && now > step_clock_updated_ms_ &&
+        nextStep >= simulation_step_) {
+        const double elapsedSeconds =
+            double(now - step_clock_updated_ms_) / 1000.0;
+        const double instantaneousRate =
+            double(nextStep - simulation_step_) / elapsedSeconds;
+        if (instantaneousRate > 0.0 && std::isfinite(instantaneousRate)) {
+            simulation_steps_per_second_ =
+                simulation_steps_per_second_ > 0.0
+                    ? 0.75 * simulation_steps_per_second_ + 0.25 * instantaneousRate
+                    : instantaneousRate;
+        }
+    }
+    simulation_step_ = nextStep;
+    simulation_step_text_ = value;
+    step_clock_updated_ms_ = now;
+    update();
+}
+
 void ConnectomeField::setSpikeEvents(const QVariantList& value) {
     QMutexLocker locker(&mutex_);
     if (spike_events_ == value) return;
@@ -250,7 +276,12 @@ void ConnectomeField::setSpikeEvents(const QVariantList& value) {
         const qint64 sequence = map.value(QStringLiteral("sequence")).toString().toLongLong();
         if (sequence <= last_sequence_) continue;
         last_sequence_ = sequence;
-        spikes_.push_back({map.value(QStringLiteral("neuron_id")).toUInt(), now});
+        bool stepOk = false;
+        const std::uint64_t eventStep =
+            map.value(QStringLiteral("step")).toString().toULongLong(&stepOk);
+        if (!stepOk) continue;
+        spikes_.push_back({
+            map.value(QStringLiteral("neuron_id")).toUInt(), eventStep, now});
     }
     while (!spikes_.isEmpty() && now - spikes_.front().received_ms > 2600)
         spikes_.removeFirst();
@@ -308,15 +339,42 @@ QSGNode* ConnectomeField::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*
     }
 
     std::unordered_map<std::uint32_t, float> activity;
-    std::unordered_map<std::uint32_t, QVector<qint64>> pulseTimes;
+    std::unordered_map<std::uint32_t, QVector<const Spike*>> pulseEvents;
+    std::unordered_map<std::uint32_t, QVector<std::uint64_t>> spikeSteps;
+    std::unordered_map<std::uint32_t, qint64> lastSpikeTime;
     activity.reserve(static_cast<std::size_t>(spikes_.size()));
-    pulseTimes.reserve(static_cast<std::size_t>(spikes_.size()));
+    pulseEvents.reserve(static_cast<std::size_t>(spikes_.size()));
+    spikeSteps.reserve(static_cast<std::size_t>(spikes_.size()));
+    lastSpikeTime.reserve(static_cast<std::size_t>(spikes_.size()));
     for (const auto& spike : spikes_) {
         const qint64 age = now - spike.received_ms;
         if (age >= 0 && age < 2600) {
             activity[spike.neuron] += std::exp(-float(age) / 720.0f);
-            auto& times = pulseTimes[spike.neuron];
-            if (times.size() < 8) times.push_back(spike.received_ms);
+            auto& events = pulseEvents[spike.neuron];
+            if (events.size() < 8) events.push_back(&spike);
+            spikeSteps[spike.neuron].push_back(spike.step);
+            lastSpikeTime[spike.neuron] = spike.received_ms;
+        }
+    }
+    std::unordered_map<std::uint32_t, float> firingRateHz;
+    firingRateHz.reserve(spikeSteps.size());
+    for (const auto& entry : spikeSteps) {
+        const auto& steps = entry.second;
+        if (steps.size() < 2 || simulation_steps_per_second_ <= 0.0)
+            continue;
+        std::uint64_t intervalSum = 0;
+        std::uint64_t intervalCount = 0;
+        for (qsizetype i = 1; i < steps.size(); ++i) {
+            if (steps[i] > steps[i - 1]) {
+                intervalSum += steps[i] - steps[i - 1];
+                ++intervalCount;
+            }
+        }
+        if (intervalCount != 0 && intervalSum != 0) {
+            const double meanInterval =
+                double(intervalSum) / double(intervalCount);
+            firingRateHz[entry.first] =
+                float(simulation_steps_per_second_ / meanInterval);
         }
     }
 
@@ -330,7 +388,17 @@ QSGNode* ConnectomeField::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*
     positions.reserve(static_cast<std::size_t>(nodeCount));
     for (int i = 0; i < nodeCount; ++i) {
         const auto id = nodes_[i];
-        const float intensity = std::min(2.8f, activity[id]);
+        float intensity = std::min(2.8f, activity[id]);
+        const auto rateIt = firingRateHz.find(id);
+        if (rateIt != firingRateHz.end() && intensity > 0.0f) {
+            const float frequency = std::clamp(rateIt->second, 0.1f, 80.0f);
+            const qint64 lastSpike = lastSpikeTime[id];
+            const float phase = float(now - lastSpike) * 0.001f *
+                frequency * 6.28318530718f;
+            const float strobe = 0.20f + 0.80f *
+                (0.5f + 0.5f * std::sin(phase));
+            intensity *= strobe;
+        }
         RenderPosition point = i < temporal_positions_.size()
             ? temporal_positions_[i] : RenderPosition{};
         if (i < previous_temporal_positions_.size()) {
@@ -374,15 +442,14 @@ QSGNode* ConnectomeField::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*
         put(edgeVertices[i*2], from.x, from.y, r, g, b, alpha);
         put(edgeVertices[i*2+1], to.x, to.y, r, g, b, alpha);
 
-        const auto sourcePulses = pulseTimes.find(edge.source);
-        if (sourcePulses != pulseTimes.end()) {
-            const float duration = 240.0f + 1760.0f *
-                (float(edge.delay) / float(maxDelay));
+        const auto sourcePulses = pulseEvents.find(edge.source);
+        if (sourcePulses != pulseEvents.end()) {
             int emitted = 0;
-            for (const qint64 firedAt : sourcePulses->second) {
-                const float age = float(now - firedAt);
-                if (age < 0.0f || age >= duration) continue;
-                const float t = age / duration;
+            for (const Spike* spike : sourcePulses->second) {
+                if (simulation_step_ < spike->step) continue;
+                const std::uint64_t ageSteps = simulation_step_ - spike->step;
+                if (ageSteps >= edge.delay) continue;
+                const float t = float(ageSteps) / float(edge.delay);
                 const float px = from.x + (to.x - from.x) * t;
                 const float py = from.y + (to.y - from.y) * t;
                 const float radius = 1.5f + (1.0f - t) * 1.2f;
