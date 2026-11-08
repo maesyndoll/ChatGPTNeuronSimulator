@@ -133,8 +133,22 @@ CudaSimulationRuntime::CudaSimulationRuntime(ModelParameters defaults, int devic
     device_state_ = build_device_state(active_parameters_);
 }
 
+CudaSimulationRuntime::CudaSimulationRuntime(
+    ModelParameters defaults, CSRTopology topology, int device)
+    : parameter_manager_(std::move(defaults)),
+      active_parameters_(parameter_manager_.active_parameters()),
+      device_id_(device) {
+    SPIKING_CUDA_CHECK(cudaSetDevice(device_id_));
+    topology.validate();
+    if (topology.excitatory_count != active_parameters_.simulation.excitatory_count ||
+        topology.inhibitory_count != active_parameters_.simulation.inhibitory_count)
+        throw std::invalid_argument("Custom CSR population sizes must match model parameters");
+    device_state_ = build_device_state(active_parameters_, &topology);
+}
+
 std::unique_ptr<CudaSimulationRuntime::DeviceState>
-CudaSimulationRuntime::build_device_state(const ModelParameters& parameters) {
+CudaSimulationRuntime::build_device_state(
+    const ModelParameters& parameters, const CSRTopology* topology_override) {
     const auto& p = parameters.simulation;
     const std::uint32_t total = p.neuron_count();
     if (total == 0) throw std::invalid_argument("Cannot initialize an empty network");
@@ -204,8 +218,9 @@ CudaSimulationRuntime::build_device_state(const ModelParameters& parameters) {
             "probabilities, or maximum synaptic delay.");
     }
 
-    const CSRTopology topology =
-        generate_random_sparse_topology(p, parameters.topology);
+    const CSRTopology topology = topology_override
+        ? *topology_override
+        : generate_random_sparse_topology(p, parameters.topology);
 
     if (topology.weights.size() >
         static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())) {
