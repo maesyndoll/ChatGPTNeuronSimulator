@@ -3,6 +3,7 @@
 #include "ipc/parameter_json.h"
 
 #include <limits>
+#include <cmath>
 #include <stdexcept>
 #include <string>
 
