@@ -265,6 +265,50 @@ __global__ void neuron_step_kernel(
     s.recovery[id] = u;
 }
 
+__global__ void stdp_update_kernel(
+    float* weights,
+    const std::uint32_t* row_offsets,
+    const std::uint32_t* target_indices,
+    const std::uint8_t* spike_flags,
+    const float* traces,
+    std::uint32_t neuron_count,
+    float potentiation_rate,
+    float depression_rate,
+    float minimum_magnitude,
+    float maximum_magnitude
+) {
+    const std::uint32_t source = blockIdx.x * blockDim.x + threadIdx.x;
+    if (source >= neuron_count) return;
+    const bool pre_spiked = spike_flags[source] != 0;
+    const std::uint32_t begin = row_offsets[source];
+    const std::uint32_t end = row_offsets[source + 1U];
+    for (std::uint32_t edge = begin; edge < end; ++edge) {
+        const std::uint32_t target = target_indices[edge];
+        const bool post_spiked = spike_flags[target] != 0;
+        float delta = 0.0f;
+        if (post_spiked) delta += potentiation_rate * traces[source];
+        if (pre_spiked) delta -= depression_rate * traces[target];
+        if (delta != 0.0f) {
+            const float old_weight = weights[edge];
+            const float magnitude = fminf(maximum_magnitude,
+                fmaxf(minimum_magnitude, fabsf(old_weight) + delta));
+            weights[edge] = copysignf(magnitude, old_weight);
+        }
+    }
+}
+
+__global__ void update_spike_traces_kernel(
+    float* traces,
+    const std::uint8_t* spike_flags,
+    std::uint32_t neuron_count,
+    float decay
+) {
+    const std::uint32_t id = blockIdx.x * blockDim.x + threadIdx.x;
+    if (id >= neuron_count) return;
+    traces[id] = traces[id] * decay +
+        (spike_flags[id] != 0 ? 1.0f : 0.0f);
+}
+
 void initialize_neurons(
     NeuronParametersGPU parameters,
     NeuronStateGPU state,
@@ -369,6 +413,46 @@ void propagate_spikes(
     propagate_spikes_kernel<<<blocks, threads, 0, stream>>>(
         state, synapses, neuron_count, step_index
     );
+    SPIKING_CUDA_CHECK(cudaGetLastError());
+}
+
+void update_synaptic_plasticity(
+    float* weights,
+    const std::uint32_t* row_offsets,
+    const std::uint32_t* target_indices,
+    const std::uint8_t* spike_flags,
+    float* spike_traces,
+    std::uint32_t neuron_count,
+    float dt,
+    float trace_decay,
+    float potentiation_rate,
+    float depression_rate,
+    float minimum_magnitude,
+    float maximum_magnitude,
+    cudaStream_t stream
+) {
+    if (weights == nullptr || row_offsets == nullptr ||
+        target_indices == nullptr || spike_flags == nullptr ||
+        spike_traces == nullptr || neuron_count == 0 ||
+        !std::isfinite(dt) || dt <= 0.0f ||
+        !std::isfinite(trace_decay) || trace_decay <= 0.0f ||
+        trace_decay > 1.0f ||
+        !std::isfinite(potentiation_rate) || potentiation_rate < 0.0f ||
+        !std::isfinite(depression_rate) || depression_rate < 0.0f ||
+        !std::isfinite(minimum_magnitude) || minimum_magnitude <= 0.0f ||
+        !std::isfinite(maximum_magnitude) ||
+        maximum_magnitude < minimum_magnitude) {
+        throw std::invalid_argument("Invalid synaptic plasticity parameters or buffers");
+    }
+    constexpr int threads = 128;
+    const int blocks = (neuron_count + threads - 1) / threads;
+    stdp_update_kernel<<<blocks, threads, 0, stream>>>(
+        weights, row_offsets, target_indices, spike_flags, spike_traces,
+        neuron_count, potentiation_rate, depression_rate,
+        minimum_magnitude, maximum_magnitude);
+    SPIKING_CUDA_CHECK(cudaGetLastError());
+    update_spike_traces_kernel<<<blocks, 256, 0, stream>>>(
+        spike_traces, spike_flags, neuron_count, trace_decay);
     SPIKING_CUDA_CHECK(cudaGetLastError());
 }
 
