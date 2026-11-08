@@ -1,5 +1,7 @@
 #include "qt/connectome_field.h"
 
+#include "connectome/temporal_embedding.h"
+
 #include <QDateTime>
 #include <QSGGeometry>
 #include <QSGGeometryNode>
@@ -79,6 +81,13 @@ void ConnectomeField::setTopology(const QVariantMap& value) {
         nodes_.push_back(item.toUInt());
     const auto edgeValues = value.value(QStringLiteral("edges")).toList();
     edges_.reserve(edgeValues.size());
+    std::unordered_map<std::uint32_t, std::uint32_t> denseIndex;
+    denseIndex.reserve(static_cast<std::size_t>(nodes_.size()));
+    for (int i = 0; i < nodes_.size(); ++i)
+        denseIndex.emplace(nodes_[i], static_cast<std::uint32_t>(i));
+
+    std::vector<connectome::TemporalEdge> temporalEdges;
+    temporalEdges.reserve(static_cast<std::size_t>(edgeValues.size()));
     for (const auto& item : edgeValues) {
         const auto map = item.toMap();
         Edge edge;
@@ -87,6 +96,22 @@ void ConnectomeField::setTopology(const QVariantMap& value) {
         edge.delay = std::max(1u, map.value(QStringLiteral("delay")).toUInt());
         edge.excitatory = map.value(QStringLiteral("excitatory")).toBool();
         edges_.push_back(edge);
+        const auto source = denseIndex.find(edge.source);
+        const auto target = denseIndex.find(edge.target);
+        if (source != denseIndex.end() && target != denseIndex.end())
+            temporalEdges.push_back({source->second, target->second,
+                                     static_cast<double>(edge.delay)});
+    }
+    temporal_positions_.clear();
+    if (!nodes_.isEmpty()) {
+        const auto embedding = connectome::embed_temporal_graph(
+            static_cast<std::size_t>(nodes_.size()), temporalEdges);
+        temporal_positions_.reserve(nodes_.size());
+        for (const auto& point : embedding.positions)
+            temporal_positions_.push_back({
+                static_cast<float>(point.x),
+                static_cast<float>(point.y),
+                static_cast<float>(point.z)});
     }
     emit topologyChanged();
     update();
@@ -162,8 +187,13 @@ QSGNode* ConnectomeField::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*
     const float extent = std::min(w, h) * 0.43f;
     const float cy = std::cos(float(rotation_y_)), sy = std::sin(float(rotation_y_));
     const float cx = std::cos(float(rotation_x_)), sx = std::sin(float(rotation_x_));
-    const float count = float(std::max(1, nodeCount));
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    float coordinateScale = 1.0f;
+    for (const auto& point : temporal_positions_) {
+        coordinateScale = std::max(coordinateScale, std::abs(point.x));
+        coordinateScale = std::max(coordinateScale, std::abs(point.y));
+        coordinateScale = std::max(coordinateScale, std::abs(point.z));
+    }
 
     std::unordered_map<std::uint32_t, float> activity;
     std::unordered_map<std::uint32_t, QVector<qint64>> pulseTimes;
@@ -187,24 +217,20 @@ QSGNode* ConnectomeField::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*
     std::unordered_map<std::uint32_t, Position> positions;
     positions.reserve(static_cast<std::size_t>(nodeCount));
     for (int i = 0; i < nodeCount; ++i) {
-        const float z0 = 1.0f - 2.0f * (float(i) + 0.5f) / count;
-        const float ring = std::sqrt(std::max(0.0f, 1.0f - z0 * z0));
-        const float angle = float(i) * 2.399963229728653f;
         const auto id = nodes_[i];
         const float intensity = std::min(2.8f, activity[id]);
-        const float wave = float(now) * 0.00125f + angle * 1.7f + z0 * 5.0f;
-        const float radial = 1.0f + intensity * 0.075f +
-            std::sin(wave) * (0.012f + intensity * 0.025f);
-        const float x0 = std::cos(angle) * ring * radial;
-        const float y0 = std::sin(angle) * ring * radial;
-        const float z = z0 * radial + std::sin(wave * 0.7f) * intensity * 0.045f;
-        const float twist = intensity * 0.10f + std::sin(wave * 0.35f) * 0.018f;
-        const float tx = x0 * std::cos(twist) - y0 * std::sin(twist);
-        const float ty = x0 * std::sin(twist) + y0 * std::cos(twist);
-        const float x1 = tx * cy + z * sy;
-        const float z1 = -tx * sy + z * cy;
-        const float y1 = ty * cx - z1 * sx;
-        const float z2 = ty * sx + z1 * cx;
+        const auto point = i < temporal_positions_.size()
+            ? temporal_positions_[i] : RenderPosition{};
+        // Activity changes illumination and node size, never the temporal
+        // coordinate itself. Structural revisions are the only source of
+        // spatial re-embedding.
+        const float x0 = point.x / coordinateScale;
+        const float y0 = point.y / coordinateScale;
+        const float z0 = point.z / coordinateScale;
+        const float x1 = x0 * cy + z0 * sy;
+        const float z1 = -x0 * sy + z0 * cy;
+        const float y1 = y0 * cx - z1 * sx;
+        const float z2 = y0 * sx + z1 * cx;
         const float perspective = float(camera_distance_) /
             std::max(0.35f, float(camera_distance_) - z2);
         positions.emplace(id, Position{
