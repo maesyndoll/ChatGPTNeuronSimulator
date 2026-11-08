@@ -24,6 +24,7 @@ SimulationBridge::SimulationBridge(QObject* parent)
         refreshConfiguration();
         refreshSpikeEvents();
         refreshTissue();
+        refreshTopology();
     });
 
     connect(&client_, &SimulationClient::disconnected, this, [this]() {
@@ -38,7 +39,9 @@ SimulationBridge::SimulationBridge(QObject* parent)
         last_spike_event_sequence_ = 0;
         emit spikeEventsChanged();
         tissue_snapshot_ = {};
+        topology_snapshot_ = {};
         emit tissueChanged();
+        emit topologyChanged();
         setStatusMessage(QStringLiteral("Disconnected from simulation server"));
     });
 
@@ -70,6 +73,8 @@ SimulationBridge::SimulationBridge(QObject* parent)
             if (!result.value(QStringLiteral("unchanged")).toBool(false)) {
                 updateTissue(result);
             }
+        } else if (command == QStringLiteral("get_topology")) {
+            updateTopology(result);
         } else {
             const QJsonValue configurationValue =
                 result.value(QStringLiteral("configuration"));
@@ -259,6 +264,10 @@ QString SimulationBridge::spikeEventsGeneration() const {
     return spike_events_generation_;
 }
 
+QVariantMap SimulationBridge::topologySnapshot() const {
+    return topology_snapshot_.toVariantMap();
+}
+
 QVariantMap SimulationBridge::tissueSnapshot() const {
     return tissue_snapshot_.toVariantMap();
 }
@@ -359,6 +368,10 @@ void SimulationBridge::applyParameters(const QVariantMap& parameters) {
         QJsonObject{
             {QStringLiteral("parameters"), parameterObject}
         });
+}
+
+void SimulationBridge::refreshTopology() {
+    if (connected_) client_.sendRequest(QStringLiteral("get_topology"));
 }
 
 void SimulationBridge::refreshTissue() {
@@ -488,6 +501,11 @@ void SimulationBridge::updateSpikeEvents(const QJsonObject& spikeEvents) {
     }
 
     emit spikeEventsChanged();
+}
+
+void SimulationBridge::updateTopology(const QJsonObject& topology) {
+    topology_snapshot_ = topology;
+    emit topologyChanged();
 }
 
 void SimulationBridge::updateTissue(const QJsonObject& tissue) {
