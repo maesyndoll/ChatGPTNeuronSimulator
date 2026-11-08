@@ -82,6 +82,10 @@ public:
     void pause();
     void step(std::uint32_t steps);
 
+    // Inject a bounded current pulse into explicitly selected neurons.
+    void stimulate_neurons(const std::vector<std::uint32_t>& neuron_ids,
+                           float amplitude, std::uint32_t duration_steps);
+
     ParameterUpdateResult apply_parameters(const ModelParameters& candidate);
     ParameterUpdateResult reset_parameters_to_defaults();
     void reinitialize_simulation();
@@ -159,6 +163,16 @@ private:
         std::promise<void> initialized);
 
     void publish_metrics(const SimulationMetrics& metrics);
+    void run_steps_with_stimuli(CudaSimulationRuntime& runtime,
+                                std::uint32_t steps);
+
+    struct StimulusPulse {
+        std::vector<std::uint32_t> neuron_ids;
+        float amplitude = 0.0f;
+        std::uint32_t remaining_steps = 0;
+    };
+    std::vector<StimulusPulse> active_stimuli_;
+    bool external_current_dirty_ = true;
     void publish_spike_events(
         const SpikeEventBatch& batch, std::uint64_t generation);
 
