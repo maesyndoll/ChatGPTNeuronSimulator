@@ -102,6 +102,8 @@ public:
     std::uint64_t transact_tissue(
         std::function<void(tissue::TissueModel&)> mutation);
     TissueSnapshot tissue_snapshot() const;
+    // Copies the live GPU CSR graph on the simulation worker thread.
+    CSRTopology topology_snapshot();
 
     ControllerStatus status() const;
     bool is_running() const;
