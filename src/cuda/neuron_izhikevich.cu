@@ -526,6 +526,7 @@ void update_adaptive_topology(
     std::uint32_t* target_indices,
     float* weights,
     std::uint32_t* delays,
+    const std::uint8_t* spike_flags,
     const float* spike_traces,
     std::uint32_t neuron_count,
     std::uint32_t excitatory_count,
