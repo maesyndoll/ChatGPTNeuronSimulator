@@ -73,7 +73,7 @@ public:
     QString spikeEventCount() const;
     QString spikeEventsDropped() const;
     QString spikeEventsFirstSequence() const;
-    QString spikeEventsGeneration() const;
+    QString spikeEventsGeneration() const;\n\n    QVariantMap tissueSnapshot() const;\n    QString tissueRevision() const;
 
     Q_INVOKABLE void connectToServer(const QString& socketPath = {});
     Q_INVOKABLE void disconnectFromServer();
@@ -83,7 +83,7 @@ public:
     Q_INVOKABLE void refreshConfiguration();
     Q_INVOKABLE void applyParameters(const QVariantMap& parameters);
     Q_INVOKABLE void reinitializeSimulation();
-    Q_INVOKABLE void refreshSpikeEvents();
+    Q_INVOKABLE void refreshSpikeEvents();\n    Q_INVOKABLE void refreshTissue();
 
 signals:
     void connectionChanged();
@@ -92,7 +92,7 @@ signals:
     void errorMessageChanged();
     void telemetryChanged();
     void configurationChanged();
-    void spikeEventsChanged();
+    void spikeEventsChanged();\n    void tissueChanged();
     void errorOccurred(const QString& message);
 
 private:
@@ -100,7 +100,7 @@ private:
     void setErrorMessage(const QString& message);
     void updateTelemetry(const QJsonObject& telemetry);
     void updateConfiguration(const QJsonObject& configuration);
-    void updateSpikeEvents(const QJsonObject& spikeEvents);
+    void updateSpikeEvents(const QJsonObject& spikeEvents);\n    void updateTissue(const QJsonObject& tissue);
 
     SimulationClient client_;
     bool connected_ = false;
@@ -115,5 +115,5 @@ private:
     QString spike_events_dropped_ = QStringLiteral("0");
     QString spike_events_first_sequence_ = QStringLiteral("0");
     QString spike_events_generation_ = QStringLiteral("—");
-    quint64 last_spike_event_sequence_ = 0;
+    quint64 last_spike_event_sequence_ = 0;\n    QJsonObject tissue_snapshot_;
 };
