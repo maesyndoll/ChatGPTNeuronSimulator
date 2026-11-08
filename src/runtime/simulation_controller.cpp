@@ -1,6 +1,8 @@
 #include "runtime/simulation_controller.h"
 
 #include <stdexcept>
+#include <cmath>
+#include <algorithm>
 
 namespace spiking {
 
@@ -87,7 +89,7 @@ void SimulationController::pause() {
 
 void SimulationController::step(std::uint32_t steps) {
     submit([this, steps](CudaSimulationRuntime& runtime) {
-        runtime.run_steps(steps);
+        run_steps_with_stimuli(runtime, steps);
         const auto metrics = runtime.collect_metrics();
         const auto events = runtime.collect_spike_events();
         publish_spike_events(events, runtime.simulation_generation());
@@ -98,6 +100,60 @@ void SimulationController::step(std::uint32_t steps) {
             status_ = ControllerStatus::Paused;
         }
     });
+}
+
+void SimulationController::stimulate_neurons(
+    const std::vector<std::uint32_t>& neuron_ids,
+    float amplitude,
+    std::uint32_t duration_steps) {
+    if (neuron_ids.empty())
+        throw std::invalid_argument("stimulate_neurons requires at least one neuron ID");
+    if (!std::isfinite(amplitude) || amplitude == 0.0f)
+        throw std::invalid_argument("stimulus amplitude must be finite and non-zero");
+    if (duration_steps == 0 || duration_steps > 1000000U)
+        throw std::invalid_argument("stimulus duration must be between 1 and 1000000 steps");
+
+    submit([this, neuron_ids, amplitude, duration_steps](CudaSimulationRuntime& runtime) {
+        const auto parameters = runtime.active_parameters();
+        const std::uint64_t count = static_cast<std::uint64_t>(
+            parameters.simulation.excitatory_count) +
+            parameters.simulation.inhibitory_count;
+        for (const auto id : neuron_ids) {
+            if (id >= count)
+                throw std::out_of_range("stimulus neuron ID is outside the active population");
+        }
+        active_stimuli_.push_back({neuron_ids, amplitude, duration_steps});
+        external_current_dirty_ = true;
+    });
+}
+
+void SimulationController::run_steps_with_stimuli(
+    CudaSimulationRuntime& runtime, std::uint32_t steps) {
+    if (!active_stimuli_.empty() || external_current_dirty_) {
+        const auto parameters = runtime.active_parameters();
+        const std::size_t count = static_cast<std::size_t>(
+            parameters.simulation.excitatory_count) +
+            parameters.simulation.inhibitory_count;
+        std::vector<float> current(count, 0.0f);
+        for (const auto& pulse : active_stimuli_) {
+            for (const auto id : pulse.neuron_ids)
+                current[id] += pulse.amplitude;
+        }
+        runtime.set_external_current(current);
+        external_current_dirty_ = false;
+    }
+
+    runtime.run_steps(steps);
+    if (!active_stimuli_.empty()) {
+        for (auto& pulse : active_stimuli_)
+            pulse.remaining_steps = pulse.remaining_steps > steps
+                ? pulse.remaining_steps - steps : 0;
+        active_stimuli_.erase(
+            std::remove_if(active_stimuli_.begin(), active_stimuli_.end(),
+                [](const StimulusPulse& pulse) { return pulse.remaining_steps == 0; }),
+            active_stimuli_.end());
+        external_current_dirty_ = true;
+    }
 }
 
 ParameterUpdateResult SimulationController::apply_parameters(
@@ -347,7 +403,7 @@ void SimulationController::worker_main(
         if (!execute_batch) continue;
 
         try {
-            runtime->run_steps(batch_size_);
+            run_steps_with_stimuli(*runtime, batch_size_);
 
             const auto generation = runtime->simulation_generation();
             if (generation != observed_generation) {
