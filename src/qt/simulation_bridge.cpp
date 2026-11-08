@@ -515,7 +515,8 @@ void SimulationBridge::updateSpikeEvents(const QJsonObject& spikeEvents) {
     }
 
     emit spikeEventsChanged();
-    if (generationChanged || !visual_spike_events_.isEmpty())\n        emit visualSpikeEventsChanged();
+    if (generationChanged || !visual_spike_events_.isEmpty())
+        emit visualSpikeEventsChanged();
 }
 
 void SimulationBridge::updateTopology(const QJsonObject& topology) {
