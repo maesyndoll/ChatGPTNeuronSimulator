@@ -86,6 +86,22 @@ void propagate_spikes(
     cudaStream_t stream = nullptr
 );
 
+void update_synaptic_plasticity(
+    float* weights,
+    const std::uint32_t* row_offsets,
+    const std::uint32_t* target_indices,
+    const std::uint8_t* spike_flags,
+    float* spike_traces,
+    std::uint32_t neuron_count,
+    float dt,
+    float trace_decay,
+    float potentiation_rate,
+    float depression_rate,
+    float minimum_magnitude,
+    float maximum_magnitude,
+    cudaStream_t stream = nullptr
+);
+
 void simulate_neurons(
     NeuronParametersGPU parameters,
     NeuronStateGPU state,
