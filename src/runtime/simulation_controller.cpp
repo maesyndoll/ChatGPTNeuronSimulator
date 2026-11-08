@@ -129,30 +129,40 @@ void SimulationController::stimulate_neurons(
 
 void SimulationController::run_steps_with_stimuli(
     CudaSimulationRuntime& runtime, std::uint32_t steps) {
-    if (!active_stimuli_.empty() || external_current_dirty_) {
-        const auto parameters = runtime.active_parameters();
-        const std::size_t count = static_cast<std::size_t>(
-            parameters.simulation.excitatory_count) +
-            parameters.simulation.inhibitory_count;
-        std::vector<float> current(count, 0.0f);
-        for (const auto& pulse : active_stimuli_) {
-            for (const auto id : pulse.neuron_ids)
-                current[id] += pulse.amplitude;
+    std::uint32_t remaining = steps;
+    while (remaining > 0) {
+        if (!active_stimuli_.empty() || external_current_dirty_) {
+            const auto parameters = runtime.active_parameters();
+            const std::size_t count = static_cast<std::size_t>(
+                parameters.simulation.excitatory_count) +
+                parameters.simulation.inhibitory_count;
+            std::vector<float> current(count, 0.0f);
+            for (const auto& pulse : active_stimuli_) {
+                for (const auto id : pulse.neuron_ids)
+                    current[id] += pulse.amplitude;
+            }
+            runtime.set_external_current(current);
+            external_current_dirty_ = false;
         }
-        runtime.set_external_current(current);
-        external_current_dirty_ = false;
-    }
 
-    runtime.run_steps(steps);
-    if (!active_stimuli_.empty()) {
-        for (auto& pulse : active_stimuli_)
-            pulse.remaining_steps = pulse.remaining_steps > steps
-                ? pulse.remaining_steps - steps : 0;
-        active_stimuli_.erase(
-            std::remove_if(active_stimuli_.begin(), active_stimuli_.end(),
-                [](const StimulusPulse& pulse) { return pulse.remaining_steps == 0; }),
-            active_stimuli_.end());
-        external_current_dirty_ = true;
+        std::uint32_t chunk = remaining;
+        for (const auto& pulse : active_stimuli_)
+            chunk = std::min(chunk, pulse.remaining_steps);
+        if (chunk == 0) break;
+
+        runtime.run_steps(chunk);
+        remaining -= chunk;
+        if (!active_stimuli_.empty()) {
+            for (auto& pulse : active_stimuli_)
+                pulse.remaining_steps -= chunk;
+            active_stimuli_.erase(
+                std::remove_if(active_stimuli_.begin(), active_stimuli_.end(),
+                    [](const StimulusPulse& pulse) { return pulse.remaining_steps == 0; }),
+                active_stimuli_.end());
+            // Rebuild the external-current vector at the exact pulse expiry
+            // boundary, so shorter pulses are not stretched to batch length.
+            external_current_dirty_ = true;
+        }
     }
 }
 
