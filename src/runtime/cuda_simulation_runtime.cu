@@ -45,6 +45,7 @@ std::uint64_t estimate_device_bytes(
     add(neurons, sizeof(std::uint8_t));
     add(neurons, sizeof(std::uint32_t));
     add(neurons, 3ULL * sizeof(float));      // phase, next phase, natural frequency
+    add(neurons, sizeof(float));              // STDP spike traces
 
     add(1, sizeof(std::uint32_t));             // active spike count
     add(kSpikeEventCapacity64, sizeof(std::uint64_t));
@@ -77,6 +78,7 @@ CudaSimulationRuntime::DeviceState::DeviceState(
       weights(topology.weights.size()),
       delays(topology.delays.size()),
       phases(count), next_phases(count), natural_frequencies(count),
+      plasticity_traces(count),
       neuron_count(count),
       edge_count(static_cast<std::uint32_t>(topology.weights.size())),
       ring_slots(topology.maximum_delay + 1U) {
@@ -258,6 +260,9 @@ CudaSimulationRuntime::build_device_state(const ModelParameters& parameters) {
     }
 
     SPIKING_CUDA_CHECK(cudaMemsetAsync(
+        next->plasticity_traces.get(), 0,
+        next->plasticity_traces.size() * sizeof(float), stream));
+    SPIKING_CUDA_CHECK(cudaMemsetAsync(
         next->synaptic_current.get(), 0,
         next->synaptic_current.size() * sizeof(float), stream));
     SPIKING_CUDA_CHECK(cudaMemsetAsync(
@@ -308,6 +313,24 @@ void CudaSimulationRuntime::reinitialize_simulation() {
     completed_steps_ = 0;
     elapsed_simulation_ms_ = 0.0;
     spike_event_read_cursor_ = 0;
+}
+
+void CudaSimulationRuntime::configure_synaptic_plasticity(
+    const SynapticPlasticityConfig& config) {
+    if (!std::isfinite(config.trace_time_constant_ms) ||
+        config.trace_time_constant_ms <= 0.0f ||
+        !std::isfinite(config.potentiation_rate) ||
+        config.potentiation_rate < 0.0f ||
+        !std::isfinite(config.depression_rate) ||
+        config.depression_rate < 0.0f ||
+        !std::isfinite(config.minimum_weight_magnitude) ||
+        config.minimum_weight_magnitude <= 0.0f ||
+        !std::isfinite(config.maximum_weight_magnitude) ||
+        config.maximum_weight_magnitude < config.minimum_weight_magnitude) {
+        throw std::invalid_argument("Invalid synaptic plasticity configuration");
+    }
+    if (device_state_) device_state_->stream.synchronize();
+    plasticity_config_ = config;
 }
 
 void CudaSimulationRuntime::configure_phase_dynamics(
@@ -384,6 +407,23 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
             completed_steps_ + 1ULL,
             device_state_->stream.get());
 
+        if (plasticity_config_.enabled && device_state_->edge_count != 0) {
+            const float trace_decay = std::exp(
+                -p.dt / plasticity_config_.trace_time_constant_ms);
+            update_synaptic_plasticity(
+                device_state_->weights.get(),
+                device_state_->row_offsets.get(),
+                device_state_->target_indices.get(),
+                state.spike_flags,
+                device_state_->plasticity_traces.get(),
+                count, p.dt, trace_decay,
+                plasticity_config_.potentiation_rate,
+                plasticity_config_.depression_rate,
+                plasticity_config_.minimum_weight_magnitude,
+                plasticity_config_.maximum_weight_magnitude,
+                device_state_->stream.get());
+        }
+
         ++completed_steps_;
         elapsed_simulation_ms_ += p.dt;
     }
@@ -399,7 +439,9 @@ SimulationMetrics CudaSimulationRuntime::collect_metrics() {
     std::vector<std::uint32_t> spikes(count);
     std::vector<std::uint8_t> spike_flags(count);
     std::vector<float> phases;
+    std::vector<float> weights;
     if (phase_config_.enabled) phases.resize(count);
+    if (plasticity_config_.enabled) weights.resize(device_state_->edge_count);
     SPIKING_CUDA_CHECK(cudaMemcpy(voltage.data(), device_state_->voltage.get(),
                                   count * sizeof(float), cudaMemcpyDeviceToHost));
     SPIKING_CUDA_CHECK(cudaMemcpy(recovery.data(), device_state_->recovery.get(),
@@ -411,6 +453,10 @@ SimulationMetrics CudaSimulationRuntime::collect_metrics() {
     if (phase_config_.enabled) {
         SPIKING_CUDA_CHECK(cudaMemcpy(phases.data(), device_state_->phases.get(),
                                       count * sizeof(float), cudaMemcpyDeviceToHost));
+    }
+    if (plasticity_config_.enabled && !weights.empty()) {
+        SPIKING_CUDA_CHECK(cudaMemcpy(weights.data(), device_state_->weights.get(),
+                                      weights.size() * sizeof(float), cudaMemcpyDeviceToHost));
     }
 
     SimulationMetrics metrics;
@@ -444,6 +490,15 @@ SimulationMetrics CudaSimulationRuntime::collect_metrics() {
         }
     }
     metrics.mean_voltage_mv = voltage_sum / static_cast<double>(count);
+    if (!weights.empty()) {
+        double magnitude_sum = 0.0;
+        for (const float weight : weights) {
+            if (!std::isfinite(weight)) metrics.finite_state = false;
+            magnitude_sum += std::abs(static_cast<double>(weight));
+        }
+        metrics.mean_absolute_synaptic_weight =
+            magnitude_sum / static_cast<double>(weights.size());
+    }
     if (phase_config_.enabled) {
         const double phase_count = static_cast<double>(count);
         metrics.phase_coherence = std::sqrt(
