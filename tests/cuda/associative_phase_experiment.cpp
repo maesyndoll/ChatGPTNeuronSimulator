@@ -261,7 +261,9 @@ int main() {
             frozen.enabled = false;
             condition->runtime.configure_synaptic_plasticity(frozen);
             SpikeEventBatch baseline;
-            run_batch(*condition, silence, 40, baseline);
+            // Training directly drives B, so allow its slow recovery variable
+            // to relax before comparing learned and control recall responses.
+            run_batch(*condition, silence, 800, baseline);
             write_record(csv, *condition, "pre_recall_baseline", 0, baseline);
         }
 
