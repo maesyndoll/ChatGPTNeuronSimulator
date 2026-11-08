@@ -84,6 +84,7 @@ public:
     void run();
     void run_steps(std::uint32_t steps);
     SimulationMetrics collect_metrics();
+    std::vector<float> collect_neuron_voltages();
     SpikeEventBatch collect_spike_events();
 
     ModelParameters active_parameters() const;
