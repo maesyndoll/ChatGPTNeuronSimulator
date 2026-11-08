@@ -22,7 +22,7 @@ ApplicationWindow {
     property var activeNeuronIds: ({})
     property int cloudNodeCount: 180
     property var rateHistory: []
-    property int historyLimit: 240
+    property int historyLimit: 1200
     property bool parametersInitialized: false
     property bool pausePending: false
 
@@ -91,11 +91,20 @@ ApplicationWindow {
         var active = ({})
         var events = simulation.spikeEvents || []
         var completed = Number(simulation.completedSteps)
-        var cutoff = Math.max(0, completed - 100)
+        var cutoff = Math.max(0, completed - 12)
+        var total = totalNeurons()
         for (var i = Math.max(0, events.length - 12000); i < events.length; ++i) {
             var step = Number(events[i].step)
-            if (step >= cutoff && step <= completed)
-                active[Number(events[i].neuron_id)] = true
+            if (step >= cutoff && step <= completed) {
+                // The scene renders a small representative sample of the full
+                // population. Bin every real spike into its displayed sample
+                // slot so activity is visible even when that exact neuron is
+                // not one of the sampled IDs.
+                var neuronId = Number(events[i].neuron_id)
+                var slot = Math.max(0, Math.min(cloudNodeCount - 1,
+                    Math.floor(neuronId * cloudNodeCount / total)))
+                active[slot] = true
+            }
         }
         activeNeuronIds = active
     }
@@ -415,7 +424,7 @@ ApplicationWindow {
                                     Number(activeSim.inhibitory_count || 10240))
                                 property int neuronId: Math.floor(index * total /
                                     window.cloudNodeCount)
-                                property bool firing: window.activeNeuronIds[neuronId] === true
+                                property bool firing: window.activeNeuronIds[index] === true
                                 width: firing ? 9 : 5
                                 height: width
                                 radius: width / 2
