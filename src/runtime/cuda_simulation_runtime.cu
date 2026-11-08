@@ -93,7 +93,7 @@ CudaSimulationRuntime::DeviceState::DeviceState(
       phases(count), next_phases(count), natural_frequencies(count),
       plasticity_traces(count),
       neuron_count(count),
-      edge_count(static_cast<std::uint32_t>(topology.weights.size())),
+      edge_count(static_cast<std::uint32_t>(count * adaptive_row_capacity(topology))),
       row_capacity(adaptive_row_capacity(topology)),
       ring_slots(topology.maximum_delay + 1U) {
     if (ring_slots == 0)
@@ -365,6 +365,58 @@ void CudaSimulationRuntime::configure_synaptic_plasticity(
     plasticity_config_ = config;
 }
 
+void CudaSimulationRuntime::configure_adaptive_topology(
+    const AdaptiveTopologyConfig& config) {
+    if (config.update_interval_steps == 0 ||
+        !std::isfinite(config.growth_trace_threshold) ||
+        config.growth_trace_threshold <= 0.0f ||
+        !std::isfinite(config.prune_weight_threshold) ||
+        config.prune_weight_threshold < 0.0f ||
+        !std::isfinite(config.growth_weight) || config.growth_weight <= 0.0f) {
+        throw std::invalid_argument("Invalid adaptive topology configuration");
+    }
+    if (config.enabled && !plasticity_config_.enabled)
+        throw std::logic_error("Enable synaptic plasticity before adaptive topology");
+    if (device_state_) device_state_->stream.synchronize();
+    topology_config_ = config;
+}
+
+CSRTopology CudaSimulationRuntime::collect_topology() {
+    if (!device_state_) throw std::logic_error("CUDA simulation is not initialized");
+    device_state_->stream.synchronize();
+    const std::uint32_t count = static_cast<std::uint32_t>(device_state_->neuron_count);
+    std::vector<std::uint32_t> row_counts(count);
+    std::vector<std::uint32_t> targets(device_state_->target_indices.size());
+    std::vector<float> weights(device_state_->weights.size());
+    std::vector<std::uint32_t> delays(device_state_->delays.size());
+    SPIKING_CUDA_CHECK(cudaMemcpy(row_counts.data(), device_state_->row_counts.get(),
+        count * sizeof(std::uint32_t), cudaMemcpyDeviceToHost));
+    SPIKING_CUDA_CHECK(cudaMemcpy(targets.data(), device_state_->target_indices.get(),
+        targets.size() * sizeof(std::uint32_t), cudaMemcpyDeviceToHost));
+    SPIKING_CUDA_CHECK(cudaMemcpy(weights.data(), device_state_->weights.get(),
+        weights.size() * sizeof(float), cudaMemcpyDeviceToHost));
+    SPIKING_CUDA_CHECK(cudaMemcpy(delays.data(), device_state_->delays.get(),
+        delays.size() * sizeof(std::uint32_t), cudaMemcpyDeviceToHost));
+    CSRTopology graph;
+    graph.excitatory_count = active_parameters_.simulation.excitatory_count;
+    graph.inhibitory_count = active_parameters_.simulation.inhibitory_count;
+    graph.minimum_delay = active_parameters_.topology.minimum_delay;
+    graph.maximum_delay = active_parameters_.topology.maximum_delay;
+    graph.row_offsets.reserve(static_cast<std::size_t>(count) + 1);
+    graph.row_offsets.push_back(0);
+    for (std::uint32_t row = 0; row < count; ++row) {
+        const std::size_t base = static_cast<std::size_t>(row) * device_state_->row_capacity;
+        for (std::uint32_t j = 0; j < row_counts[row]; ++j) {
+            graph.target_indices.push_back(targets[base + j]);
+            graph.weights.push_back(weights[base + j]);
+            graph.delays.push_back(delays[base + j]);
+        }
+        graph.row_offsets.push_back(static_cast<std::uint32_t>(graph.weights.size()));
+    }
+    graph.validate();
+    return graph;
+}
+
 void CudaSimulationRuntime::configure_phase_dynamics(
     const PhaseDynamicsConfig& config) {
     if (!std::isfinite(config.coupling_strength) ||
@@ -493,6 +545,25 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
                 plasticity_config_.minimum_weight_magnitude,
                 plasticity_config_.maximum_weight_magnitude,
                 device_state_->stream.get());
+            if (topology_config_.enabled &&
+                (completed_steps_ + 1ULL) % topology_config_.update_interval_steps == 0) {
+                update_adaptive_topology(
+                    device_state_->row_offsets.get(),
+                    device_state_->row_counts.get(),
+                    device_state_->target_indices.get(),
+                    device_state_->weights.get(),
+                    device_state_->delays.get(),
+                    state.spike_flags,
+                    device_state_->plasticity_traces.get(),
+                    count,
+                    active_parameters_.simulation.excitatory_count,
+                    device_state_->row_capacity,
+                    active_parameters_.topology.minimum_delay,
+                    topology_config_.growth_trace_threshold,
+                    topology_config_.prune_weight_threshold,
+                    topology_config_.growth_weight,
+                    device_state_->stream.get());
+            }
         }
 
         ++completed_steps_;
@@ -510,28 +581,32 @@ SimulationMetrics CudaSimulationRuntime::collect_metrics() {
     std::vector<std::uint32_t> spikes(count);
     std::vector<std::uint8_t> spike_flags(count);
     std::vector<float> phases;
-    std::vector<float> weights;
+    std::vector<std::uint32_t> row_counts(count);
+    std::vector<float> weights(device_state_->weights.size());
     if (phase_config_.enabled) phases.resize(count);
-    // Report the persistent CSR weights even after plasticity is frozen.\n    // Disabling updates must not make the learned network appear to have zero weights.\n    weights.resize(device_state_->edge_count);
-    SPIKING_CUDA_CHECK(cudaMemcpy(voltage.data(), device_state_->voltage.get(),
-                                  count * sizeof(float), cudaMemcpyDeviceToHost));
-    SPIKING_CUDA_CHECK(cudaMemcpy(recovery.data(), device_state_->recovery.get(),
-                                  count * sizeof(float), cudaMemcpyDeviceToHost));
-    SPIKING_CUDA_CHECK(cudaMemcpy(spikes.data(), device_state_->spike_counts.get(),
-                                  count * sizeof(std::uint32_t), cudaMemcpyDeviceToHost));
-    SPIKING_CUDA_CHECK(cudaMemcpy(spike_flags.data(), device_state_->spike_flags.get(),
-                                  count * sizeof(std::uint8_t), cudaMemcpyDeviceToHost));
+    SPIKING_CUDA_CHECK(cudaMemcpy(row_counts.data(), device_state_->row_counts.get(),
+        count * sizeof(std::uint32_t), cudaMemcpyDeviceToHost));
+    SPIKING_CUDA_CHECK(cudaMemcpy(weights.data(), device_state_->weights.get(),
+        weights.size() * sizeof(float), cudaMemcpyDeviceToHost));
+    std::uint64_t active_synapses = 0;
+    for (const auto degree : row_counts) active_synapses += degree;
+    weights.resize(static_cast<std::size_t>(active_synapses));
+    std::vector<float> active_weights;
+    active_weights.reserve(static_cast<std::size_t>(active_synapses));
+    for (std::uint32_t row = 0; row < count; ++row) {
+        const std::size_t base = static_cast<std::size_t>(row) * device_state_->row_capacity;
+        for (std::uint32_t j = 0; j < row_counts[row]; ++j)
+            active_weights.push_back(weights[base + j]);
+    }
+
     if (phase_config_.enabled) {
         SPIKING_CUDA_CHECK(cudaMemcpy(phases.data(), device_state_->phases.get(),
                                       count * sizeof(float), cudaMemcpyDeviceToHost));
     }
-    if (!weights.empty()) {
-        SPIKING_CUDA_CHECK(cudaMemcpy(weights.data(), device_state_->weights.get(),
-                                      weights.size() * sizeof(float), cudaMemcpyDeviceToHost));
-    }
-
     SimulationMetrics metrics;
     metrics.completed_steps = completed_steps_;
+    metrics.active_synapses = active_synapses;
+    metrics.synapse_capacity = device_state_->weights.size();
     double voltage_sum = 0.0;
     double phase_cosine_sum = 0.0;
     double phase_sine_sum = 0.0;
@@ -561,14 +636,14 @@ SimulationMetrics CudaSimulationRuntime::collect_metrics() {
         }
     }
     metrics.mean_voltage_mv = voltage_sum / static_cast<double>(count);
-    if (!weights.empty()) {
+    if (!active_weights.empty()) {
         double magnitude_sum = 0.0;
-        for (const float weight : weights) {
+        for (const float weight : active_weights) {
             if (!std::isfinite(weight)) metrics.finite_state = false;
             magnitude_sum += std::abs(static_cast<double>(weight));
         }
         metrics.mean_absolute_synaptic_weight =
-            magnitude_sum / static_cast<double>(weights.size());
+            magnitude_sum / static_cast<double>(active_weights.size());
     }
     if (phase_config_.enabled) {
         const double phase_count = static_cast<double>(count);
