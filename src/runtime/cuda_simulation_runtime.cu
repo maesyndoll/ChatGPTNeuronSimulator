@@ -75,6 +75,7 @@ CudaSimulationRuntime::DeviceState::DeviceState(
       target_indices(topology.target_indices.size()),
       weights(topology.weights.size()),
       delays(topology.delays.size()),
+      phases(count), next_phases(count), natural_frequencies(count),
       neuron_count(count),
       edge_count(static_cast<std::uint32_t>(topology.weights.size())),
       ring_slots(topology.maximum_delay + 1U) {
@@ -273,6 +274,10 @@ CudaSimulationRuntime::build_device_state(const ModelParameters& parameters) {
         p.inhibitory_current_min, p.inhibitory_current_max,
         stream);
 
+    initialize_phase_state(
+        next->phases.get(), next->natural_frequencies.get(), total,
+        p.random_seed ^ 0x6d2b79f5U, stream);
+
     next->stream.synchronize();
     return next;
 }
@@ -304,6 +309,20 @@ void CudaSimulationRuntime::reinitialize_simulation() {
     spike_event_read_cursor_ = 0;
 }
 
+void CudaSimulationRuntime::configure_phase_dynamics(
+    const PhaseDynamicsConfig& config) {
+    if (!std::isfinite(config.coupling_strength) ||
+        config.coupling_strength < 0.0f ||
+        !std::isfinite(config.modulation_strength) ||
+        config.modulation_strength < 0.0f ||
+        config.modulation_strength > 1.0f) {
+        throw std::invalid_argument(
+            "Phase coupling must be finite and non-negative; modulation must be in [0, 1]");
+    }
+    if (device_state_) device_state_->stream.synchronize();
+    phase_config_ = config;
+}
+
 void CudaSimulationRuntime::run() {
     run_steps(active_parameters_.simulation.steps);
 }
@@ -322,12 +341,27 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
         device_state_->delays.get(),
         device_state_->edge_count,
         device_state_->synaptic_current.get(),
-        device_state_->ring_slots
+        device_state_->ring_slots,
+        phase_config_.enabled ? device_state_->phases.get() : nullptr,
+        phase_config_.enabled ? phase_config_.modulation_strength : 0.0f
     };
 
     for (std::uint32_t i = 0; i < steps; ++i) {
         const std::uint32_t ring_slot = static_cast<std::uint32_t>(
             completed_steps_ % device_state_->ring_slots);
+
+        if (phase_config_.enabled) {
+            advance_phase_state(
+                device_state_->phases.get(),
+                device_state_->next_phases.get(),
+                device_state_->natural_frequencies.get(),
+                device_state_->row_offsets.get(),
+                device_state_->target_indices.get(),
+                device_state_->weights.get(),
+                count, p.dt, phase_config_.coupling_strength,
+                device_state_->stream.get());
+            device_state_->phases.swap(device_state_->next_phases);
+        }
 
         // The flags still describe spikes from the preceding integration.
         // Both kernels execute in-order on the same stream.
