@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install C++ dependencies
+        run: sudo apt-get update && sudo apt-get install -y nlohmann-json3-dev
       - name: Configure
         run: cmake -S . -B build-temporal -DBUILD_TESTING=ON -DSPIKINGMODEL_ENABLE_CUDA=OFF -DSPIKINGMODEL_ENABLE_QT_CLIENT=OFF
       - name: Build temporal embedding tests
