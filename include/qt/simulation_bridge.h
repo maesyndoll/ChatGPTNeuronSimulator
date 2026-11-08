@@ -86,6 +86,8 @@ public:
     Q_INVOKABLE void startSimulation();
     Q_INVOKABLE void pauseSimulation();
     Q_INVOKABLE void stepSimulation(int steps = 1);
+    Q_INVOKABLE void stimulateNeurons(const QVariantList& neuronIds,
+                                      double amplitude, int durationSteps);
     Q_INVOKABLE void refreshConfiguration();
     Q_INVOKABLE void applyParameters(const QVariantMap& parameters);
     Q_INVOKABLE void reinitializeSimulation();
