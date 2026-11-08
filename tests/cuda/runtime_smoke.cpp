@@ -2,7 +2,7 @@
 
 #include <cmath>
 #include <cstdlib>
-#include <iostream>
+#include <iostream>\n#include <stdexcept>
 
 int main() {
     using namespace spiking;
@@ -385,6 +385,7 @@ int main() {
         // current relative to the unmodulated baseline.
         CudaSimulationRuntime phase_baseline(make_propagation_parameters(true));
         CudaSimulationRuntime phase_gated(make_propagation_parameters(true));
+        CudaSimulationRuntime phase_disconnected(make_propagation_parameters(false));
         PhaseDynamicsConfig phase_config;
         phase_config.enabled = true;
         phase_config.coupling_strength = 0.05f;
@@ -392,14 +393,18 @@ int main() {
         phase_gated.configure_phase_dynamics(phase_config);
         phase_baseline.run_steps(3);
         phase_gated.run_steps(3);
+        phase_disconnected.run_steps(3);
         const auto baseline_phase_metrics = phase_baseline.collect_metrics();
         const auto gated_phase_metrics = phase_gated.collect_metrics();
+        const auto disconnected_phase_metrics = phase_disconnected.collect_metrics();
         if (!baseline_phase_metrics.finite_state ||
             !gated_phase_metrics.finite_state ||
+            !disconnected_phase_metrics.finite_state ||
             baseline_phase_metrics.completed_steps != 3 ||
             gated_phase_metrics.completed_steps != 3 ||
+            disconnected_phase_metrics.completed_steps != 3 ||
             gated_phase_metrics.mean_voltage_mv <=
-                make_propagation_parameters(false).simulation.initial_voltage_min - 1.0e-5 ||
+                disconnected_phase_metrics.mean_voltage_mv + 1.0e-7 ||
             gated_phase_metrics.mean_voltage_mv >=
                 baseline_phase_metrics.mean_voltage_mv - 1.0e-7) {
             std::cerr << "GPU phase-gated synaptic routing test failed\\n"
