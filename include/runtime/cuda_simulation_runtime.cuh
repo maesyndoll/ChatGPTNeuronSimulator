@@ -32,6 +32,15 @@ struct PhaseDynamicsConfig {
     float modulation_strength = 1.0f;
 };
 
+struct SynapticPlasticityConfig {
+    bool enabled = false;
+    float trace_time_constant_ms = 20.0f;
+    float potentiation_rate = 0.012f;
+    float depression_rate = 0.010f;
+    float minimum_weight_magnitude = 0.01f;
+    float maximum_weight_magnitude = 5.0f;
+};
+
 struct SimulationMetrics {
     std::uint64_t completed_steps = 0;
     std::uint64_t excitatory_spikes = 0;
@@ -43,6 +52,8 @@ struct SimulationMetrics {
     double inhibitory_rate_hz = 0.0;
     // Kuramoto order parameter R in [0, 1], computed from GPU phase state.
     double phase_coherence = 0.0;
+    // Mean absolute CSR weight; populated when plasticity is enabled.
+    double mean_absolute_synaptic_weight = 0.0;
     bool finite_state = true;
 };
 
@@ -60,6 +71,10 @@ public:
     void reinitialize_simulation();
     void configure_phase_dynamics(const PhaseDynamicsConfig& config);
     PhaseDynamicsConfig phase_dynamics() const noexcept { return phase_config_; }
+    void configure_synaptic_plasticity(const SynapticPlasticityConfig& config);
+    SynapticPlasticityConfig synaptic_plasticity() const noexcept {
+        return plasticity_config_;
+    }
 
     void run();
     void run_steps(std::uint32_t steps);
@@ -102,6 +117,8 @@ private:
 
         // GPU-resident oscillator state and natural angular frequencies.
         DeviceBuffer<float> phases, next_phases, natural_frequencies;
+        // Per-neuron exponentially decaying spike traces used by GPU STDP.
+        DeviceBuffer<float> plasticity_traces;
 
         // Dense target-current ring: [ring_slot][neuron].
         DeviceBuffer<float> synaptic_current;
@@ -119,6 +136,7 @@ private:
     ModelParameters active_parameters_;
     std::unique_ptr<DeviceState> device_state_;
     PhaseDynamicsConfig phase_config_;
+    SynapticPlasticityConfig plasticity_config_;
     std::uint64_t completed_steps_ = 0;
     std::uint64_t spike_event_read_cursor_ = 0;
     double elapsed_simulation_ms_ = 0.0;
