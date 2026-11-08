@@ -24,6 +24,14 @@ struct SpikeEventBatch {
     std::uint64_t dropped_events = 0;
 };
 
+struct PhaseDynamicsConfig {
+    bool enabled = false;
+    // Coupling and natural frequencies are measured in radians per simulated ms.
+    float coupling_strength = 0.01f;
+    // [0, 1]: zero disables routing modulation; one gives full cosine gating.
+    float modulation_strength = 1.0f;
+};
+
 struct SimulationMetrics {
     std::uint64_t completed_steps = 0;
     std::uint64_t excitatory_spikes = 0;
@@ -48,6 +56,8 @@ public:
     ParameterUpdateResult apply_parameters(const ModelParameters& candidate);
     ParameterUpdateResult reset_parameters_to_defaults();
     void reinitialize_simulation();
+    void configure_phase_dynamics(const PhaseDynamicsConfig& config);
+    PhaseDynamicsConfig phase_dynamics() const noexcept { return phase_config_; }
 
     void run();
     void run_steps(std::uint32_t steps);
@@ -88,6 +98,9 @@ private:
         DeviceBuffer<float> weights;
         DeviceBuffer<std::uint32_t> delays;
 
+        // GPU-resident oscillator state and natural angular frequencies.
+        DeviceBuffer<float> phases, next_phases, natural_frequencies;
+
         // Dense target-current ring: [ring_slot][neuron].
         DeviceBuffer<float> synaptic_current;
         std::size_t neuron_count;
@@ -103,6 +116,7 @@ private:
     ParameterManager parameter_manager_;
     ModelParameters active_parameters_;
     std::unique_ptr<DeviceState> device_state_;
+    PhaseDynamicsConfig phase_config_;
     std::uint64_t completed_steps_ = 0;
     std::uint64_t spike_event_read_cursor_ = 0;
     double elapsed_simulation_ms_ = 0.0;
