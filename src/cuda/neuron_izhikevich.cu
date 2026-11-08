@@ -429,6 +429,7 @@ void advance_phase_state(
     float* next_phases,
     const float* natural_frequencies,
     const std::uint32_t* row_offsets,
+    const std::uint32_t* row_counts,
     const std::uint32_t* target_indices,
     const float* weights,
     std::uint32_t neuron_count,
@@ -481,6 +482,7 @@ void propagate_spikes(
 void update_synaptic_plasticity(
     float* weights,
     const std::uint32_t* row_offsets,
+    const std::uint32_t* row_counts,
     const std::uint32_t* target_indices,
     const std::uint8_t* spike_flags,
     float* spike_traces,
@@ -493,7 +495,7 @@ void update_synaptic_plasticity(
     float maximum_magnitude,
     cudaStream_t stream
 ) {
-    if (weights == nullptr || row_offsets == nullptr ||
+    if (weights == nullptr || row_offsets == nullptr || row_counts == nullptr ||
         target_indices == nullptr || spike_flags == nullptr ||
         spike_traces == nullptr || neuron_count == 0 ||
         !std::isfinite(dt) || dt <= 0.0f ||
