@@ -25,8 +25,97 @@ ApplicationWindow {
     property var populationRateHistory: []
     property int populationRateHistoryLimit: 180
 
+    property real cloudRotation: 0
+    property var activeNeuronIds: ({})
+    property int cloudNodeCount: 128
+
+    function refreshActiveNeuronIds() {
+        var active = ({})
+        var events = simulation.spikeEvents
+        var start = Math.max(0, events.length - 12000)
+        for (var i = start; i < events.length; ++i)
+            active[Number(events[i].neuron_id)] = true
+        window.activeNeuronIds = active
+    }
+
+    function rateSignal() {
+        var history = window.populationRateHistory
+        var values = []
+        for (var i = 0; i < history.length; ++i) {
+            var e = Number(history[i].excitatory)
+            var inh = Number(history[i].inhibitory)
+            values.push((isFinite(e) ? e : 0) + (isFinite(inh) ? inh : 0))
+        }
+        return values
+    }
+
+    function spectrumOf(values) {
+        var n = 1
+        while (n * 2 <= Math.min(values.length, 128))
+            n *= 2
+        if (n < 8)
+            return []
+        var real = new Array(n)
+        var imag = new Array(n)
+        for (var i = 0; i < n; ++i) {
+            var sample = Number(values[values.length - n + i]) || 0
+            var windowValue = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (n - 1))
+            real[i] = sample * windowValue
+            imag[i] = 0
+        }
+        var j = 0
+        for (var i = 1; i < n; ++i) {
+            var bit = n >> 1
+            while (j & bit) {
+                j ^= bit
+                bit >>= 1
+            }
+            j ^= bit
+            if (i < j) {
+                var tr = real[i]; real[i] = real[j]; real[j] = tr
+                var ti = imag[i]; imag[i] = imag[j]; imag[j] = ti
+            }
+        }
+        for (var size = 2; size <= n; size <<= 1) {
+            var half = size >> 1
+            var angle = -2 * Math.PI / size
+            for (var base = 0; base < n; base += size) {
+                for (var k = 0; k < half; ++k) {
+                    var wr = Math.cos(angle * k)
+                    var wi = Math.sin(angle * k)
+                    var odd = base + k + half
+                    var even = base + k
+                    var xr = wr * real[odd] - wi * imag[odd]
+                    var xi = wr * imag[odd] + wi * real[odd]
+                    real[odd] = real[even] - xr
+                    imag[odd] = imag[even] - xi
+                    real[even] += xr
+                    imag[even] += xi
+                }
+            }
+        }
+        var result = []
+        for (var bin = 1; bin < n / 2; ++bin)
+            result.push(Math.sqrt(real[bin] * real[bin] +
+                                  imag[bin] * imag[bin]) / n)
+        return result
+    }
+
+    function maximumSignal(values) {
+        var maximum = 1
+        for (var i = 0; i < values.length; ++i)
+            maximum = Math.max(maximum, Number(values[i]) || 0)
+        return maximum
+    }
+
+
     Connections {
         target: simulation
+
+        function onSpikeEventsChanged() {
+            window.refreshActiveNeuronIds()
+            neuralCloud.requestPaint()
+        }
 
         function onConfigurationChanged() {
             if (window.parameterDraftInitialized)
@@ -1115,6 +1204,325 @@ ApplicationWindow {
                         color: "#91a2b8"
                         font.pixelSize: 11
                     }
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            radius: 12
+            color: "#121d2c"
+            border.color: "#30435c"
+            implicitHeight: 430
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 16
+                spacing: 10
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label {
+                        text: "3D neural activity field"
+                        color: "#f0f4fa"
+                        font.pixelSize: 17
+                        font.bold: true
+                    }
+                    Item { Layout.fillWidth: true }
+                    Label {
+                        text: "GPU scene-graph projection · live spike highlights"
+                        color: "#91a2b8"
+                        font.pixelSize: 11
+                    }
+                }
+
+                Item {
+                    id: neuralCloud
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 8
+                        color: "#0b1421"
+                    }
+
+                    Repeater {
+                        model: window.cloudNodeCount
+                        delegate: Rectangle {
+                            required property int index
+                            property real theta: index * 2.399963229728653 +
+                                                  window.cloudRotation * Math.PI / 180
+                            property real zDepth: 1 - 2 * (index + 0.5) /
+                                                  window.cloudNodeCount
+                            property real ring: Math.sqrt(Math.max(
+                                0, 1 - zDepth * zDepth))
+                            property real perspective: 0.62 + (zDepth + 1) * 0.19
+                            property int totalNeurons: Math.max(1,
+                                Number(simulation.activeParameters.simulation
+                                       ? Number(simulation.activeParameters.simulation.excitatory_count || 2048) +
+                                         Number(simulation.activeParameters.simulation.inhibitory_count || 512)
+                                       : 2560))
+                            property int neuronId: Math.floor(
+                                index * totalNeurons / window.cloudNodeCount)
+                            property bool firing: window.activeNeuronIds[neuronId] === true
+
+                            width: firing ? 9 : 5
+                            height: width
+                            radius: width / 2
+                            x: neuralCloud.width / 2 +
+                               Math.cos(theta) * ring * neuralCloud.width * 0.37 *
+                               perspective - width / 2
+                            y: neuralCloud.height / 2 +
+                               Math.sin(theta) * ring * neuralCloud.height * 0.39 *
+                               perspective - width / 2
+                            color: neuronId < Number(
+                                simulation.activeParameters.simulation
+                                ? simulation.activeParameters.simulation.excitatory_count
+                                : 2048) ? "#54cbb5" : "#f0a45e"
+                            opacity: firing ? 1.0 : 0.24 + (zDepth + 1) * 0.13
+                            border.width: firing ? 2 : 0
+                            border.color: "#e8f5ff"
+                        }
+                    }
+
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 3
+                        height: neuralCloud.height * 0.76
+                        color: "#6e91b0"
+                        opacity: 0.12
+                    }
+                    Label {
+                        anchors.left: parent.left
+                        anchors.bottom: parent.bottom
+                        anchors.margins: 8
+                        text: "E · teal     I · amber     bright nodes = recently active"
+                        color: "#91a2b8"
+                        font.pixelSize: 10
+                    }
+                }
+            }
+
+            NumberAnimation on cloudRotation {
+                from: 0
+                to: 360
+                duration: 45000
+                loops: Animation.Infinite
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            radius: 12
+            color: "#121d2c"
+            border.color: "#30435c"
+            implicitHeight: 440
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 16
+                spacing: 10
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label {
+                        text: "Population activity · oscilloscope"
+                        color: "#f0f4fa"
+                        font.pixelSize: 17
+                        font.bold: true
+                    }
+                    Item { Layout.fillWidth: true }
+                    Label {
+                        text: "E + I firing rate · Hz"
+                        color: "#91a2b8"
+                        font.pixelSize: 11
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 16
+
+                    Canvas {
+                        id: activityGauge
+                        Layout.preferredWidth: 220
+                        Layout.preferredHeight: 190
+                        antialiasing: true
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            var w = width, h = height
+                            ctx.clearRect(0, 0, w, h)
+                            var cx = w / 2, cy = h * 0.78
+                            var radius = Math.min(w * 0.42, h * 0.68)
+                            var signal = window.rateSignal()
+                            var value = signal.length ? signal[signal.length - 1] : 0
+                            var maximum = Math.max(20, window.maximumSignal(signal) * 1.15)
+                            ctx.lineWidth = 12
+                            ctx.strokeStyle = "#26384d"
+                            ctx.beginPath()
+                            ctx.arc(cx, cy, radius, Math.PI, 2 * Math.PI)
+                            ctx.stroke()
+                            ctx.strokeStyle = "#54b8a5"
+                            ctx.beginPath()
+                            ctx.arc(cx, cy, radius, Math.PI,
+                                    Math.PI + Math.PI * Math.max(0, Math.min(1, value / maximum)))
+                            ctx.stroke()
+                            var angle = Math.PI + Math.PI * Math.max(
+                                0, Math.min(1, value / maximum))
+                            ctx.strokeStyle = "#f0f4fa"
+                            ctx.lineWidth = 3
+                            ctx.beginPath()
+                            ctx.moveTo(cx, cy)
+                            ctx.lineTo(cx + Math.cos(angle) * radius * 0.82,
+                                       cy + Math.sin(angle) * radius * 0.82)
+                            ctx.stroke()
+                            ctx.fillStyle = "#f0f4fa"
+                            ctx.beginPath()
+                            ctx.arc(cx, cy, 5, 0, 2 * Math.PI)
+                            ctx.fill()
+                            ctx.textAlign = "center"
+                            ctx.fillStyle = "#91a2b8"
+                            ctx.font = "11px sans-serif"
+                            ctx.fillText("POPULATION RATE", cx, 18)
+                            ctx.fillStyle = "#f0f4fa"
+                            ctx.font = "bold 21px sans-serif"
+                            ctx.fillText(value.toFixed(1) + " Hz", cx, cy - 12)
+                            ctx.font = "10px sans-serif"
+                            ctx.fillStyle = "#91a2b8"
+                            ctx.fillText("0", cx - radius, cy + 17)
+                            ctx.fillText(maximum.toFixed(0), cx + radius, cy + 17)
+                        }
+                    }
+
+                    Canvas {
+                        id: oscilloscope
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 190
+                        antialiasing: true
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            var w = width, h = height
+                            ctx.clearRect(0, 0, w, h)
+                            ctx.fillStyle = "#0b1421"
+                            ctx.fillRect(0, 0, w, h)
+                            var values = window.rateSignal()
+                            var maxValue = window.maximumSignal(values) * 1.15
+                            var left = 34, right = 10, top = 12, bottom = 24
+                            var pw = Math.max(1, w - left - right)
+                            var ph = Math.max(1, h - top - bottom)
+                            ctx.strokeStyle = "#26384d"
+                            ctx.lineWidth = 1
+                            for (var g = 0; g <= 4; ++g) {
+                                var gy = top + ph * g / 4
+                                ctx.beginPath()
+                                ctx.moveTo(left, gy)
+                                ctx.lineTo(left + pw, gy)
+                                ctx.stroke()
+                            }
+                            ctx.strokeStyle = "#54cbb5"
+                            ctx.lineWidth = 2
+                            ctx.beginPath()
+                            for (var i = 0; i < values.length; ++i) {
+                                var x = left + (values.length <= 1 ? 0 :
+                                    i * pw / (values.length - 1))
+                                var y = top + ph * (1 - values[i] / maxValue)
+                                if (i === 0) ctx.moveTo(x, y)
+                                else ctx.lineTo(x, y)
+                            }
+                            ctx.stroke()
+                            ctx.fillStyle = "#91a2b8"
+                            ctx.font = "10px sans-serif"
+                            ctx.fillText("OLDEST", left, h - 5)
+                            ctx.textAlign = "right"
+                            ctx.fillText("NOW", left + pw, h - 5)
+                            if (values.length < 8) {
+                                ctx.textAlign = "center"
+                                ctx.fillText("Collecting samples for signal analysis",
+                                             left + pw / 2, top + ph / 2)
+                            }
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label {
+                        text: "Live spectrum · radix-2 FFT"
+                        color: "#f0f4fa"
+                        font.pixelSize: 14
+                        font.bold: true
+                    }
+                    Item { Layout.fillWidth: true }
+                    Label {
+                        text: "Relative magnitude · low → high frequency"
+                        color: "#91a2b8"
+                        font.pixelSize: 10
+                    }
+                }
+
+                Canvas {
+                    id: spectrumChart
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.minimumHeight: 150
+                    antialiasing: false
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        var w = width, h = height
+                        ctx.clearRect(0, 0, w, h)
+                        ctx.fillStyle = "#0b1421"
+                        ctx.fillRect(0, 0, w, h)
+                        var spectrum = window.spectrumOf(window.rateSignal())
+                        var maximum = window.maximumSignal(spectrum)
+                        var left = 32, right = 10, top = 10, bottom = 22
+                        var pw = Math.max(1, w - left - right)
+                        var ph = Math.max(1, h - top - bottom)
+                        ctx.strokeStyle = "#26384d"
+                        for (var g = 0; g <= 3; ++g) {
+                            var y = top + ph * g / 3
+                            ctx.beginPath()
+                            ctx.moveTo(left, y)
+                            ctx.lineTo(left + pw, y)
+                            ctx.stroke()
+                        }
+                        var bar = spectrum.length ? pw / spectrum.length : 1
+                        ctx.fillStyle = "#e5a45f"
+                        for (var i = 0; i < spectrum.length; ++i) {
+                            var bh = ph * spectrum[i] / maximum
+                            ctx.fillRect(left + i * bar, top + ph - bh,
+                                         Math.max(1, bar - 1), bh)
+                        }
+                        ctx.fillStyle = "#91a2b8"
+                        ctx.font = "10px sans-serif"
+                        ctx.fillText("DC removed", left, h - 5)
+                        ctx.textAlign = "right"
+                        ctx.fillText("Nyquist", left + pw, h - 5)
+                        if (spectrum.length === 0) {
+                            ctx.textAlign = "center"
+                            ctx.fillText("At least 8 telemetry samples required",
+                                         left + pw / 2, top + ph / 2)
+                        }
+                    }
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    color: "#91a2b8"
+                    font.pixelSize: 10
+                    wrapMode: Text.Wrap
+                    text: "Spectrum is computed from the recent combined population-rate samples. " +
+                          "Frequency calibration depends on the telemetry sampling interval."
+                }
+            }
+
+            Connections {
+                target: simulation
+                function onTelemetryChanged() {
+                    activityGauge.requestPaint()
+                    oscilloscope.requestPaint()
+                    spectrumChart.requestPaint()
                 }
             }
         }
