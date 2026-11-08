@@ -457,7 +457,7 @@ int main() {
             p.simulation.inhibitory_current_min = 0.0f;
             p.simulation.inhibitory_current_max = 0.0f;
             p.simulation.random_seed = 424242U;
-            p.topology.p_ee = 0.0;
+            p.topology.p_ee = 1.0;
             p.topology.p_ei = 0.0;
             p.topology.p_ie = 0.0;
             p.topology.p_ii = 0.0;
