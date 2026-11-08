@@ -15,7 +15,7 @@ namespace {
 using Json = nlohmann::json;
 
 std::uint64_t topology_revision(const CSRTopology& graph) {
-    // FNV-1a over the canonical CSR arrays. Unlike completed_steps, this
+    // FNV-1a over connectivity and delay arrays. Unlike completed_steps, this
     // changes only when connectivity, delay, or weight data changes.
     std::uint64_t hash = 14695981039346656037ull;
     const auto mix = [&hash](const void* data, std::size_t size) {
@@ -33,8 +33,6 @@ std::uint64_t topology_revision(const CSRTopology& graph) {
         mix(graph.target_indices.data(), graph.target_indices.size() * sizeof(graph.target_indices[0]));
     if (!graph.delays.empty())
         mix(graph.delays.data(), graph.delays.size() * sizeof(graph.delays[0]));
-    if (!graph.weights.empty())
-        mix(graph.weights.data(), graph.weights.size() * sizeof(graph.weights[0]));
     return hash;
 }
 
