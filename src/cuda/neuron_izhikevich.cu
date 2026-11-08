@@ -3,7 +3,8 @@
 #include <cuda_runtime.h>
 #include "cuda/cuda_check.cuh"
 #include <cstddef>
-#include <cstdint>\n#include <cmath>
+#include <cstdint>
+#include <cmath>
 #include <stdexcept>
 
 namespace spiking {
