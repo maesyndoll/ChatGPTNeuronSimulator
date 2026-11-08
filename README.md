@@ -34,6 +34,30 @@ default. Learned-connectome checkpoint persistence and automatic capacity
 reallocation when a row saturates are not yet implemented. The Qt
 client/dashboard is optional.
 
+## Cyberneural tissue foundation (experimental)
+
+The `feature/cyberneural-tissue-foundation` branch begins the next architecture
+layer without moving CUDA ownership into the GUI. The new CPU-testable tissue
+domain model represents modular neural tissue with local CSR connectomes,
+excitatory/inhibitory populations, astrocyte-like and microglia-like population
+descriptors, bounded module ports, and explicit inter-module binding adapters.
+It supports structural/stateful module cloning, excision, grafting, and explicit
+reconnection. Clones do not silently inherit external adapters.
+
+A candidate-selection objective now combines prediction error, retention,
+stability, energy cost, and structural cost, with hard acceptance gates for
+retention, stability, damage, and regression. This is an experimental engineering
+policy, not a biological law. The current milestone does not yet simulate glial
+or immune physiology on the GPU, perform live GPU topology surgery, or expose
+these operations in QML. Those are subsequent integration milestones.
+
+The calibration archive is recorded in
+[`config/calibration/experimental_stdp_profile.json`](config/calibration/experimental_stdp_profile.json).
+It preserves the isolated pair-timing fit as an experimental candidate but does
+not alter production defaults. Stage D is explicitly excluded from calibration
+until its weight scale and all-one boundary-fraction instrumentation are fixed.
+See [the tissue architecture notes](docs/CYBERNEURAL_TISSUE_ARCHITECTURE.md).
+
 ## CPU-only configuration tests
 
 ```bash
