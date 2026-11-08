@@ -38,6 +38,8 @@ struct SynapseParametersGPU {
     std::uint32_t edge_count = 0;
     float* pending_current = nullptr;
     std::uint32_t ring_slots = 0;
+    const float* phases = nullptr;
+    float phase_modulation_strength = 0.0f;
 };
 
 void initialize_neurons(
@@ -52,6 +54,27 @@ void initialize_neurons(
     float excitatory_current_max,
     float inhibitory_current_min,
     float inhibitory_current_max,
+    cudaStream_t stream = nullptr
+);
+
+void initialize_phase_state(
+    float* phases,
+    float* natural_frequencies,
+    std::uint32_t neuron_count,
+    std::uint32_t seed,
+    cudaStream_t stream = nullptr
+);
+
+void advance_phase_state(
+    const float* phases,
+    float* next_phases,
+    const float* natural_frequencies,
+    const std::uint32_t* row_offsets,
+    const std::uint32_t* target_indices,
+    const float* weights,
+    std::uint32_t neuron_count,
+    float dt,
+    float coupling_strength,
     cudaStream_t stream = nullptr
 );
 
