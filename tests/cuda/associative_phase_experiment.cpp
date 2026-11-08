@@ -133,6 +133,10 @@ void write_record(std::ofstream& csv, Condition& condition,
                   const std::string& stage, int epoch,
                   const SpikeEventBatch& events) {
     const auto metrics = condition.runtime.collect_metrics();
+    if (metrics.mean_absolute_synaptic_weight <= 0.0) {
+        throw std::runtime_error(
+            "Synaptic weight telemetry is zero; expected persistent CSR weights");
+    }
     const auto voltage = condition.runtime.collect_neuron_voltages();
     const auto a_spikes = count_group(events, kA, kA + kGroup);
     const auto b_spikes = count_group(events, kB, kB + kGroup);
