@@ -407,11 +407,11 @@ int main() {
                 disconnected_phase_metrics.mean_voltage_mv + 1.0e-7 ||
             gated_phase_metrics.mean_voltage_mv >=
                 baseline_phase_metrics.mean_voltage_mv - 1.0e-7) {
-            std::cerr << "GPU phase-gated synaptic routing test failed\\n"
+            std::cerr << "GPU phase-gated synaptic routing test failed\n"
                       << "Baseline mean voltage: "
-                      << baseline_phase_metrics.mean_voltage_mv << '\\n'
+                      << baseline_phase_metrics.mean_voltage_mv << '\n'
                       << "Phase-gated mean voltage: "
-                      << gated_phase_metrics.mean_voltage_mv << '\\n';
+                      << gated_phase_metrics.mean_voltage_mv << '\n';
             return EXIT_FAILURE;
         }
 
@@ -425,13 +425,13 @@ int main() {
             rejected_invalid_phase_config = true;
         }
         if (!rejected_invalid_phase_config) {
-            std::cerr << "Invalid phase modulation configuration was accepted\\n";
+            std::cerr << "Invalid phase modulation configuration was accepted\n";
             return EXIT_FAILURE;
         }
         std::cout << "GPU phase dynamics and phase-gated routing tests passed; "
                   << "baseline=" << baseline_phase_metrics.mean_voltage_mv
                   << " mV, gated=" << gated_phase_metrics.mean_voltage_mv
-                  << " mV\\n";
+                  << " mV\n";
 
         ModelParameters parameters;
         parameters.simulation = SimulationParameters::small_test();
