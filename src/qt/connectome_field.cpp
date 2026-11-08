@@ -16,7 +16,7 @@
 namespace {
 struct FieldNode final : QSGNode {
     QSGGeometryNode* edges = nullptr;
-    QSGGeometryNode* neurons = nullptr;
+    QSGGeometryNode* neurons = nullptr;\n    QSGGeometryNode* pulses = nullptr;
 
     FieldNode() {
         edges = new QSGGeometryNode;
@@ -41,6 +41,17 @@ struct FieldNode final : QSGNode {
         neurons->setMaterial(neuronMaterial);
         neurons->setFlag(QSGNode::OwnsMaterial);
         appendChildNode(neurons);
+
+        pulses = new QSGGeometryNode;
+        auto* pulseGeometry = new QSGGeometry(
+            QSGGeometry::defaultAttributes_ColoredPoint2D(), 0);
+        pulseGeometry->setDrawingMode(QSGGeometry::DrawTriangles);
+        pulses->setGeometry(pulseGeometry);
+        pulses->setFlag(QSGNode::OwnsGeometry);
+        auto* pulseMaterial = new QSGVertexColorMaterial;
+        pulses->setMaterial(pulseMaterial);
+        pulses->setFlag(QSGNode::OwnsMaterial);
+        appendChildNode(pulses);
     }
 };
 
@@ -195,7 +206,37 @@ QSGNode* ConnectomeField::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*
         const uchar b = edge.excitatory ? 153 : 65;
         put(edgeVertices[i*2], from.x, from.y, r, g, b, alpha);
         put(edgeVertices[i*2+1], to.x, to.y, r, g, b, alpha);
+
+        const auto sourcePulses = pulseTimes.find(edge.source);
+        if (sourcePulses != pulseTimes.end()) {
+            const float duration = 240.0f + 1760.0f *
+                (float(edge.delay) / float(maxDelay));
+            int emitted = 0;
+            for (const qint64 firedAt : sourcePulses->second) {
+                const float age = float(now - firedAt);
+                if (age < 0.0f || age >= duration) continue;
+                const float t = age / duration;
+                const float px = from.x + (to.x - from.x) * t;
+                const float py = from.y + (to.y - from.y) * t;
+                const float radius = 1.5f + (1.0f - t) * 1.2f;
+                const uchar pr = edge.excitatory ? 190 : 255;
+                const uchar pg = edge.excitatory ? 255 : 198;
+                const uchar pb = edge.excitatory ? 232 : 132;
+                const int base = pulseVertices.size();
+                pulseVertices.resize(base + 6);
+                put(pulseVertices[base], px-radius, py-radius, pr, pg, pb, 245);
+                put(pulseVertices[base+1], px+radius, py-radius, pr, pg, pb, 245);
+                put(pulseVertices[base+2], px+radius, py+radius, pr, pg, pb, 245);
+                put(pulseVertices[base+3], px-radius, py-radius, pr, pg, pb, 245);
+                put(pulseVertices[base+4], px+radius, py+radius, pr, pg, pb, 245);
+                put(pulseVertices[base+5], px-radius, py+radius, pr, pg, pb, 245);
+                if (++emitted >= 3) break;
+            }
+        }
     }
+    pulseGeometry->allocate(pulseVertices.size());
+    auto* pulseData = static_cast<Point*>(pulseGeometry->vertexData());
+    std::copy(pulseVertices.cbegin(), pulseVertices.cend(), pulseData);
 
     auto* neuronVertices = static_cast<Point*>(nodeGeometry->vertexData());
     const float excitatoryCount = topology_.value(QStringLiteral("excitatory_count")).toFloat();
