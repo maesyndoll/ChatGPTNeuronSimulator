@@ -108,6 +108,8 @@ if(SPIKINGMODEL_ENABLE_QT_CLIENT)
     add_executable(spiking_model_dashboard
         include/qt/simulation_client.h
         include/qt/simulation_bridge.h
+        include/qt/connectome_field.h
+        src/qt/connectome_field.cpp
         src/qt/simulation_client.cpp
         src/qt/simulation_bridge.cpp
         src/qt/qt_dashboard_main.cpp
