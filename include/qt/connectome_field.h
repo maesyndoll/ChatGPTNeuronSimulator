@@ -53,6 +53,11 @@ private:
         bool excitatory = true;
     };
     struct RenderPosition { float x = 0.0f, y = 0.0f, z = 0.0f; };
+    struct EdgeTransition {
+        Edge edge;
+        qint64 started_ms = 0;
+        bool created = true;
+    };
     struct Spike {
         std::uint32_t neuron = 0;
         qint64 received_ms = 0;
@@ -62,6 +67,7 @@ private:
     QVariantList spike_events_;
     QVector<std::uint32_t> nodes_;
     QVector<Edge> edges_;
+    QVector<EdgeTransition> edge_transitions_;
     QVector<RenderPosition> temporal_positions_;
     QVector<Spike> spikes_;
     qreal rotation_x_ = -0.18;
