@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <string>
 
 int main() {
     using namespace spiking;
