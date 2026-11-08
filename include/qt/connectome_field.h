@@ -11,6 +11,7 @@
 class ConnectomeField final : public QQuickItem {
     Q_OBJECT
     Q_PROPERTY(QVariantMap topology READ topology WRITE setTopology NOTIFY topologyChanged)
+    Q_PROPERTY(QString simulationGeneration READ simulationGeneration WRITE setSimulationGeneration NOTIFY spikeEventsChanged)
     Q_PROPERTY(QVariantList spikeEvents READ spikeEvents WRITE setSpikeEvents NOTIFY spikeEventsChanged)
     Q_PROPERTY(qreal rotationX READ rotationX WRITE setRotationX NOTIFY cameraChanged)
     Q_PROPERTY(qreal rotationY READ rotationY WRITE setRotationY NOTIFY cameraChanged)
@@ -21,6 +22,8 @@ public:
 
     QVariantMap topology() const { return topology_; }
     void setTopology(const QVariantMap& value);
+    QString simulationGeneration() const { return generation_; }
+    void setSimulationGeneration(const QString& value);
     QVariantList spikeEvents() const { return spike_events_; }
     void setSpikeEvents(const QVariantList& value);
     qreal rotationX() const { return rotation_x_; }
