@@ -97,7 +97,6 @@ ApplicationWindow {
                 active[Number(events[i].neuron_id)] = true
         }
         activeNeuronIds = active
-        neuralCloud.requestUpdate()
     }
     function syncKnobs() {
         var requested = simulation.requestedParameters || {}
