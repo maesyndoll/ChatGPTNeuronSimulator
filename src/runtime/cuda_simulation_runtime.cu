@@ -602,6 +602,14 @@ SimulationMetrics CudaSimulationRuntime::collect_metrics() {
             active_weights.push_back(weights[base + j]);
     }
 
+    SPIKING_CUDA_CHECK(cudaMemcpy(voltage.data(), device_state_->voltage.get(),
+        count * sizeof(float), cudaMemcpyDeviceToHost));
+    SPIKING_CUDA_CHECK(cudaMemcpy(recovery.data(), device_state_->recovery.get(),
+        count * sizeof(float), cudaMemcpyDeviceToHost));
+    SPIKING_CUDA_CHECK(cudaMemcpy(spikes.data(), device_state_->spike_counts.get(),
+        count * sizeof(std::uint32_t), cudaMemcpyDeviceToHost));
+    SPIKING_CUDA_CHECK(cudaMemcpy(spike_flags.data(), device_state_->spike_flags.get(),
+        count * sizeof(std::uint8_t), cudaMemcpyDeviceToHost));
     if (phase_config_.enabled) {
         SPIKING_CUDA_CHECK(cudaMemcpy(phases.data(), device_state_->phases.get(),
                                       count * sizeof(float), cudaMemcpyDeviceToHost));
