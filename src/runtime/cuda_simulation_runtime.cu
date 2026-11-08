@@ -242,8 +242,12 @@ CudaSimulationRuntime::build_device_state(
 
     const std::uint64_t ring_slots =
         static_cast<std::uint64_t>(topology.maximum_delay) + 1ULL;
+    const std::uint64_t adaptive_capacity_edges =
+        static_cast<std::uint64_t>(total) * adaptive_row_capacity(topology);
+    if (adaptive_capacity_edges > std::numeric_limits<std::uint32_t>::max())
+        throw std::length_error("Adaptive CSR capacity exceeds the 32-bit device edge limit");
     const std::uint64_t required_bytes = estimate_device_bytes(
-        total, topology.weights.size(), ring_slots);
+        total, adaptive_capacity_edges, ring_slots);
 
     std::size_t free_bytes = 0;
     std::size_t total_device_bytes = 0;
