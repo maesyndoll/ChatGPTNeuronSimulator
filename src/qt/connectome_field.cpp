@@ -264,5 +264,7 @@ QSGNode* ConnectomeField::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*
     nodeGeometry->markVertexDataDirty();
     root->edges->markDirty(QSGNode::DirtyGeometry);
     root->neurons->markDirty(QSGNode::DirtyGeometry);
+    pulseGeometry->markVertexDataDirty();
+    root->pulses->markDirty(QSGNode::DirtyGeometry);
     return root;
 }
