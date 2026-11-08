@@ -55,7 +55,7 @@ private:
     struct RenderPosition { float x = 0.0f, y = 0.0f, z = 0.0f; };
     struct EdgeTransition {
         Edge edge;
-        qint64 started_ms = 0;
+        qint64 created_ms = 0;
         bool created = true;
     };
     struct Spike {
