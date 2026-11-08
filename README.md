@@ -17,7 +17,7 @@ Blackwell (`sm_120` by default).
 - GPU-resident spike queues, delayed synaptic-current rings, CUDA spike
   propagation, and a bounded GPU spike-event recorder.
 - Bounded-capacity GPU CSR connectome with per-row active edge counts. Associative
-  co-activity can add missing directed edges; weak edges are pruned in-place.
+  a presynaptic eligibility trace plus a current postsynaptic spike can add missing directed edges; weak edges are pruned in-place.
   Propagation, phase coupling, and STDP all consume the active GPU CSR rows.
 - A standalone Neural Observatory experiment that exports a spike raster as
   an HTML report and every captured event as CSV.
