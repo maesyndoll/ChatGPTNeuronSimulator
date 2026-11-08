@@ -5,6 +5,7 @@
 #include <QSGGeometryNode>
 #include <QSGNode>
 #include <QSGVertexColorMaterial>
+#include <QMutexLocker>
 #include <QVariant>
 
 #include <algorithm>
@@ -52,10 +53,10 @@ void put(Point& p, float x, float y, uchar r, uchar g, uchar b, uchar a) {
 
 ConnectomeField::ConnectomeField(QQuickItem* parent) : QQuickItem(parent) {
     setFlag(ItemHasContents, true);
-    clock_.start();
 }
 
 void ConnectomeField::setTopology(const QVariantMap& value) {
+    QMutexLocker locker(&mutex_);
     if (topology_ == value) return;
     topology_ = value;
     nodes_.clear();
@@ -80,6 +81,7 @@ void ConnectomeField::setTopology(const QVariantMap& value) {
 }
 
 void ConnectomeField::setSpikeEvents(const QVariantList& value) {
+    QMutexLocker locker(&mutex_);
     if (spike_events_ == value) return;
     spike_events_ = value;
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -106,15 +108,18 @@ void ConnectomeField::setSpikeEvents(const QVariantList& value) {
 }
 
 void ConnectomeField::setRotationX(qreal value) {
+    QMutexLocker locker(&mutex_);
     if (qFuzzyCompare(rotation_x_, value)) return;
     rotation_x_ = value; emit cameraChanged(); update();
 }
 void ConnectomeField::setRotationY(qreal value) {
+    QMutexLocker locker(&mutex_);
     if (qFuzzyCompare(rotation_y_, value)) return;
     rotation_y_ = value; emit cameraChanged(); update();
 }
 void ConnectomeField::setCameraDistance(qreal value) {
     value = std::clamp(value, qreal(1.45), qreal(7.0));
+    QMutexLocker locker(&mutex_);
     if (qFuzzyCompare(camera_distance_, value)) return;
     camera_distance_ = value; emit cameraChanged(); update();
 }
@@ -122,6 +127,7 @@ void ConnectomeField::setCameraDistance(qreal value) {
 void ConnectomeField::advanceFrame() { update(); }
 
 QSGNode* ConnectomeField::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) {
+    QMutexLocker locker(&mutex_);
     auto* root = oldNode ? static_cast<FieldNode*>(oldNode) : new FieldNode;
     const int edgeCount = edges_.size();
     const int nodeCount = nodes_.size();
