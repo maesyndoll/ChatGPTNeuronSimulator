@@ -1,6 +1,7 @@
 #include "tissue/tissue_model.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <unordered_set>
 namespace spiking::tissue {
@@ -97,6 +98,127 @@ void TissueModel::validate()const{
    throw std::invalid_argument("Adapter port capacity exceeded");
  }
 }
+StructuralPlasticityReport apply_structural_plasticity(
+    CSRTopology& topology,
+    const std::vector<float>& pair_coactivity,
+    const StructuralPlasticityPolicy& p) {
+    topology.validate();
+    const std::uint64_t n = topology.neuron_count();
+    if (n != 0 && n > std::numeric_limits<std::size_t>::max() / n) {
+        throw std::length_error("Coactivity matrix dimensions overflow");
+    }
+    if (pair_coactivity.size() != static_cast<std::size_t>(n * n)) {
+        throw std::invalid_argument("Coactivity matrix must be N x N");
+    }
+    const float values[] = {
+        p.learning_rate, p.coactivity_baseline, p.prune_coactivity_below,
+        p.prune_weight_below, p.sprout_coactivity_at_or_above,
+        p.initial_sprout_weight, p.minimum_weight_magnitude,
+        p.maximum_weight_magnitude
+    };
+    for (float value : values) {
+        if (!std::isfinite(value)) {
+            throw std::invalid_argument("Non-finite structural plasticity policy");
+        }
+    }
+    if (p.learning_rate < 0.0f ||
+        p.coactivity_baseline < 0.0f || p.coactivity_baseline > 1.0f ||
+        p.prune_coactivity_below < 0.0f || p.prune_coactivity_below > 1.0f ||
+        p.sprout_coactivity_at_or_above < 0.0f ||
+        p.sprout_coactivity_at_or_above > 1.0f ||
+        p.prune_weight_below < 0.0f ||
+        p.minimum_weight_magnitude <= 0.0f ||
+        p.maximum_weight_magnitude < p.minimum_weight_magnitude ||
+        p.initial_sprout_weight < p.minimum_weight_magnitude ||
+        p.initial_sprout_weight > p.maximum_weight_magnitude ||
+        p.maximum_out_degree == 0 ||
+        p.sprout_delay_steps < topology.minimum_delay ||
+        p.sprout_delay_steps > topology.maximum_delay) {
+        throw std::invalid_argument("Invalid structural plasticity policy");
+    }
+    for (float value : pair_coactivity) {
+        if (!std::isfinite(value) || value < 0.0f || value > 1.0f) {
+            throw std::invalid_argument("Pairwise coactivity must be finite and in [0,1]");
+        }
+    }
+
+    struct Edge { std::uint32_t target; float weight; std::uint32_t delay; };
+    std::vector<std::vector<Edge>> rows(n);
+    StructuralPlasticityReport report;
+    for (std::uint32_t source = 0; source < n; ++source) {
+        const bool excitatory = source < topology.excitatory_count;
+        const auto begin = topology.row_offsets[source];
+        const auto end = topology.row_offsets[source + 1];
+        rows[source].reserve(std::min<std::uint64_t>(
+            p.maximum_out_degree, static_cast<std::uint64_t>(end - begin) + 8));
+        for (std::uint32_t edge = begin; edge < end; ++edge) {
+            const auto target = topology.target_indices[edge];
+            const float coactivity = pair_coactivity[
+                static_cast<std::size_t>(source) * n + target];
+            const float old_magnitude = std::abs(topology.weights[edge]);
+            const float updated = std::clamp(
+                old_magnitude + p.learning_rate *
+                    (coactivity - p.coactivity_baseline),
+                p.minimum_weight_magnitude, p.maximum_weight_magnitude);
+            if (coactivity < p.prune_coactivity_below ||
+                updated < p.prune_weight_below) {
+                ++report.pruned;
+                continue;
+            }
+            if (coactivity > p.coactivity_baseline) ++report.potentiated;
+            else if (coactivity < p.coactivity_baseline) ++report.depressed;
+            rows[source].push_back({
+                target, excitatory ? updated : -updated, topology.delays[edge]});
+        }
+
+        if (rows[source].size() < p.maximum_out_degree) {
+            for (std::uint32_t target = 0; target < n; ++target) {
+                if (target == source ||
+                    pair_coactivity[static_cast<std::size_t>(source) * n + target]
+                        < p.sprout_coactivity_at_or_above) {
+                    continue;
+                }
+                const auto position = std::lower_bound(
+                    rows[source].begin(), rows[source].end(), target,
+                    [](const Edge& edge, std::uint32_t value) {
+                        return edge.target < value;
+                    });
+                if (position != rows[source].end() && position->target == target) {
+                    continue;
+                }
+                if (rows[source].size() >= p.maximum_out_degree) break;
+                rows[source].insert(position, Edge{
+                    target,
+                    excitatory ? p.initial_sprout_weight : -p.initial_sprout_weight,
+                    p.sprout_delay_steps});
+                ++report.sprouted;
+            }
+        }
+    }
+
+    CSRTopology candidate = topology;
+    candidate.row_offsets.assign(static_cast<std::size_t>(n) + 1, 0);
+    candidate.target_indices.clear();
+    candidate.weights.clear();
+    candidate.delays.clear();
+    for (std::uint32_t source = 0; source < n; ++source) {
+        for (const auto& edge : rows[source]) {
+            candidate.target_indices.push_back(edge.target);
+            candidate.weights.push_back(edge.weight);
+            candidate.delays.push_back(edge.delay);
+        }
+        if (candidate.target_indices.size() >
+            std::numeric_limits<std::uint32_t>::max()) {
+            throw std::length_error("Remodeled CSR exceeds 32-bit row offsets");
+        }
+        candidate.row_offsets[source + 1] =
+            static_cast<std::uint32_t>(candidate.target_indices.size());
+    }
+    candidate.validate();
+    topology = std::move(candidate);
+    return report;
+}
+
 double objective_score(const CandidateMetrics& m,const OptimizationPolicy& p){
  const double vals[]={m.prediction_error,m.retention_score,m.stability_score,m.energy_cost,m.structural_cost,m.damaged_fraction,
   p.prediction_weight,p.retention_weight,p.stability_weight,p.energy_weight,p.structural_weight};
