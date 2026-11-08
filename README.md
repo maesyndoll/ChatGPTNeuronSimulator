@@ -12,10 +12,16 @@ Blackwell (`sm_120` by default).
   reinitialization, and batch metric collection.
 - Move-only CUDA RAII wrappers provide exception-safe cleanup of partially
   allocated device state.
+- Seeded random sparse CSR connectivity with population-specific connection
+  probabilities, signed excitatory/inhibitory weights, and configurable delays.
+- GPU-resident spike queues, delayed synaptic-current rings, CUDA spike
+  propagation, and a bounded GPU spike-event recorder.
+- A standalone Neural Observatory experiment that exports a spike raster as
+  an HTML report and every captured event as CSV.
 
-The current simulation still models independent neurons. Sparse synapses,
-spike propagation, plasticity, checkpointing, telemetry streaming, and the Qt
-UI are future milestones.
+The current runtime has fixed synaptic weights: online plasticity, learned
+checkpoint persistence, and inference-oriented memory management are not yet
+implemented. The Qt client/dashboard is optional.
 
 ## CPU-only configuration tests
 
@@ -42,3 +48,34 @@ step-boundary parameter updates, continued execution, and full reinitialization.
 The CPU-only tests do not verify CUDA compilation or GPU execution. See
 [`docs/RUNTIME_FOUNDATION.md`](docs/RUNTIME_FOUNDATION.md) for implementation
 notes and lifecycle semantics.
+
+## Neural Observatory showcase
+
+The standalone experiment exercises the existing GPU-resident CSR network and
+spike-propagation path, then writes a browser-viewable spike raster and raw
+event log. It does not claim to train the network; synaptic weights are fixed
+for this experiment.
+
+Build it with the same CUDA configuration:
+
+```bash
+cmake --build build-cuda --target neural_observatory --parallel
+./build-cuda/neural_observatory
+```
+
+Open the generated report:
+
+```bash
+xdg-open neural-observatory-output/index.html
+```
+
+Optional controls:
+
+```bash
+./build-cuda/neural_observatory --steps 4000 --device 0 \
+  --output my-neural-experiment
+```
+
+The output directory contains `index.html` and `spikes.csv`. The report
+includes the raster, excitatory/inhibitory activity over time, firing-rate
+metrics, mean membrane voltage, and the detected GPU model.
