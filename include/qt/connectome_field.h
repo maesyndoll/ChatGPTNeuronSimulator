@@ -1,6 +1,6 @@
 #pragma once
 
-#include <QElapsedTimer>
+#include <QMutex>
 #include <QQuickItem>
 #include <QVariantList>
 #include <QVariantMap>
@@ -62,5 +62,5 @@ private:
     qreal camera_distance_ = 3.15;
     qint64 last_sequence_ = 0;
     QString generation_;
-    QElapsedTimer clock_;
+    mutable QMutex mutex_;
 };
