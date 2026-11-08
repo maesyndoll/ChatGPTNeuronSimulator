@@ -382,6 +382,97 @@ int main() {
 
         std::cout << "GPU delay-ring reuse test passed\n";
 
+        // Phase-gated meta-topology experiment. One source projects to two
+        // otherwise identical targets. The fixed phases make one route aligned
+        // (gain 1) and the other anti-phase (gain 0) at full modulation.
+        auto make_meta_topology_parameters = [] {
+            ModelParameters p;
+            p.simulation.excitatory_count = 3;
+            p.simulation.inhibitory_count = 1;
+            p.simulation.steps = 1;
+            p.simulation.dt = 0.01f;
+            p.simulation.threshold = -64.9995f;
+            p.simulation.initial_voltage_min = -65.0f;
+            p.simulation.initial_voltage_max = -65.0f;
+            p.simulation.excitatory_current_min = 4.0f;
+            p.simulation.excitatory_current_max = 4.0f;
+            p.simulation.inhibitory_current_min = 0.0f;
+            p.simulation.inhibitory_current_max = 0.0f;
+            p.simulation.random_seed = 12345U;
+            p.topology.p_ee = 0.0;
+            p.topology.p_ei = 0.0;
+            p.topology.p_ie = 0.0;
+            p.topology.p_ii = 0.0;
+            p.topology.minimum_delay = 1;
+            p.topology.maximum_delay = 1;
+            p.topology.fibonacci_delays = {1};
+            p.topology.fibonacci_weights = {1.0};
+            return p;
+        };
+        auto make_meta_topology = [] {
+            CSRTopology graph;
+            graph.excitatory_count = 3;
+            graph.inhibitory_count = 1;
+            graph.minimum_delay = 1;
+            graph.maximum_delay = 1;
+            graph.row_offsets = {0, 2, 2, 2, 2};
+            graph.target_indices = {1, 2};
+            graph.weights = {4.0f, 4.0f};
+            graph.delays = {1, 1};
+            graph.validate();
+            return graph;
+        };
+        CudaSimulationRuntime meta_unmodulated(
+            make_meta_topology_parameters(), make_meta_topology());
+        CudaSimulationRuntime meta_gated(
+            make_meta_topology_parameters(), make_meta_topology());
+        std::vector<float> meta_input(4, 0.0f);
+        meta_input[0] = 4.0f;
+        meta_unmodulated.set_external_current(meta_input);
+        meta_gated.set_external_current(meta_input);
+        const std::vector<float> aligned_and_opposed_phases{
+            0.0f, 0.0f, 3.14159265358979323846f, 0.0f};
+        meta_unmodulated.set_neuron_phases(aligned_and_opposed_phases);
+        meta_gated.set_neuron_phases(aligned_and_opposed_phases);
+        PhaseDynamicsConfig meta_config;
+        meta_config.enabled = true;
+        meta_config.coupling_strength = 0.0f;
+        meta_config.modulation_strength = 1.0f;
+        meta_config.evolve_phases = false;
+        meta_gated.configure_phase_dynamics(meta_config);
+        meta_unmodulated.run_steps(4);
+        meta_gated.run_steps(4);
+        const auto meta_base_voltage = meta_unmodulated.collect_neuron_voltages();
+        const auto meta_gated_voltage = meta_gated.collect_neuron_voltages();
+        const auto meta_base_spikes = meta_unmodulated.collect_spike_events();
+        const auto meta_gated_spikes = meta_gated.collect_spike_events();
+        const float base_target_delta = std::abs(
+            meta_base_voltage[1] - meta_base_voltage[2]);
+        const float gated_target_delta =
+            meta_gated_voltage[1] - meta_gated_voltage[2];
+        const auto source_spiked = [](const SpikeEventBatch& events) {
+            for (const auto& event : events.events)
+                if (event.neuron_id == 0) return true;
+            return false;
+        };
+        if (!source_spiked(meta_base_spikes) ||
+            !source_spiked(meta_gated_spikes) ||
+            base_target_delta > 1.0e-5f ||
+            gated_target_delta < 1.0e-4f ||
+            meta_gated_voltage[1] <= meta_gated_voltage[2]) {
+            std::cerr << "GPU phase-gated meta-topology experiment failed\\n"
+                      << "Ungated target voltage delta: " << base_target_delta << " mV\\n"
+                      << "Aligned target voltage: " << meta_gated_voltage[1] << " mV\\n"
+                      << "Anti-phase target voltage: " << meta_gated_voltage[2] << " mV\\n"
+                      << "Gated target separation: " << gated_target_delta << " mV\\n";
+            return EXIT_FAILURE;
+        }
+        std::cout << "GPU phase-gated meta-topology test passed; "
+                  << "ungated target delta=" << base_target_delta
+                  << " mV, aligned=" << meta_gated_voltage[1]
+                  << " mV, anti-phase=" << meta_gated_voltage[2]
+                  << " mV\\n";
+
         // Phase dynamics test: the same deterministic delayed connection
         // must remain excitatory, while phase gating attenuates its delivered
         // current relative to the unmodulated baseline.
