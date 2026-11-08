@@ -310,6 +310,13 @@ def main():
                         assert "simulation_generation" in payload
                         assert isinstance(payload["events"], list)
 
+                topology = send_request(
+                    client, reader, "get_topology", {}, "live-topology"
+                )
+                assert topology["total_neurons"] == 2, topology
+                assert topology["rendered_neurons"] >= 2, topology
+                assert "edges" in topology and "nodes" in topology, topology
+
                 # Verify a zero-based selected-neuron stimulus is accepted
                 # and that the simulation continues through its requested duration.
                 stimulus = send_request(
