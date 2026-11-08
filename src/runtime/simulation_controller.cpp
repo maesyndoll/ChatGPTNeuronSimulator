@@ -271,6 +271,12 @@ TissueSnapshot SimulationController::tissue_snapshot() const {
         });
 }
 
+CSRTopology SimulationController::topology_snapshot() {
+    return submit([](CudaSimulationRuntime& runtime) {
+        return runtime.collect_topology();
+    });
+}
+
 ControllerStatus SimulationController::status() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return status_;
