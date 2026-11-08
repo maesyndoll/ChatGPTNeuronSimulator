@@ -148,6 +148,7 @@ if(SPIKINGMODEL_ENABLE_CUDA)
         src/cuda/neuron_izhikevich.cu
         src/runtime/cuda_simulation_runtime.cu
         src/runtime/simulation_controller.cpp
+        src/tissue/tissue_model.cpp
         src/topology/topology_generator.cpp
         src/ipc/parameter_json.cpp
         src/ipc/protocol.cpp
@@ -196,6 +197,7 @@ if(SPIKINGMODEL_ENABLE_CUDA)
             src/cuda/neuron_izhikevich.cu
             src/runtime/cuda_simulation_runtime.cu
             src/runtime/simulation_controller.cpp
+            src/tissue/tissue_model.cpp
             src/topology/topology_generator.cpp
         )
         target_include_directories(cuda_runtime_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
