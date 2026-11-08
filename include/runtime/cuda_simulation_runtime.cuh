@@ -41,6 +41,8 @@ struct SimulationMetrics {
     double mean_voltage_mv = 0.0;
     double excitatory_rate_hz = 0.0;
     double inhibitory_rate_hz = 0.0;
+    // Kuramoto order parameter R in [0, 1], computed from GPU phase state.
+    double phase_coherence = 0.0;
     bool finite_state = true;
 };
 
