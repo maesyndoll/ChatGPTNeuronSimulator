@@ -109,6 +109,7 @@ void simulate_neurons(
     float dt,
     float threshold,
     float* synaptic_current,
+    const float* external_current,
     std::uint32_t ring_slot,
     std::uint64_t step_index,
     cudaStream_t stream = nullptr
