@@ -9,6 +9,7 @@
 #include <QSGVertexColorMaterial>
 #include <QMutexLocker>
 #include <QVariant>
+#include <QtConcurrent/QtConcurrentRun>
 
 #include <algorithm>
 #include <cmath>
@@ -67,6 +68,63 @@ void put(Point& p, float x, float y, uchar r, uchar g, uchar b, uchar a) {
 
 ConnectomeField::ConnectomeField(QQuickItem* parent) : QQuickItem(parent) {
     setFlag(ItemHasContents, true);
+    connect(&embedding_watcher_,
+            &QFutureWatcher<connectome::EmbeddingResult>::finished,
+            this, [this]() {
+        QMutexLocker locker(&mutex_);
+        if (embedding_watcher_generation_ != embedding_request_generation_)
+            return;
+
+        connectome::EmbeddingResult embedding;
+        try {
+            embedding = embedding_watcher_.result();
+        } catch (const std::exception&) {
+            return; // Keep the last valid geometry if an embedding fails.
+        }
+        if (embedding.positions.size() !=
+            static_cast<std::size_t>(nodes_.size()))
+            return;
+
+        QVector<RenderPosition> next;
+        next.reserve(nodes_.size());
+        for (const auto& point : embedding.positions)
+            next.push_back({static_cast<float>(point.x),
+                            static_cast<float>(point.y),
+                            static_cast<float>(point.z)});
+
+        // MDS eigenvectors have arbitrary signs. Align each axis to the
+        // previous solution before interpolation to avoid whole-field flips.
+        if (next.size() == previous_temporal_positions_.size() &&
+            next.size() == temporal_positions_.size()) {
+            for (int axis = 0; axis < 3; ++axis) {
+                double correlation = 0.0;
+                for (int i = 0; i < next.size(); ++i) {
+                    const float oldValue = axis == 0
+                        ? temporal_positions_[i].x
+                        : axis == 1 ? temporal_positions_[i].y
+                                    : temporal_positions_[i].z;
+                    const float newValue = axis == 0 ? next[i].x
+                        : axis == 1 ? next[i].y : next[i].z;
+                    correlation += double(oldValue) * double(newValue);
+                }
+                if (correlation < 0.0) {
+                    for (auto& point : next) {
+                        if (axis == 0) point.x = -point.x;
+                        else if (axis == 1) point.y = -point.y;
+                        else point.z = -point.z;
+                    }
+                }
+            }
+        }
+
+        previous_temporal_positions_ = temporal_positions_;
+        temporal_positions_ = std::move(next);
+        if (previous_temporal_positions_.size() != temporal_positions_.size())
+            previous_temporal_positions_.clear();
+        embedding_transition_started_ms_ =
+            QDateTime::currentMSecsSinceEpoch();
+        update();
+    });
 }
 
 void ConnectomeField::setTopology(const QVariantMap& value) {
@@ -143,16 +201,22 @@ void ConnectomeField::setTopology(const QVariantMap& value) {
         nextTransitions.remove(0, nextTransitions.size() - 12000);
     edge_transitions_ = std::move(nextTransitions);
 
-    temporal_positions_.clear();
+    // Compute the new geometry off the GUI/render thread. Replacing the
+    // watcher's future supersedes stale results when topology updates arrive
+    // faster than an embedding can finish.
     if (!nodes_.isEmpty()) {
-        const auto embedding = connectome::embed_temporal_graph(
-            static_cast<std::size_t>(nodes_.size()), temporalEdges);
-        temporal_positions_.reserve(nodes_.size());
-        for (const auto& point : embedding.positions)
-            temporal_positions_.push_back({
-                static_cast<float>(point.x),
-                static_cast<float>(point.y),
-                static_cast<float>(point.z)});
+        const quint64 request = ++embedding_request_generation_;
+        embedding_watcher_generation_ = request;
+        const std::size_t nodeCount = static_cast<std::size_t>(nodes_.size());
+        embedding_watcher_.setFuture(QtConcurrent::run(
+            [nodeCount, graphEdges = std::move(temporalEdges)]() {
+                return connectome::embed_temporal_graph(nodeCount, graphEdges);
+            }));
+    } else {
+        ++embedding_request_generation_;
+        embedding_watcher_generation_ = embedding_request_generation_;
+        previous_temporal_positions_.clear();
+        temporal_positions_.clear();
     }
     emit topologyChanged();
     update();
@@ -230,6 +294,10 @@ QSGNode* ConnectomeField::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*
     const float cy = std::cos(float(rotation_y_)), sy = std::sin(float(rotation_y_));
     const float cx = std::cos(float(rotation_x_)), sx = std::sin(float(rotation_x_));
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const float embeddingBlend = previous_temporal_positions_.isEmpty()
+        ? 1.0f
+        : std::clamp(float(now - embedding_transition_started_ms_) / 900.0f,
+                     0.0f, 1.0f);
     float coordinateScale = 1.0f;
     for (const auto& point : temporal_positions_) {
         coordinateScale = std::max(coordinateScale, std::abs(point.x));
@@ -261,8 +329,14 @@ QSGNode* ConnectomeField::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*
     for (int i = 0; i < nodeCount; ++i) {
         const auto id = nodes_[i];
         const float intensity = std::min(2.8f, activity[id]);
-        const auto point = i < temporal_positions_.size()
+        RenderPosition point = i < temporal_positions_.size()
             ? temporal_positions_[i] : RenderPosition{};
+        if (i < previous_temporal_positions_.size()) {
+            const auto& oldPoint = previous_temporal_positions_[i];
+            point.x = oldPoint.x + (point.x - oldPoint.x) * embeddingBlend;
+            point.y = oldPoint.y + (point.y - oldPoint.y) * embeddingBlend;
+            point.z = oldPoint.z + (point.z - oldPoint.z) * embeddingBlend;
+        }
         // Activity changes illumination and node size, never the temporal
         // coordinate itself. Structural revisions are the only source of
         // spatial re-embedding.
@@ -280,6 +354,8 @@ QSGNode* ConnectomeField::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*
             h * 0.5f + y1 * extent * perspective,
             z2, perspective, intensity});
     }
+    if (embeddingBlend >= 1.0f)
+        previous_temporal_positions_.clear();
 
     auto* edgeVertices = static_cast<Point*>(edgeGeometry->vertexData());
     for (int i = 0; i < edgeCount; ++i) {
