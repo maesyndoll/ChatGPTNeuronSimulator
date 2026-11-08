@@ -24,6 +24,7 @@ ApplicationWindow {
     property var rateHistory: []
     property int historyLimit: 240
     property bool parametersInitialized: false
+    property bool pausePending: false
 
     // Logarithmic maps give useful resolution across orders of magnitude.
     // Connectivity has an explicit zero detent, then a logarithmic 1e-5..0.05 range.
@@ -131,6 +132,14 @@ ApplicationWindow {
         function onConfigurationChanged() {
             window.syncKnobs()
         }
+        function onSimulationStatusChanged() {
+            if (simulation.simulationStatus === "paused")
+                window.pausePending = false
+        }
+        function onErrorMessageChanged() {
+            if (simulation.errorMessage.length > 0)
+                window.pausePending = false
+        }
         function onTelemetryChanged() {
             window.recordRate()
             window.refreshActiveNeuronIds()
@@ -180,14 +189,20 @@ ApplicationWindow {
                               : simulation.connectToServer()
                 }
                 Button {
-                    text: "Start"
-                    enabled: simulation.connected
+                    text: simulation.simulationStatus === "paused" ? "Resume" : "Start"
+                    enabled: simulation.connected &&
+                             simulation.simulationStatus !== "running"
                     onClicked: simulation.startSimulation()
                 }
                 Button {
-                    text: "Pause"
-                    enabled: simulation.connected
-                    onClicked: simulation.pauseSimulation()
+                    text: window.pausePending ? "Pausing…" : "Pause"
+                    enabled: simulation.connected &&
+                             simulation.simulationStatus === "running" &&
+                             !window.pausePending
+                    onClicked: {
+                        window.pausePending = true
+                        simulation.pauseSimulation()
+                    }
                 }
             }
 
