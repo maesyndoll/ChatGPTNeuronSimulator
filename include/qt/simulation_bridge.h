@@ -37,6 +37,8 @@ class SimulationBridge : public QObject {
 
     Q_PROPERTY(QVariantList spikeEvents READ spikeEvents
                NOTIFY spikeEventsChanged)
+    Q_PROPERTY(QVariantList visualSpikeEvents READ visualSpikeEvents
+               NOTIFY visualSpikeEventsChanged)
     Q_PROPERTY(QString spikeEventCount READ spikeEventCount
                NOTIFY spikeEventsChanged)
     Q_PROPERTY(QString spikeEventsDropped READ spikeEventsDropped
