@@ -73,7 +73,7 @@ public:
     QString parameterVersion() const;
     QString simulationGeneration() const;
 
-    QVariantList spikeEvents() const;
+    QVariantList spikeEvents() const;\n    QVariantList visualSpikeEvents() const;
     QString spikeEventCount() const;
     QString spikeEventsDropped() const;
     QString spikeEventsFirstSequence() const;
@@ -104,7 +104,7 @@ signals:
     void errorMessageChanged();
     void telemetryChanged();
     void configurationChanged();
-    void spikeEventsChanged();
+    void spikeEventsChanged();\n    void visualSpikeEventsChanged();
     void tissueChanged();
     void topologyChanged();
     void errorOccurred(const QString& message);
@@ -126,7 +126,7 @@ private:
     QString error_message_;
     QJsonObject telemetry_;
     QJsonObject configuration_;
-    QVariantList spike_events_;
+    QVariantList spike_events_;\n    QVariantList visual_spike_events_;
     QString spike_event_count_ = QStringLiteral("0");
     QString spike_events_dropped_ = QStringLiteral("0");
     QString spike_events_first_sequence_ = QStringLiteral("0");
