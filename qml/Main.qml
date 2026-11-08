@@ -452,6 +452,51 @@ ApplicationWindow {
                 }
             }
 
+            Rectangle {
+                Layout.fillWidth: true
+                radius: 12
+                color: "#192433"
+                border.color: "#2b3a4d"
+                implicitHeight: tissueInspector.implicitHeight + 28
+                ColumnLayout {
+                    id: tissueInspector
+                    anchors.fill: parent
+                    anchors.margins: 14
+                    spacing: 8
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Label { text: "Cyberneural tissue"; color: "#f0f4fa"; font.pixelSize: 16; font.bold: true }
+                        Item { Layout.fillWidth: true }
+                        Label { text: "revision " + simulation.tissueRevision; color: "#91a2b8"; font.pixelSize: 10 }
+                        Button { text: "Refresh"; enabled: simulation.connected; onClicked: simulation.refreshTissue() }
+                    }
+                    Label {
+                        text: (simulation.tissueSnapshot.modules || []).length + " modules  ·  " +
+                              (simulation.tissueSnapshot.adapters || []).length + " adapters"
+                        color: "#8de0ca"
+                        font.pixelSize: 12
+                    }
+                    TextArea {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 190
+                        readOnly: true
+                        wrapMode: TextEdit.Wrap
+                        color: "#a9bbcf"
+                        background: Rectangle { color: "#101b29"; radius: 8 }
+                        text: JSON.stringify(simulation.tissueSnapshot, null, 2)
+                        placeholderText: "Connect to inspect the tissue model"
+                        font.family: "monospace"
+                        font.pixelSize: 10
+                    }
+                }
+            }
+            Timer {
+                interval: 1000
+                repeat: true
+                running: simulation.connected
+                onTriggered: simulation.refreshTissue()
+            }
+
             // Each Dial is a normalized control; the displayed number is the
             // physical parameter value sent to the server, not the dial fraction.
             Rectangle {
