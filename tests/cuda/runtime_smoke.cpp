@@ -457,7 +457,7 @@ int main() {
             p.simulation.inhibitory_current_min = 0.0f;
             p.simulation.inhibitory_current_max = 0.0f;
             p.simulation.random_seed = 424242U;
-            p.topology.p_ee = 1.0;
+            p.topology.p_ee = 0.0;
             p.topology.p_ei = 0.0;
             p.topology.p_ie = 0.0;
             p.topology.p_ii = 0.0;
@@ -617,15 +617,41 @@ int main() {
             p.topology.fibonacci_weights = {1.0};
             return p;
         };
-        CudaSimulationRuntime association_active(make_association_parameters());
-        CudaSimulationRuntime association_control(make_association_parameters());
+        auto make_association_topology = [] {
+            CSRTopology graph;
+            graph.excitatory_count = 24;
+            graph.inhibitory_count = 1;
+            graph.minimum_delay = 1;
+            graph.maximum_delay = 1;
+            graph.row_offsets.resize(26, 0);
+            // Only A (0..7) projects to B (8..15). C (16..23) has
+            // deliberately no incoming edges and is a true untrained control.
+            for (std::uint32_t source = 0; source < 24; ++source) {
+                if (source < 8) {
+                    for (std::uint32_t target = 8; target < 16; ++target) {
+                        graph.target_indices.push_back(target);
+                        graph.weights.push_back(0.05f);
+                        graph.delays.push_back(1);
+                    }
+                }
+                graph.row_offsets[source + 1] =
+                    static_cast<std::uint32_t>(graph.target_indices.size());
+            }
+            graph.row_offsets[25] = static_cast<std::uint32_t>(graph.target_indices.size());
+            graph.validate();
+            return graph;
+        };
+        CudaSimulationRuntime association_active(
+            make_association_parameters(), make_association_topology());
+        CudaSimulationRuntime association_control(
+            make_association_parameters(), make_association_topology());
         SynapticPlasticityConfig association_learning;
         association_learning.enabled = true;
         association_learning.trace_time_constant_ms = 30.0f;
         association_learning.potentiation_rate = 0.08f;
         association_learning.depression_rate = 0.002f;
         association_learning.minimum_weight_magnitude = 0.005f;
-        association_learning.maximum_weight_magnitude = 0.50f;
+        association_learning.maximum_weight_magnitude = 5.0f;
         association_active.configure_synaptic_plasticity(association_learning);
         auto association_no_learning = association_learning;
         association_no_learning.potentiation_rate = 0.0f;
@@ -633,7 +659,7 @@ int main() {
         association_control.configure_synaptic_plasticity(association_no_learning);
 
         constexpr std::uint32_t association_group_size = 8;
-        constexpr float association_input = 25.0f;
+        constexpr float association_input = 100.0f;
         std::vector<float> paired_input(25, 0.0f);
         for (std::uint32_t neuron = 0; neuron < 2 * association_group_size; ++neuron)
             paired_input[neuron] = association_input;
@@ -641,11 +667,11 @@ int main() {
         for (std::uint32_t neuron = 0; neuron < association_group_size; ++neuron)
             recall_input[neuron] = association_input;
 
-        for (int repetition = 0; repetition < 4; ++repetition) {
+        for (int repetition = 0; repetition < 10; ++repetition) {
             association_active.set_external_current(paired_input);
             association_control.set_external_current(paired_input);
-            association_active.run_steps(60);
-            association_control.run_steps(60);
+            association_active.run_steps(120);
+            association_control.run_steps(120);
             association_active.set_external_current(std::vector<float>(25, 0.0f));
             association_control.set_external_current(std::vector<float>(25, 0.0f));
             association_active.run_steps(20);
