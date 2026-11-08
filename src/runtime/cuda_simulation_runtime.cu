@@ -93,7 +93,7 @@ CudaSimulationRuntime::DeviceState::DeviceState(
       phases(count), next_phases(count), natural_frequencies(count),
       plasticity_traces(count),
       neuron_count(count),
-      edge_count(static_cast<std::uint32_t>(count * adaptive_row_capacity(topology))),
+      edge_capacity(static_cast<std::uint32_t>(count * adaptive_row_capacity(topology))),
       row_capacity(adaptive_row_capacity(topology)),
       ring_slots(topology.maximum_delay + 1U) {
     if (ring_slots == 0)
@@ -507,7 +507,7 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
             device_state_->target_indices.get(),
             device_state_->weights.get(),
             device_state_->delays.get(),
-            device_state_->edge_count,
+            device_state_->edge_capacity,
             device_state_->synaptic_current.get(),
             device_state_->ring_slots,
             phase_config_.enabled ? device_state_->phases.get() : nullptr,
@@ -557,7 +557,6 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
                     device_state_->target_indices.get(),
                     device_state_->weights.get(),
                     device_state_->delays.get(),
-                    state.spike_flags,
                     device_state_->plasticity_traces.get(),
                     count,
                     active_parameters_.simulation.excitatory_count,
