@@ -648,7 +648,7 @@ int main() {
         SynapticPlasticityConfig association_learning;
         association_learning.enabled = true;
         association_learning.trace_time_constant_ms = 30.0f;
-        association_learning.potentiation_rate = 0.08f;
+        association_learning.potentiation_rate = 0.25f;
         association_learning.depression_rate = 0.002f;
         association_learning.minimum_weight_magnitude = 0.005f;
         association_learning.maximum_weight_magnitude = 5.0f;
