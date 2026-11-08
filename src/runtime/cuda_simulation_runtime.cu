@@ -564,7 +564,9 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
                     active_parameters_.topology.minimum_delay,
                     topology_config_.growth_trace_threshold,
                     topology_config_.prune_weight_threshold,
-                    topology_config_.growth_weight,
+                    std::clamp(topology_config_.growth_weight,
+                        plasticity_config_.minimum_weight_magnitude,
+                        plasticity_config_.maximum_weight_magnitude),
                     device_state_->stream.get());
             }
         }
