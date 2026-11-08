@@ -79,3 +79,37 @@ Optional controls:
 The output directory contains `index.html` and `spikes.csv`. The report
 includes the raster, excitatory/inhibitory activity over time, firing-rate
 metrics, mean membrane voltage, and the detected GPU model.
+
+## Live neural observatory dashboard
+
+The optional Qt Quick dashboard includes:
+- A scene-graph-rendered, rotating 3D-style neural population field with recent
+  spike highlights and excitatory/inhibitory coloring.
+- A population activity gauge and scrolling oscilloscope trace.
+- A radix-2 FFT magnitude view of the recent combined population-rate samples.
+  The spectrum is relative magnitude; frequency labels require a calibrated
+  telemetry sampling interval.
+- The existing live spike raster and simulation controls.
+
+Build the dashboard when Qt 6.4+ development packages are installed:
+
+```bash
+cmake -S . -B build-cuda \
+  -DSPIKINGMODEL_ENABLE_CUDA=ON \
+  -DSPIKINGMODEL_ENABLE_QT_CLIENT=ON \
+  -DCMAKE_CUDA_ARCHITECTURES=120
+cmake --build build-cuda --target spiking_model spiking_model_dashboard --parallel
+```
+
+Run the simulation server in one terminal and the dashboard in another:
+
+```bash
+./build-cuda/spiking_model
+./build-cuda/spiking_model_dashboard
+```
+
+The Qt Quick scene graph uses the platform's configured graphics backend. This
+dashboard is a 3D-style projected population view, not a Qt Quick 3D mesh renderer.
+The current CUDA runtime still uses fixed synaptic weights: STDP/online plasticity
+and learned-weight checkpoint persistence are planned separately and are not
+claimed as implemented by this dashboard.
