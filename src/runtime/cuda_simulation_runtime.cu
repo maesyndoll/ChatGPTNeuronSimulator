@@ -52,7 +52,7 @@ std::uint64_t estimate_device_bytes(
     add(kSpikeEventCapacity64, sizeof(std::uint32_t));
     add(1, sizeof(unsigned long long));        // event count
 
-    add(neurons + 1, sizeof(std::uint32_t));   // CSR row offsets
+    add(neurons, 2ULL * sizeof(std::uint32_t)); // padded CSR row bases and active counts
     add(edges, sizeof(std::uint32_t));         // CSR targets
     add(edges, sizeof(float));                 // CSR weights
     add(edges, sizeof(std::uint32_t));         // CSR delays
