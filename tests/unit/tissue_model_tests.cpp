@@ -11,7 +11,8 @@ NeuralModule sample(const std::string& name,bool output){
  m.populations={{1,CellKind::ExcitatoryNeuron,2,12,0.1f,0.8f,0.2f},
  {2,CellKind::InhibitoryNeuron,1,40,0,1,0},{3,CellKind::Astrocyte,4,0,0,0.9f,0.1f},
  {4,CellKind::Microglia,2,0,0,1,0}};
- m.ports={{1,1,output?PortDirection::Output:PortDirection::Input,2}};return m;
+ // This test exercises saturation after one adapter, so each port has capacity one.
+ m.ports={{1,1,output?PortDirection::Output:PortDirection::Input,1}};return m;
 }
 }
 int main(){try{
