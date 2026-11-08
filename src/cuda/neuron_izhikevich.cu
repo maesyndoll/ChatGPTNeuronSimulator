@@ -273,6 +273,7 @@ __global__ void stdp_update_kernel(
     const std::uint32_t* row_offsets,
     const std::uint32_t* row_counts,
     const std::uint32_t* target_indices,
+    const std::uint8_t* spike_flags,
     const float* traces,
     std::uint32_t neuron_count,
     float potentiation_rate,
