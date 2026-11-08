@@ -509,7 +509,7 @@ SimulationMetrics CudaSimulationRuntime::collect_metrics() {
         SPIKING_CUDA_CHECK(cudaMemcpy(phases.data(), device_state_->phases.get(),
                                       count * sizeof(float), cudaMemcpyDeviceToHost));
     }
-    if (plasticity_config_.enabled && !weights.empty()) {
+    if (!weights.empty()) {
         SPIKING_CUDA_CHECK(cudaMemcpy(weights.data(), device_state_->weights.get(),
                                       weights.size() * sizeof(float), cudaMemcpyDeviceToHost));
     }
