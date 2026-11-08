@@ -1,0 +1,73 @@
+{
+  "profile_version": 1,
+  "status": "experimental_not_production_defaults",
+  "source_archive": "neural-engine-calibration-data.tar.gz",
+  "datasets": {
+    "stage_a_timing_rows": 15,
+    "stage_a_nonzero_lag_observations": 14,
+    "stage_b_stability_rows": 400,
+    "stage_b_initial_weight_rows": 540,
+    "stage_c_boundary_policy_rows": 540,
+    "stage_d_response_surface_rows": 780,
+    "network_parameter_sweep_candidates": 3
+  },
+  "isolated_pair_timing_fit": {
+    "potentiation_rate": 0.005,
+    "depression_rate": 0.00525,
+    "presynaptic_tau_ms": 20.0,
+    "postsynaptic_tau_ms": 20.0,
+    "optimizer_converged": true,
+    "observations": 14,
+    "final_squared_error": 2.998950391e-15,
+    "interpretation": "Fit to isolated pair-timing observations only; not a validated recurrent-network default."
+  },
+  "stage_b_stability_zero_drift_estimates": [
+    {"rate_hz": 5, "initial_weight": 0.5, "balance_ratio": 1.04131, "linear_fit_slope": 0.002494},
+    {"rate_hz": 10, "initial_weight": 0.5, "balance_ratio": 1.01612, "linear_fit_slope": 0.010044},
+    {"rate_hz": 20, "initial_weight": 0.5, "balance_ratio": 1.00162, "linear_fit_slope": 0.030302},
+    {"rate_hz": 40, "initial_weight": 0.5, "balance_ratio": 1.00016, "linear_fit_slope": 0.034236}
+  ],
+  "stage_b_initial_weight_sensitivity": [
+    {"initial_weight": 0.1, "rate_hz": 10, "estimated_neutral_balance": 0.98409},
+    {"initial_weight": 0.1, "rate_hz": 20, "estimated_neutral_balance": 0.97896},
+    {"initial_weight": 0.1, "rate_hz": 40, "estimated_neutral_balance": 0.97597},
+    {"initial_weight": 0.5, "rate_hz": 10, "estimated_neutral_balance": 0.99913},
+    {"initial_weight": 0.5, "rate_hz": 20, "estimated_neutral_balance": 1.00155},
+    {"initial_weight": 0.5, "rate_hz": 40, "estimated_neutral_balance": 0.99908},
+    {"initial_weight": 0.9, "rate_hz": 10, "estimated_neutral_balance": 1.01127},
+    {"initial_weight": 0.9, "rate_hz": 20, "estimated_neutral_balance": 1.01977},
+    {"initial_weight": 0.9, "rate_hz": 40, "estimated_neutral_balance": 1.02219}
+  ],
+  "stage_d_exclusion": {
+    "rows": 780,
+    "initial_weight": 100.0,
+    "boundary_fraction_all_rows": 1.0,
+    "use_for_default_calibration": false,
+    "reason": "The sweep starts at weight 100 while normal configured synaptic bounds are approximately 0.001 to 1.0, and every row reports boundary_fraction=1.0. Treat the fitted surface as a diagnostic artifact until weight scaling and boundary accounting are reconciled."
+  },
+  "network_sweep_warning": {
+    "steps": 40000,
+    "dt_ms": 0.5,
+    "baseline": {
+      "potentiation_rate": 0.005,
+      "depression_rate": 0.00525,
+      "pre_tau_ms": 20,
+      "post_tau_ms": 20,
+      "excitatory_rate_hz": 21.471821,
+      "inhibitory_rate_hz": 112.910908,
+      "ee_mean_weight": 0.037799,
+      "ei_mean_weight": 0.013625
+    },
+    "interpretation": "The three-candidate network sweep showed substantial changes in excitatory and especially E-to-I weight distributions. Do not increase potentiation based on isolated timing fit alone."
+  },
+  "calibration_policy": {
+    "production_defaults_changed": false,
+    "recommendation": "Keep the isolated timing fit as a candidate profile. Calibrate by pathway, firing-rate regime, and initial-weight regime. Reject candidates that improve prediction while violating retention, stability, or damage constraints.",
+    "required_next_experiments": [
+      "Repeat recurrent calibration with matched topology and neuron seeds across multiple initial-weight strata.",
+      "Separate E-to-E and E-to-I plasticity measurements.",
+      "Reconcile Stage D weight scale and boundary_fraction instrumentation.",
+      "Test functional retention and recall, not weight drift alone."
+    ]
+  }
+}
