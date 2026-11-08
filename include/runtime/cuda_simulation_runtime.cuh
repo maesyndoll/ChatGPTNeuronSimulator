@@ -47,6 +47,9 @@ struct AdaptiveTopologyConfig {
     bool enabled = false;
     std::uint32_t update_interval_steps = 8;
     float growth_trace_threshold = 0.75f;
+    // Maximum age of a presynaptic spike when a postsynaptic spike can
+    // establish a new directed edge. Prevents stale traces reversing causality.
+    std::uint32_t growth_window_steps = 4;
     float prune_weight_threshold = 0.012f;
     float growth_weight = 0.025f;
 };
@@ -146,6 +149,9 @@ private:
         DeviceBuffer<float> phases, next_phases, natural_frequencies;
         // Per-neuron exponentially decaying spike traces used by GPU STDP.
         DeviceBuffer<float> plasticity_traces;
+        // Last spike step for causal structural eligibility; UINT64_MAX means
+        // the neuron has not spiked in this simulation generation.
+        DeviceBuffer<std::uint64_t> last_spike_steps;
 
         // Dense target-current ring: [ring_slot][neuron].
         DeviceBuffer<float> synaptic_current;
