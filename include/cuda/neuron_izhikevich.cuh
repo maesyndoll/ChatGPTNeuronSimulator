@@ -32,6 +32,7 @@ struct NeuronStateGPU {
 
 struct SynapseParametersGPU {
     const std::uint32_t* row_offsets = nullptr;
+    const std::uint32_t* row_counts = nullptr;
     const std::uint32_t* target_indices = nullptr;
     const float* weights = nullptr;
     const std::uint32_t* delays = nullptr;
@@ -99,6 +100,24 @@ void update_synaptic_plasticity(
     float depression_rate,
     float minimum_magnitude,
     float maximum_magnitude,
+    cudaStream_t stream = nullptr
+);
+
+void update_adaptive_topology(
+    const std::uint32_t* row_offsets,
+    std::uint32_t* row_counts,
+    std::uint32_t* target_indices,
+    float* weights,
+    std::uint32_t* delays,
+    const std::uint8_t* spike_flags,
+    const float* spike_traces,
+    std::uint32_t neuron_count,
+    std::uint32_t excitatory_count,
+    std::uint32_t row_capacity,
+    std::uint32_t minimum_delay,
+    float growth_trace_threshold,
+    float prune_weight_threshold,
+    float growth_weight,
     cudaStream_t stream = nullptr
 );
 
