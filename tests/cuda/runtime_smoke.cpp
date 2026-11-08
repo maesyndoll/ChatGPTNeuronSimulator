@@ -473,18 +473,18 @@ int main() {
             meta_base_spikes.dropped_events != 0 || meta_gated_spikes.dropped_events != 0 ||
             base_aligned_spikes == 0 || base_opposed_spikes == 0 ||
             gated_aligned_spikes == 0 || gated_opposed_spikes != 0) {
-            std::cerr << "GPU phase-gated meta-topology experiment failed\\n"
+            std::cerr << "GPU phase-gated meta-topology experiment failed\n"
                       << "Ungated aligned/opposed target spikes: "
-                      << base_aligned_spikes << "/" << base_opposed_spikes << '\\n'
+                      << base_aligned_spikes << "/" << base_opposed_spikes << '\n'
                       << "Gated aligned/opposed target spikes: "
-                      << gated_aligned_spikes << "/" << gated_opposed_spikes << '\\n';
+                      << gated_aligned_spikes << "/" << gated_opposed_spikes << '\n';
             return EXIT_FAILURE;
         }
         std::cout << "GPU phase-gated meta-topology test passed; "
                   << "ungated target spikes=" << base_aligned_spikes
                   << "/" << base_opposed_spikes
                   << ", gated target spikes=" << gated_aligned_spikes
-                  << "/" << gated_opposed_spikes << '\\n';
+                  << "/" << gated_opposed_spikes << '\n';
 
         // Phase dynamics test: the same deterministic delayed connection
         // must remain excitatory, while phase gating attenuates its delivered
