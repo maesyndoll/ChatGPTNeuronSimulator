@@ -248,6 +248,10 @@ QVariantList SimulationBridge::spikeEvents() const {
     return spike_events_;
 }
 
+QVariantList SimulationBridge::visualSpikeEvents() const {
+    return visual_spike_events_;
+}
+
 QString SimulationBridge::spikeEventCount() const {
     return spike_event_count_;
 }
