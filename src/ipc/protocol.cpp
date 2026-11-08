@@ -419,9 +419,21 @@ Json handle_request(SimulationController& controller, const Json& request) {
                 throw std::invalid_argument("stimulate_neurons requires duration_steps");
             std::vector<std::uint32_t> neuron_ids;
             neuron_ids.reserve(payload.at("neuron_ids").size());
-            for (const auto& id : payload.at("neuron_ids"))
-                neuron_ids.push_back(read_positive_u32(id.is_number_unsigned() ? id :
-                    (id.is_number_integer() && id.get<std::int64_t>() >= 0 ? id : Json(nullptr)), "neuron_id") - 1U);
+            for (const auto& id : payload.at("neuron_ids")) {
+                if (!id.is_number_integer())
+                    throw std::invalid_argument("each neuron_id must be a non-negative integer");
+                std::uint64_t value = 0;
+                if (id.is_number_unsigned()) value = id.get<std::uint64_t>();
+                else {
+                    const auto signed_value = id.get<std::int64_t>();
+                    if (signed_value < 0)
+                        throw std::invalid_argument("neuron_id must be non-negative");
+                    value = static_cast<std::uint64_t>(signed_value);
+                }
+                if (value > std::numeric_limits<std::uint32_t>::max())
+                    throw std::invalid_argument("neuron_id exceeds uint32 range");
+                neuron_ids.push_back(static_cast<std::uint32_t>(value));
+            }
             const double amplitude = payload.at("amplitude").get<double>();
             if (!std::isfinite(amplitude) || amplitude == 0.0)
                 throw std::invalid_argument("amplitude must be finite and non-zero");
