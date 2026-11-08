@@ -660,18 +660,27 @@ int main() {
 
         constexpr std::uint32_t association_group_size = 8;
         constexpr float association_input = 100.0f;
-        std::vector<float> paired_input(25, 0.0f);
-        for (std::uint32_t neuron = 0; neuron < 2 * association_group_size; ++neuron)
-            paired_input[neuron] = association_input;
+        std::vector<float> a_input(25, 0.0f);
+        std::vector<float> b_input(25, 0.0f);
         std::vector<float> recall_input(25, 0.0f);
-        for (std::uint32_t neuron = 0; neuron < association_group_size; ++neuron)
+        for (std::uint32_t neuron = 0; neuron < association_group_size; ++neuron) {
+            a_input[neuron] = association_input;
+            b_input[association_group_size + neuron] = association_input;
             recall_input[neuron] = association_input;
+        }
 
+        // The implemented STDP rule potentiates an A->B edge when A's
+        // presynaptic trace is present at B's later postsynaptic spike.
+        // Train with a causal A-then-B sequence, not simultaneous co-spiking.
         for (int repetition = 0; repetition < 10; ++repetition) {
-            association_active.set_external_current(paired_input);
-            association_control.set_external_current(paired_input);
-            association_active.run_steps(120);
-            association_control.run_steps(120);
+            association_active.set_external_current(a_input);
+            association_control.set_external_current(a_input);
+            association_active.run_steps(4);
+            association_control.run_steps(4);
+            association_active.set_external_current(b_input);
+            association_control.set_external_current(b_input);
+            association_active.run_steps(4);
+            association_control.run_steps(4);
             association_active.set_external_current(std::vector<float>(25, 0.0f));
             association_control.set_external_current(std::vector<float>(25, 0.0f));
             association_active.run_steps(20);
