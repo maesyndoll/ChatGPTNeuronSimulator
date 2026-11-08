@@ -32,12 +32,14 @@ SimulationBridge::SimulationBridge(QObject* parent)
         connection_status_ = QStringLiteral("Disconnected");
         emit connectionChanged();
         spike_events_.clear();
+        visual_spike_events_.clear();
         spike_event_count_ = QStringLiteral("0");
         spike_events_dropped_ = QStringLiteral("0");
         spike_events_first_sequence_ = QStringLiteral("0");
         spike_events_generation_ = QStringLiteral("—");
         last_spike_event_sequence_ = 0;
         emit spikeEventsChanged();
+        emit visualSpikeEventsChanged();
         tissue_snapshot_ = {};
         topology_snapshot_ = {};
         emit tissueChanged();
