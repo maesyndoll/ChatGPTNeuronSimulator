@@ -3,7 +3,7 @@
 #include <cuda_runtime.h>
 #include "cuda/cuda_check.cuh"
 #include <cstddef>
-#include <cstdint>
+#include <cstdint>\n#include <cmath>
 #include <stdexcept>
 
 namespace spiking {
@@ -72,6 +72,60 @@ __global__ void initialize_kernel(
     s.spike_flags[id] = 0;
 }
 
+constexpr float kTwoPi = 6.28318530717958647692f;
+constexpr float kGoldenAngle = 2.39996322972865332f;
+
+__global__ void initialize_phase_kernel(
+    float* phases,
+    float* natural_frequencies,
+    std::uint32_t count,
+    std::uint32_t seed
+) {
+    const std::uint32_t id = blockIdx.x * blockDim.x + threadIdx.x;
+    if (id >= count) return;
+    const unsigned int phase_hash = hash_rng(seed ^ (id * 0x9e3779b9U + 0x85ebca6bU));
+    const unsigned int frequency_hash = hash_rng(seed ^ (id * 0xc2b2ae35U + 0x27d4eb2fU));
+    const float phase_offset = uniform01(hash_rng(seed ^ 0xa511e9b3U)) * kTwoPi;
+    phases[id] = fmodf(phase_offset + static_cast<float>(id) * kGoldenAngle, kTwoPi);
+    // Natural angular frequency in radians per simulated millisecond.
+    natural_frequencies[id] = 0.002f + 0.006f * uniform01(frequency_hash ^ phase_hash);
+}
+
+__global__ void advance_phase_kernel(
+    const float* phases,
+    float* next_phases,
+    const float* natural_frequencies,
+    const std::uint32_t* row_offsets,
+    const std::uint32_t* target_indices,
+    const float* weights,
+    std::uint32_t count,
+    float dt,
+    float coupling_strength
+) {
+    const std::uint32_t id = blockIdx.x * blockDim.x + threadIdx.x;
+    if (id >= count) return;
+
+    float interaction = 0.0f;
+    float normalization = 0.0f;
+    const std::uint32_t begin = row_offsets[id];
+    const std::uint32_t end = row_offsets[id + 1U];
+    for (std::uint32_t edge = begin; edge < end; ++edge) {
+        const float magnitude = fabsf(weights[edge]);
+        if (magnitude > 0.0f) {
+            const std::uint32_t target = target_indices[edge];
+            interaction += magnitude * sinf(phases[target] - phases[id]);
+            normalization += magnitude;
+        }
+    }
+    if (normalization > 0.0f) interaction /= normalization;
+
+    float next = phases[id] + dt *
+        (natural_frequencies[id] + coupling_strength * interaction);
+    next = fmodf(next, kTwoPi);
+    if (next < 0.0f) next += kTwoPi;
+    next_phases[id] = next;
+}
+
 __global__ void propagate_spikes_kernel(
     NeuronStateGPU state,
     SynapseParametersGPU synapses,
@@ -109,8 +163,21 @@ __global__ void propagate_spikes_kernel(
             const std::size_t offset =
                 static_cast<std::size_t>(slot) * neuron_count + target;
 
+            float effective_weight = synapses.weights[edge];
+            if (synapses.phases != nullptr &&
+                synapses.phase_modulation_strength > 0.0f) {
+                const float phase_delta =
+                    synapses.phases[target] - synapses.phases[source];
+                // Smoothly attenuate out-of-phase communication without
+                // reversing excitatory/inhibitory synaptic sign.
+                const float phase_gain = 1.0f -
+                    0.5f * synapses.phase_modulation_strength *
+                    (1.0f - cosf(phase_delta));
+                effective_weight *= phase_gain;
+            }
+
             // Fan-in from multiple sources is accumulated atomically.
-            atomicAdd(&synapses.pending_current[offset], synapses.weights[edge]);
+            atomicAdd(&synapses.pending_current[offset], effective_weight);
         }
     }
 }
@@ -231,6 +298,49 @@ void initialize_neurons(
         inhibitory_current_min,
         inhibitory_current_max
     );
+    SPIKING_CUDA_CHECK(cudaGetLastError());
+}
+
+void initialize_phase_state(
+    float* phases,
+    float* natural_frequencies,
+    std::uint32_t neuron_count,
+    std::uint32_t seed,
+    cudaStream_t stream
+) {
+    if (phases == nullptr || natural_frequencies == nullptr || neuron_count == 0)
+        throw std::invalid_argument("Invalid phase-state buffers");
+    constexpr int threads = 256;
+    const int blocks = (neuron_count + threads - 1) / threads;
+    initialize_phase_kernel<<<blocks, threads, 0, stream>>>(
+        phases, natural_frequencies, neuron_count, seed);
+    SPIKING_CUDA_CHECK(cudaGetLastError());
+}
+
+void advance_phase_state(
+    const float* phases,
+    float* next_phases,
+    const float* natural_frequencies,
+    const std::uint32_t* row_offsets,
+    const std::uint32_t* target_indices,
+    const float* weights,
+    std::uint32_t neuron_count,
+    float dt,
+    float coupling_strength,
+    cudaStream_t stream
+) {
+    if (phases == nullptr || next_phases == nullptr ||
+        natural_frequencies == nullptr || row_offsets == nullptr ||
+        (weights != nullptr && target_indices == nullptr))
+        throw std::invalid_argument("Invalid phase-dynamics buffers");
+    if (!std::isfinite(dt) || dt <= 0.0f ||
+        !std::isfinite(coupling_strength) || coupling_strength < 0.0f)
+        throw std::invalid_argument("Invalid phase-dynamics integration parameters");
+    constexpr int threads = 256;
+    const int blocks = (neuron_count + threads - 1) / threads;
+    advance_phase_kernel<<<blocks, threads, 0, stream>>>(
+        phases, next_phases, natural_frequencies, row_offsets,
+        target_indices, weights, neuron_count, dt, coupling_strength);
     SPIKING_CUDA_CHECK(cudaGetLastError());
 }
 
