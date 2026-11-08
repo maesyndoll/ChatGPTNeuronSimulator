@@ -159,6 +159,22 @@ def main():
                 assert "requested" in configuration
                 assert "active" in configuration
 
+                # Tissue inspection starts from an empty, revisioned model.
+                tissue = send_request(
+                    client, reader, "get_tissue", {}, "tissue-initial"
+                )
+                assert tissue["revision"] == "0", tissue
+                assert tissue["unchanged"] is False, tissue
+                assert tissue["modules"] == [], tissue
+                assert tissue["adapters"] == [], tissue
+
+                unchanged_tissue = send_request(
+                    client, reader, "get_tissue",
+                    {"after_revision": "0"}, "tissue-unchanged"
+                )
+                assert unchanged_tissue["unchanged"] is True, unchanged_tissue
+                assert unchanged_tissue["revision"] == "0", unchanged_tissue
+
                 # Configure a deterministic two-neuron network so this
                 # integration test exercises real spike events over IPC.
                 update = send_request(
