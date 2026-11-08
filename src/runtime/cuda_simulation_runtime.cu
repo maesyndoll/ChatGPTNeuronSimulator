@@ -551,6 +551,16 @@ SimulationMetrics CudaSimulationRuntime::collect_metrics() {
 }
 
 
+std::vector<float> CudaSimulationRuntime::collect_neuron_voltages() {
+    if (!device_state_) throw std::logic_error("CUDA simulation is not initialized");
+    device_state_->stream.synchronize();
+    const auto count = static_cast<std::uint32_t>(device_state_->neuron_count);
+    std::vector<float> voltage(count);
+    SPIKING_CUDA_CHECK(cudaMemcpy(voltage.data(), device_state_->voltage.get(),
+                                  count * sizeof(float), cudaMemcpyDeviceToHost));
+    return voltage;
+}
+
 SpikeEventBatch CudaSimulationRuntime::collect_spike_events() {
     if (!device_state_)
         throw std::logic_error("CUDA simulation is not initialized");
