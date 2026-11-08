@@ -271,26 +271,50 @@ CudaSimulationRuntime::build_device_state(
     auto next = std::make_unique<DeviceState>(total, topology);
 
     const auto stream = next->stream.get();
-    if (!topology.row_offsets.empty()) {
-        SPIKING_CUDA_CHECK(cudaMemcpyAsync(
-            next->row_offsets.get(), topology.row_offsets.data(),
-            topology.row_offsets.size() * sizeof(std::uint32_t),
-            cudaMemcpyHostToDevice, stream));
+    // Convert the compact host CSR into fixed-capacity GPU rows. Device kernels
+    // address each row by its base offset plus its active row count.
+    std::vector<std::uint32_t> gpu_row_bases(total);
+    std::vector<std::uint32_t> gpu_row_counts(total);
+    std::vector<std::uint32_t> gpu_targets(next->target_indices.size(), 0U);
+    std::vector<float> gpu_weights(next->weights.size(), 0.0f);
+    std::vector<std::uint32_t> gpu_delays(
+        next->delays.size(), topology.minimum_delay);
+    for (std::uint32_t row = 0; row < total; ++row) {
+        const std::uint32_t begin = topology.row_offsets[row];
+        const std::uint32_t degree = topology.row_offsets[row + 1U] - begin;
+        if (degree > next->row_capacity)
+            throw std::length_error("Initial CSR row exceeds adaptive GPU capacity");
+        const std::uint32_t base = row * next->row_capacity;
+        gpu_row_bases[row] = base;
+        gpu_row_counts[row] = degree;
+        for (std::uint32_t edge = 0; edge < degree; ++edge) {
+            const std::size_t source_index = static_cast<std::size_t>(begin) + edge;
+            const std::size_t destination_index = static_cast<std::size_t>(base) + edge;
+            gpu_targets[destination_index] = topology.target_indices[source_index];
+            gpu_weights[destination_index] = topology.weights[source_index];
+            gpu_delays[destination_index] = topology.delays[source_index];
+        }
     }
-    if (!topology.target_indices.empty()) {
-        SPIKING_CUDA_CHECK(cudaMemcpyAsync(
-            next->target_indices.get(), topology.target_indices.data(),
-            topology.target_indices.size() * sizeof(std::uint32_t),
-            cudaMemcpyHostToDevice, stream));
-        SPIKING_CUDA_CHECK(cudaMemcpyAsync(
-            next->weights.get(), topology.weights.data(),
-            topology.weights.size() * sizeof(float),
-            cudaMemcpyHostToDevice, stream));
-        SPIKING_CUDA_CHECK(cudaMemcpyAsync(
-            next->delays.get(), topology.delays.data(),
-            topology.delays.size() * sizeof(std::uint32_t),
-            cudaMemcpyHostToDevice, stream));
-    }
+    SPIKING_CUDA_CHECK(cudaMemcpyAsync(
+        next->row_offsets.get(), gpu_row_bases.data(),
+        gpu_row_bases.size() * sizeof(std::uint32_t),
+        cudaMemcpyHostToDevice, stream));
+    SPIKING_CUDA_CHECK(cudaMemcpyAsync(
+        next->row_counts.get(), gpu_row_counts.data(),
+        gpu_row_counts.size() * sizeof(std::uint32_t),
+        cudaMemcpyHostToDevice, stream));
+    SPIKING_CUDA_CHECK(cudaMemcpyAsync(
+        next->target_indices.get(), gpu_targets.data(),
+        gpu_targets.size() * sizeof(std::uint32_t),
+        cudaMemcpyHostToDevice, stream));
+    SPIKING_CUDA_CHECK(cudaMemcpyAsync(
+        next->weights.get(), gpu_weights.data(),
+        gpu_weights.size() * sizeof(float),
+        cudaMemcpyHostToDevice, stream));
+    SPIKING_CUDA_CHECK(cudaMemcpyAsync(
+        next->delays.get(), gpu_delays.data(),
+        gpu_delays.size() * sizeof(std::uint32_t),
+        cudaMemcpyHostToDevice, stream));
 
     SPIKING_CUDA_CHECK(cudaMemsetAsync(
         next->external_current.get(), 0,
