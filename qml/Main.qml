@@ -19,185 +19,149 @@ ApplicationWindow {
     property var lastSpikeByNeuron: ({})
     property double lastSeenSequence: 0
     property string lastGeneration: ""
-    property double clockAnchorStep: 0
-    property double clockAnchorMs: Date.now()
-    property double stepsPerMillisecond: 0
-
-    function updateClock(step) {
-        if (!isFinite(step) || step < clockAnchorStep)
-            return
-        var now = Date.now()
-        var elapsed = now - clockAnchorMs
-        var advanced = step - clockAnchorStep
-        if (elapsed > 0 && advanced > 0) {
-            var measured = advanced / elapsed
-            stepsPerMillisecond = stepsPerMillisecond > 0
-                ? stepsPerMillisecond * 0.65 + measured * 0.35
-                : measured
-        }
-        clockAnchorStep = step
-        clockAnchorMs = now
-    }
+    property var lastSpikeAtMs: ({})
+    property double lastSpikeEventMs: 0
+    property var cachedPositions: ({})
+    property string cachedLayoutKey: ""
+    property int activeTraceCount: 0
 
     function ingestSpikeEvents() {
         var generation = String(simulation.spikeEventsGeneration || "")
         if (lastGeneration !== "" && generation !== lastGeneration) {
             lastSeenSequence = 0
             lastSpikeByNeuron = ({})
+            lastSpikeAtMs = ({})
         }
         lastGeneration = generation
         var events = simulation.spikeEvents || []
-        var next = Object.assign({}, lastSpikeByNeuron)
-        var newestStep = clockAnchorStep
+        var nextSteps = Object.assign({}, lastSpikeByNeuron)
+        var nextTimes = Object.assign({}, lastSpikeAtMs)
+        var now = Date.now()
+        var received = false
         for (var i = events.length - 1; i >= 0; --i) {
             var event = events[i]
             var sequence = Number(event.sequence)
-            if (!isFinite(sequence) || sequence <= lastSeenSequence)
-                break
+            if (!isFinite(sequence) || sequence <= lastSeenSequence) break
             var neuron = String(event.neuron_id)
             var step = Number(event.step)
             if (isFinite(step)) {
-                next[neuron] = step
-                newestStep = Math.max(newestStep, step)
+                nextSteps[neuron] = step
+                nextTimes[neuron] = now
+                received = true
             }
             lastSeenSequence = Math.max(lastSeenSequence, sequence)
         }
-        lastSpikeByNeuron = next
-        updateClock(newestStep)
+        lastSpikeByNeuron = nextSteps
+        lastSpikeAtMs = nextTimes
+        if (received) lastSpikeEventMs = now
     }
 
-    function estimatedStep() {
-        if (simulation.simulationStatus !== "running" ||
-            stepsPerMillisecond <= 0)
-            return clockAnchorStep
-        return clockAnchorStep +
-            Math.max(0, Date.now() - clockAnchorMs) * stepsPerMillisecond
+    function invalidateLayout() {
+        cachedLayoutKey = ""
+        fieldCanvas.requestPaint()
     }
 
     function drawField(ctx, w, h) {
         ctx.clearRect(0, 0, w, h)
         ctx.fillStyle = "#020409"
         ctx.fillRect(0, 0, w, h)
-
         var graph = simulation.topologySnapshot || ({})
         var nodes = graph.nodes || []
         var edges = graph.edges || []
-        var currentStep = estimatedStep()
-        var positions = Object.create(null)
-        var ordered = []
-        var extent = Math.min(w, h) * 0.43
-        var cy = Math.cos(rotationY), sy = Math.sin(rotationY)
-        var cx = Math.cos(rotationX), sx = Math.sin(rotationX)
-        var count = Math.max(1, nodes.length)
+        var now = Date.now()
+        var positions = cachedPositions
+        var layoutKey = String(graph.revision || "") + ":" + w + ":" + h + ":" +
+            rotationY.toFixed(3) + ":" + rotationX.toFixed(3) + ":" + cameraDistance.toFixed(2)
 
-        // Stable Fibonacci-sphere coordinates give every rendered neuron a
-        // persistent 3D location. Camera rotation changes only the projection.
-        for (var n = 0; n < nodes.length; ++n) {
-            var z0 = 1 - 2 * (n + 0.5) / count
-            var ring = Math.sqrt(Math.max(0, 1 - z0 * z0))
-            var angle = n * 2.399963229728653
-            var x0 = Math.cos(angle) * ring
-            var y0 = Math.sin(angle) * ring
-            var x1 = x0 * cy + z0 * sy
-            var z1 = -x0 * sy + z0 * cy
-            var y1 = y0 * cx - z1 * sx
-            var z2 = y0 * sx + z1 * cx
-            var perspective = cameraDistance /
-                Math.max(0.35, cameraDistance - z2)
-            var point = {
-                x: w * 0.5 + x1 * extent * perspective,
-                y: h * 0.5 + y1 * extent * perspective,
-                z: z2,
-                scale: perspective
+        if (cachedLayoutKey !== layoutKey) {
+            positions = Object.create(null)
+            var extent = Math.min(w, h) * 0.43
+            var cy = Math.cos(rotationY), sy = Math.sin(rotationY)
+            var cx = Math.cos(rotationX), sx = Math.sin(rotationX)
+            var count = Math.max(1, nodes.length)
+            for (var n = 0; n < nodes.length; ++n) {
+                var z0 = 1 - 2 * (n + 0.5) / count
+                var ring = Math.sqrt(Math.max(0, 1 - z0 * z0))
+                var angle = n * 2.399963229728653
+                var x0 = Math.cos(angle) * ring, y0 = Math.sin(angle) * ring
+                var x1 = x0 * cy + z0 * sy, z1 = -x0 * sy + z0 * cy
+                var y1 = y0 * cx - z1 * sx, z2 = y0 * sx + z1 * cx
+                var perspective = cameraDistance / Math.max(0.35, cameraDistance - z2)
+                positions[String(nodes[n])] = {
+                    x: w * 0.5 + x1 * extent * perspective,
+                    y: h * 0.5 + y1 * extent * perspective,
+                    z: z2, scale: perspective
+                }
             }
-            positions[String(nodes[n])] = point
-            ordered.push({ id: Number(nodes[n]), point: point })
+            cachedPositions = positions
+            cachedLayoutKey = layoutKey
         }
 
-        // Draw the real CSR edges first. A source spike launches a pulse down
-        // each outgoing edge; delay is the pulse's travel time in simulation
-        // steps, not a decorative animation parameter.
-        var activeEdges = 0
-        var excitatory = Number(graph.excitatory_count || 0)
+        var maxDelay = 1
+        for (var d = 0; d < edges.length; ++d)
+            maxDelay = Math.max(maxDelay, Number(edges[d].delay) || 1)
+
+        var activeCount = 0
         for (var e = 0; e < edges.length; ++e) {
             var edge = edges[e]
             var from = positions[String(edge.source)]
             var to = positions[String(edge.target)]
-            if (!from || !to)
-                continue
-
-            var sourceStep = lastSpikeByNeuron[String(edge.source)]
+            if (!from || !to) continue
+            var firedAt = lastSpikeAtMs[String(edge.source)]
             var delay = Math.max(1, Number(edge.delay) || 1)
-            var age = sourceStep === undefined ? -1 : currentStep - Number(sourceStep)
-            var inFlight = age >= 0 && age < delay
-            var progress = inFlight ? Math.max(0, Math.min(1, age / delay)) : 0
+            // Monotonic delay-scaled display time keeps even fast simulation
+            // traces visible without changing their relative delay ordering.
+            var traceDuration = 100 + 900 * (delay / maxDelay)
+            var ageMs = firedAt === undefined ? 1e9 : now - Number(firedAt)
+            var inFlight = ageMs >= 0 && ageMs < traceDuration
+            var progress = inFlight ? ageMs / traceDuration : 0
             var depth = Math.max(0, Math.min(1, (from.z + to.z + 2) * 0.25))
-
             ctx.beginPath()
             ctx.moveTo(from.x, from.y)
             ctx.lineTo(to.x, to.y)
-            ctx.lineWidth = inFlight ? 1.25 + depth * 1.3 : 0.35 + depth * 0.42
+            ctx.lineWidth = inFlight ? 0.9 + depth * 0.65 : 0.3 + depth * 0.3
             ctx.strokeStyle = inFlight
-                ? (edge.excitatory ? "rgba(104,255,225,0.92)" : "rgba(255,184,112,0.92)")
+                ? (edge.excitatory ? "rgba(104,255,225,0.58)" : "rgba(255,184,112,0.58)")
                 : (edge.excitatory
-                    ? "rgba(55,154,153," + (0.045 + depth * 0.13) + ")"
-                    : "rgba(177,112,65," + (0.045 + depth * 0.13) + ")")
-            if (inFlight) {
-                ctx.shadowBlur = 9
-                ctx.shadowColor = edge.excitatory ? "#62ffe0" : "#ffb66e"
-                ++activeEdges
-            }
+                    ? "rgba(55,154,153," + (0.035 + depth * 0.075) + ")"
+                    : "rgba(177,112,65," + (0.035 + depth * 0.075) + ")")
             ctx.stroke()
-            ctx.shadowBlur = 0
-
             if (inFlight) {
+                ++activeCount
                 var px = from.x + (to.x - from.x) * progress
                 var py = from.y + (to.y - from.y) * progress
                 ctx.beginPath()
-                ctx.arc(px, py, 1.7 + depth * 1.4, 0, Math.PI * 2)
-                ctx.fillStyle = edge.excitatory ? "#c8fff4" : "#ffe0bd"
-                ctx.shadowBlur = 12
-                ctx.shadowColor = edge.excitatory ? "#62ffe0" : "#ffb66e"
+                ctx.arc(px, py, 1.2 + depth * 0.9, 0, Math.PI * 2)
+                ctx.fillStyle = edge.excitatory ? "#baffef" : "#ffe0bd"
                 ctx.fill()
-                ctx.shadowBlur = 0
             }
         }
 
-        // Far-side neurons are painted first; near-side neurons sit on top.
-        ordered.sort(function(a, b) { return a.point.z - b.point.z })
-        for (var j = 0; j < ordered.length; ++j) {
-            var item = ordered[j]
-            var id = item.id
-            var p = item.point
-            var last = lastSpikeByNeuron[String(id)]
-            var neuronAge = last === undefined ? 1e9 : currentStep - Number(last)
-            var firing = neuronAge >= 0 && neuronAge < 5
-            var isExcitatory = id < excitatory
-            var radius = (0.85 + (p.z + 1) * 0.75) * p.scale
+        var excitatory = Number(graph.excitatory_count || 0)
+        for (var j = 0; j < nodes.length; ++j) {
+            var id = Number(nodes[j]), p = positions[String(id)]
+            if (!p) continue
+            var last = lastSpikeAtMs[String(id)]
+            var firing = last !== undefined && now - Number(last) < 130
+            var radius = (0.8 + (p.z + 1) * 0.65) * p.scale
             ctx.beginPath()
-            ctx.arc(p.x, p.y, firing ? radius * 2.15 : radius, 0, Math.PI * 2)
+            ctx.arc(p.x, p.y, firing ? radius * 1.8 : radius, 0, Math.PI * 2)
             ctx.fillStyle = firing ? "#ffffff" :
-                (isExcitatory ? "rgba(94,205,190,0.88)" : "rgba(237,166,103,0.88)")
-            if (firing) {
-                ctx.shadowBlur = 15
-                ctx.shadowColor = isExcitatory ? "#74ffe5" : "#ffc18a"
-            }
+                (id < excitatory ? "rgba(94,205,190,0.82)" : "rgba(237,166,103,0.82)")
             ctx.fill()
-            ctx.shadowBlur = 0
         }
-
+        activeTraceCount = activeCount
         ctx.textAlign = "left"
         ctx.font = "11px monospace"
         ctx.fillStyle = "rgba(190,210,226,0.65)"
         ctx.fillText(nodes.length + " NODES  /  " + edges.length +
-                     " SYNAPSES  /  " + activeEdges + " ACTIVE", 22, h - 24)
+            " SYNAPSES  /  " + activeCount + " ACTIVE", 22, h - 24)
         if (nodes.length === 0) {
             ctx.textAlign = "center"
             ctx.font = "13px sans-serif"
             ctx.fillStyle = "rgba(190,210,226,0.55)"
-            ctx.fillText(simulation.connected
-                ? "Waiting for connectome"
-                : "Connect to load the live connectome", w * 0.5, h * 0.5)
+            ctx.fillText(simulation.connected ? "Waiting for connectome" :
+                "Connect to load the live connectome", w * 0.5, h * 0.5)
         }
     }
 
@@ -209,7 +173,6 @@ ApplicationWindow {
             fieldCanvas.requestPaint()
         }
         function onTelemetryChanged() {
-            window.updateClock(Number(simulation.completedSteps))
             fieldCanvas.requestPaint()
         }
         function onSimulationStatusChanged() { fieldCanvas.requestPaint() }
@@ -241,8 +204,10 @@ ApplicationWindow {
             if (!(mouse.buttons & Qt.LeftButton))
                 return
             window.rotationY += (mouse.x - previousX) * 0.006
+            window.invalidateLayout()
             window.rotationX = Math.max(-1.35, Math.min(1.35,
                 window.rotationX + (mouse.y - previousY) * 0.006))
+            window.invalidateLayout()
             previousX = mouse.x
             previousY = mouse.y
             fieldCanvas.requestPaint()
@@ -250,7 +215,7 @@ ApplicationWindow {
         onWheel: function(wheel) {
             window.cameraDistance = Math.max(1.65, Math.min(6.0,
                 window.cameraDistance - wheel.angleDelta.y / 120 * 0.16))
-            fieldCanvas.requestPaint()
+            window.invalidateLayout()
             wheel.accepted = true
         }
     }
@@ -340,21 +305,21 @@ ApplicationWindow {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 20
-        text: "STEP " + Math.floor(window.estimatedStep()).toLocaleString(Qt.locale(), "f", 0)
+        text: simulation.completedSteps === "—" ? "STEP —" : "STEP " + simulation.completedSteps
         color: "#667b8e"
         font.pixelSize: 10
         font.family: "monospace"
     }
 
     Timer {
-        interval: 33
+        interval: 50
         repeat: true
-        running: true
+        running: simulation.connected && (simulation.simulationStatus === "running" || Date.now() - window.lastSpikeEventMs < 1600)
         onTriggered: fieldCanvas.requestPaint()
     }
 
     Timer {
-        interval: 3000
+        interval: 10000
         repeat: true
         running: simulation.connected
         onTriggered: simulation.refreshTopology()
