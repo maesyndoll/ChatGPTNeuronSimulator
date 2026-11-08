@@ -354,7 +354,10 @@ __global__ void adaptive_topology_kernel(
     const std::uint64_t last_pre_step = last_spike_steps[source];
     const bool recent_causal_pre =
         last_pre_step != UINT64_MAX &&
-        last_pre_step <= step_index &&
+        // Require a presynaptic event from an earlier simulation step.
+        // Same-step co-spiking has no observable causal order and must not
+        // create reciprocal all-to-all structural connections.
+        last_pre_step < step_index &&
         (step_index - last_pre_step) <= growth_window_steps;
     if (recent_causal_pre && traces[source] >= growth_threshold &&
         count < row_capacity) {
