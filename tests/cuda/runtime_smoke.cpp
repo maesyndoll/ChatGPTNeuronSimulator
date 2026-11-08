@@ -803,6 +803,15 @@ int main() {
             return EXIT_FAILURE;
         }
 
+        // Let the directly driven B assembly recover from training-induced
+        // Izhikevich spike-frequency adaptation before testing associative recall.
+        // At a=0.02, 200 ms is four recovery time constants.
+        const std::vector<float> association_silence(25, 0.0f);
+        association_active.set_external_current(association_silence);
+        association_control.set_external_current(association_silence);
+        association_active.run_steps(800);
+        association_control.run_steps(800);
+
         // Freeze weights during recall so the probe measures the learned state,
         // rather than additional learning caused by the test stimulus.
         auto frozen_learning = association_learning;
