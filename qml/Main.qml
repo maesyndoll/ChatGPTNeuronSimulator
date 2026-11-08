@@ -403,54 +403,103 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
-                        Rectangle {
+                        property var nodePositions: ({})
+                        Rectangle { anchors.fill: parent; radius: 8; color: "#081321" }
+                        Canvas {
+                            id: connectomeCanvas
                             anchors.fill: parent
-                            radius: 8
-                            color: "#0b1421"
-                        }
-                        Repeater {
-                            model: window.cloudNodeCount
-                            delegate: Rectangle {
-                                required property int index
-                                property real theta: index * 2.399963229728653 +
-                                    window.cloudRotation * Math.PI / 180
-                                property real zDepth: 1 - 2 * (index + 0.5) /
-                                    window.cloudNodeCount
-                                property real ring: Math.sqrt(Math.max(0,
-                                    1 - zDepth * zDepth))
-                                property real perspective: 0.62 + (zDepth + 1) * 0.19
-                                property var activeSim: simulation.activeParameters.simulation || ({})
-                                property int excitatoryCount: Number(activeSim.excitatory_count || 81920)
-                                property int total: Math.max(1, excitatoryCount +
-                                    Number(activeSim.inhibitory_count || 10240))
-                                property int neuronId: Math.floor(index * total /
-                                    window.cloudNodeCount)
-                                property bool firing: window.activeNeuronIds[index] === true
-                                width: firing ? 9 : 5
-                                height: width
-                                radius: width / 2
-                                x: neuralCloud.width / 2 +
-                                   Math.cos(theta) * ring * neuralCloud.width * 0.37 *
-                                   perspective - width / 2
-                                y: neuralCloud.height / 2 +
-                                   Math.sin(theta) * ring * neuralCloud.height * 0.39 *
-                                   perspective - width / 2
-                                color: neuronId < excitatoryCount ? "#54cbb5" : "#f0a45e"
-                                opacity: firing ? 1.0 : 0.22 + (zDepth + 1) * 0.13
-                                border.color: window.selectedNeuronId === neuronId ? "#ffffff" : "#e8f5ff"
-                                border.width: window.selectedNeuronId === neuronId ? 3 : (firing ? 2 : 0)
-                                MouseArea {
-                                    anchors.fill: parent
-                                    anchors.margins: -5
-                                    onClicked: window.selectedNeuronId = neuronId
+                            onPaint: {
+                                var ctx = getContext("2d")
+                                ctx.clearRect(0, 0, width, height)
+                                var graph = simulation.topologySnapshot || ({})
+                                var nodes = graph.nodes || []
+                                var edges = graph.edges || []
+                                var positions = ({})
+                                var active = ({})
+                                var events = simulation.spikeEvents || []
+                                var completed = Number(simulation.completedSteps)
+                                for (var e = Math.max(0, events.length - 6000); e < events.length; ++e) {
+                                    var ev = events[e]
+                                    if (Number(ev.step) >= completed - 8)
+                                        active[String(ev.neuron_id)] = true
                                 }
+                                for (var n = 0; n < nodes.length; ++n) {
+                                    var z = 1 - 2 * (n + 0.5) / Math.max(1, nodes.length)
+                                    var ring = Math.sqrt(Math.max(0, 1 - z * z))
+                                    var angle = n * 2.399963229728653
+                                    var perspective = 0.65 + (z + 1) * 0.18
+                                    positions[String(nodes[n])] = {
+                                        x: width * 0.5 + Math.cos(angle) * ring * width * 0.39 * perspective,
+                                        y: height * 0.48 + Math.sin(angle) * ring * height * 0.40 * perspective
+                                    }
+                                }
+                                for (var i = 0; i < edges.length; ++i) {
+                                    var edge = edges[i]
+                                    var a = positions[String(edge.source)]
+                                    var b = positions[String(edge.target)]
+                                    if (!a || !b) continue
+                                    var firing = active[String(edge.source)] === true
+                                    ctx.beginPath()
+                                    ctx.moveTo(a.x, a.y)
+                                    ctx.lineTo(b.x, b.y)
+                                    ctx.strokeStyle = firing ? "rgba(245,250,255,0.95)" :
+                                        (edge.excitatory ? "rgba(67,199,177,0.28)" : "rgba(239,157,86,0.30)")
+                                    ctx.lineWidth = firing ? 1.8 : 0.55 + Math.min(0.8, Math.abs(Number(edge.weight)) * 0.12)
+                                    ctx.stroke()
+                                }
+                                for (var j = 0; j < nodes.length; ++j) {
+                                    var id = nodes[j]
+                                    var point = positions[String(id)]
+                                    var isActive = active[String(id)] === true
+                                    var isSelected = Number(id) === window.selectedNeuronId
+                                    ctx.beginPath()
+                                    ctx.arc(point.x, point.y, isSelected ? 5.8 : (isActive ? 4.8 : 3.0), 0, Math.PI * 2)
+                                    ctx.fillStyle = isActive ? "#ffffff" :
+                                        (Number(id) < Number(graph.excitatory_count) ? "#54cbb5" : "#f0a45e")
+                                    ctx.fill()
+                                    if (isSelected) {
+                                        ctx.beginPath()
+                                        ctx.arc(point.x, point.y, 9, 0, Math.PI * 2)
+                                        ctx.strokeStyle = "#ffffff"
+                                        ctx.lineWidth = 1.5
+                                        ctx.stroke()
+                                    }
+                                }
+                                neuralCloud.nodePositions = positions
+                            }
+                            Connections { target: simulation; function onTopologyChanged() { connectomeCanvas.requestPaint() } }
+                            Connections { target: simulation; function onSpikeEventsChanged() { connectomeCanvas.requestPaint() } }
+                            Connections { target: simulation; function onTelemetryChanged() { connectomeCanvas.requestPaint() } }
+                            Connections { target: window; function onSelectedNeuronIdChanged() { connectomeCanvas.requestPaint() } }
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: function(mouse) {
+                                var positions = neuralCloud.nodePositions
+                                var nodes = simulation.topologySnapshot.nodes || []
+                                var best = -1
+                                var bestDistance = 14 * 14
+                                for (var i = 0; i < nodes.length; ++i) {
+                                    var point = positions[String(nodes[i])]
+                                    if (!point) continue
+                                    var dx = point.x - mouse.x
+                                    var dy = point.y - mouse.y
+                                    var distance = dx * dx + dy * dy
+                                    if (distance < bestDistance) {
+                                        bestDistance = distance
+                                        best = Number(nodes[i])
+                                    }
+                                }
+                                if (best >= 0) window.selectedNeuronId = best
                             }
                         }
                         Label {
                             anchors.left: parent.left
                             anchors.bottom: parent.bottom
                             anchors.margins: 8
-                            text: "Rotating population projection · recent spike locations"
+                            text: (simulation.topologySnapshot.rendered_neurons || 0) + " rendered neurons · " +
+                                  (simulation.topologySnapshot.rendered_synapses || 0) + " actual CSR synapses · step " +
+                                  (simulation.topologySnapshot.completed_steps || "0")
                             color: "#91a2b8"
                             font.pixelSize: 10
                         }
@@ -509,7 +558,7 @@ ApplicationWindow {
                 interval: 1000
                 repeat: true
                 running: simulation.connected
-                onTriggered: simulation.refreshTissue()
+                onTriggered: { simulation.refreshTissue(); simulation.refreshTopology() }
             }
 
             // Each Dial is a normalized control; the displayed number is the
