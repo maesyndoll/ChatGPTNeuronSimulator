@@ -66,7 +66,7 @@ endif()
 
 option(SPIKINGMODEL_ENABLE_QT_CLIENT "Build the optional Qt IPC client" OFF)
 if(SPIKINGMODEL_ENABLE_QT_CLIENT)
-    find_package(Qt6 6.4 REQUIRED COMPONENTS Core Network Qml Quick)
+    find_package(Qt6 6.4 REQUIRED COMPONENTS Core Network Qml Quick Concurrent)
 
     add_executable(spiking_model_qt_client
         src/qt/qt_ipc_probe.cpp
@@ -135,6 +135,7 @@ if(SPIKINGMODEL_ENABLE_QT_CLIENT)
         Qt6::Network
         Qt6::Qml
         Qt6::Quick
+        Qt6::Concurrent
     )
     target_compile_options(spiking_model_dashboard PRIVATE
         $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
