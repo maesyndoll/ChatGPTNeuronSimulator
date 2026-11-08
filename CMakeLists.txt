@@ -121,6 +121,7 @@ if(SPIKINGMODEL_ENABLE_QT_CLIENT)
         include/qt/simulation_client.h
         include/qt/simulation_bridge.h
         include/qt/connectome_field.h
+        src/connectome/temporal_embedding.cpp
         src/qt/connectome_field.cpp
         src/qt/simulation_client.cpp
         src/qt/simulation_bridge.cpp
