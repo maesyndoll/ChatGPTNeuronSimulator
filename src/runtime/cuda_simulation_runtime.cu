@@ -533,7 +533,7 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
             completed_steps_ + 1ULL,
             device_state_->stream.get());
 
-        if (plasticity_config_.enabled && device_state_->edge_count != 0) {
+        if (plasticity_config_.enabled && device_state_->edge_capacity != 0) {
             const float trace_decay = std::exp(
                 -p.dt / plasticity_config_.trace_time_constant_ms);
             update_synaptic_plasticity(
