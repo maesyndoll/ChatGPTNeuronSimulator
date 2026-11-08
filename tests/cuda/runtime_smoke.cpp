@@ -510,6 +510,82 @@ int main() {
                   << " mV, gated=" << gated_phase_metrics.mean_voltage_mv
                   << " mV\n";
 
+        // Pair-based STDP experiment. Identical seeded networks provide an
+        // active-learning condition and a zero-learning control.
+        auto make_plasticity_parameters = [] {
+            ModelParameters p;
+            p.simulation.excitatory_count = 2;
+            p.simulation.inhibitory_count = 1;
+            p.simulation.steps = 1;
+            p.simulation.dt = 0.25f;
+            p.simulation.threshold = -64.9995f;
+            p.simulation.initial_voltage_min = -65.0f;
+            p.simulation.initial_voltage_max = -65.0f;
+            p.simulation.excitatory_current_min = 4.0f;
+            p.simulation.excitatory_current_max = 4.0f;
+            p.simulation.inhibitory_current_min = 0.0f;
+            p.simulation.inhibitory_current_max = 0.0f;
+            p.simulation.random_seed = 7654321U;
+            p.topology.p_ee = 1.0;
+            p.topology.p_ei = 0.0;
+            p.topology.p_ie = 0.0;
+            p.topology.p_ii = 0.0;
+            p.topology.topology_seed = 1234567ULL;
+            p.topology.delay_seed = 7654321ULL;
+            p.topology.delay_distribution = DelayDistribution::Uniform;
+            p.topology.minimum_delay = 1;
+            p.topology.maximum_delay = 1;
+            p.topology.fibonacci_delays = {1};
+            p.topology.fibonacci_weights = {1.0};
+            return p;
+        };
+        CudaSimulationRuntime plasticity_active(make_plasticity_parameters());
+        CudaSimulationRuntime plasticity_control(make_plasticity_parameters());
+        SynapticPlasticityConfig learning_config;
+        learning_config.enabled = true;
+        learning_config.trace_time_constant_ms = 30.0f;
+        learning_config.potentiation_rate = 0.02f;
+        learning_config.depression_rate = 0.002f;
+        learning_config.minimum_weight_magnitude = 0.005f;
+        learning_config.maximum_weight_magnitude = 0.20f;
+        plasticity_active.configure_synaptic_plasticity(learning_config);
+        auto no_learning_config = learning_config;
+        no_learning_config.potentiation_rate = 0.0f;
+        no_learning_config.depression_rate = 0.0f;
+        plasticity_control.configure_synaptic_plasticity(no_learning_config);
+        const auto initial_learning_metrics = plasticity_active.collect_metrics();
+        const auto initial_control_metrics = plasticity_control.collect_metrics();
+        plasticity_active.run_steps(1000);
+        plasticity_control.run_steps(1000);
+        const auto learned_metrics = plasticity_active.collect_metrics();
+        const auto control_learning_metrics = plasticity_control.collect_metrics();
+        if (!initial_learning_metrics.finite_state ||
+            !initial_control_metrics.finite_state ||
+            !learned_metrics.finite_state ||
+            !control_learning_metrics.finite_state ||
+            learned_metrics.excitatory_spikes == 0 ||
+            learned_metrics.mean_absolute_synaptic_weight <=
+                initial_learning_metrics.mean_absolute_synaptic_weight + 1.0e-6 ||
+            std::abs(control_learning_metrics.mean_absolute_synaptic_weight -
+                     initial_control_metrics.mean_absolute_synaptic_weight) > 1.0e-7 ||
+            learned_metrics.mean_absolute_synaptic_weight > 0.20 + 1.0e-6) {
+            std::cerr << "GPU STDP learning experiment failed\n"
+                      << "Initial mean |w|: "
+                      << initial_learning_metrics.mean_absolute_synaptic_weight << '\n'
+                      << "Learned mean |w|: "
+                      << learned_metrics.mean_absolute_synaptic_weight << '\n'
+                      << "Control mean |w|: "
+                      << control_learning_metrics.mean_absolute_synaptic_weight << '\n'
+                      << "Excitatory spikes: " << learned_metrics.excitatory_spikes << '\n';
+            return EXIT_FAILURE;
+        }
+        std::cout << "GPU STDP learning experiment passed; mean |w| "
+                  << initial_learning_metrics.mean_absolute_synaptic_weight
+                  << " -> " << learned_metrics.mean_absolute_synaptic_weight
+                  << ", zero-learning control="
+                  << control_learning_metrics.mean_absolute_synaptic_weight
+                  << ", spikes=" << learned_metrics.excitatory_spikes << '\n';
+
         ModelParameters parameters;
         parameters.simulation = SimulationParameters::small_test();
         parameters.simulation.steps = 2;
