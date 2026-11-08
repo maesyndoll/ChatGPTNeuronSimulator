@@ -16,9 +16,9 @@ ApplicationWindow {
     property real cameraDistance: 3.15
     property real dragX: 0
     property real dragY: 0
-    property var nodePositions: ({})
     property var lastSpikeByNeuron: ({})
     property double lastSeenSequence: 0
+    property string lastGeneration: ""
     property double clockAnchorStep: 0
     property double clockAnchorMs: Date.now()
     property double stepsPerMillisecond: 0
@@ -40,6 +40,12 @@ ApplicationWindow {
     }
 
     function ingestSpikeEvents() {
+        var generation = String(simulation.spikeEventsGeneration || "")
+        if (lastGeneration !== "" && generation !== lastGeneration) {
+            lastSeenSequence = 0
+            lastSpikeByNeuron = ({})
+        }
+        lastGeneration = generation
         var events = simulation.spikeEvents || []
         var next = Object.assign({}, lastSpikeByNeuron)
         var newestStep = clockAnchorStep
@@ -180,7 +186,6 @@ ApplicationWindow {
             ctx.shadowBlur = 0
         }
 
-        nodePositions = positions
         ctx.textAlign = "left"
         ctx.font = "11px monospace"
         ctx.fillStyle = "rgba(190,210,226,0.65)"
