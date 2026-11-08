@@ -386,25 +386,35 @@ int main() {
         CudaSimulationRuntime phase_baseline(make_propagation_parameters(true));
         CudaSimulationRuntime phase_gated(make_propagation_parameters(true));
         CudaSimulationRuntime phase_disconnected(make_propagation_parameters(false));
+        CudaSimulationRuntime phase_uncoupled(make_propagation_parameters(true));
         PhaseDynamicsConfig phase_config;
         phase_config.enabled = true;
-        phase_config.coupling_strength = 0.05f;
+        phase_config.coupling_strength = 50.0f;
         phase_config.modulation_strength = 1.0f;
         phase_gated.configure_phase_dynamics(phase_config);
+        auto uncoupled_config = phase_config;
+        uncoupled_config.coupling_strength = 0.0f;
+        phase_uncoupled.configure_phase_dynamics(uncoupled_config);
         phase_baseline.run_steps(3);
         phase_gated.run_steps(3);
         phase_disconnected.run_steps(3);
+        phase_uncoupled.run_steps(3);
         const auto baseline_phase_metrics = phase_baseline.collect_metrics();
         const auto gated_phase_metrics = phase_gated.collect_metrics();
         const auto disconnected_phase_metrics = phase_disconnected.collect_metrics();
+        const auto uncoupled_phase_metrics = phase_uncoupled.collect_metrics();
         if (!baseline_phase_metrics.finite_state ||
             !gated_phase_metrics.finite_state ||
             !disconnected_phase_metrics.finite_state ||
+            !uncoupled_phase_metrics.finite_state ||
             baseline_phase_metrics.completed_steps != 3 ||
             gated_phase_metrics.completed_steps != 3 ||
             disconnected_phase_metrics.completed_steps != 3 ||
+            uncoupled_phase_metrics.completed_steps != 3 ||
             gated_phase_metrics.mean_voltage_mv <=
                 disconnected_phase_metrics.mean_voltage_mv + 1.0e-7 ||
+            gated_phase_metrics.mean_voltage_mv <=
+                uncoupled_phase_metrics.mean_voltage_mv + 1.0e-7 ||
             gated_phase_metrics.mean_voltage_mv >=
                 baseline_phase_metrics.mean_voltage_mv - 1.0e-7) {
             std::cerr << "GPU phase-gated synaptic routing test failed\n"
