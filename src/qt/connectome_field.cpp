@@ -378,8 +378,6 @@ QSGNode* ConnectomeField::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*
         }
     }
 
-    std::uint32_t maxDelay = 1;
-    for (const auto& edge : edges_) maxDelay = std::max(maxDelay, edge.delay);
     QVector<Point> pulseVertices;
     pulseVertices.reserve(std::min(edgeCount * 6, 12000));
 
