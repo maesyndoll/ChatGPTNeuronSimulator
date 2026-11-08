@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime/cuda_simulation_runtime.cuh"
+#include "tissue/tissue_model.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -55,6 +56,11 @@ struct ControllerConfigurationSnapshot {
     std::uint64_t simulation_generation = 0;
 };
 
+struct TissueSnapshot {
+    tissue::TissueModel model;
+    std::uint64_t revision = 0;
+};
+
 // The worker thread exclusively owns CudaSimulationRuntime.
 // Other threads interact only through commands and cached snapshots.
 class SimulationController {
@@ -86,6 +92,12 @@ public:
         std::uint64_t after_sequence = 0,
         std::size_t maximum_events = 4096) const;
     ControllerConfigurationSnapshot configuration_snapshot() const;
+
+    // Mutations execute on the simulation worker between completed CUDA batches.
+    // A candidate copy is validated before replacing the live tissue state.
+    std::uint64_t transact_tissue(
+        std::function<void(tissue::TissueModel&)> mutation);
+    TissueSnapshot tissue_snapshot() const;
 
     ControllerStatus status() const;
     bool is_running() const;
@@ -167,6 +179,10 @@ private:
     std::uint64_t spike_event_generation_ = 0;
     static constexpr std::size_t kMaximumRetainedSpikeEvents = 1048576;
     std::exception_ptr last_execution_error_;
+
+    // Accessed only by commands running on the simulation worker.
+    tissue::TissueModel tissue_model_;
+    std::uint64_t tissue_revision_ = 0;
 };
 
 } // namespace spiking
