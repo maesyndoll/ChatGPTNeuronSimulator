@@ -163,8 +163,12 @@ void embed_component(const std::vector<std::uint32_t>& members,
                           &landmark_positions[i].y,
                           &landmark_positions[i].z};
         for (std::size_t axis = 0; axis < 3; ++axis) {
-            const double lambda = axis < m ? std::max(0.0, eigenvalues[axis]) : 0.0;
-            *axes[axis] = eigenvectors[i*m+axis] * std::sqrt(lambda);
+            if (axis < m) {
+                const double lambda = std::max(0.0, eigenvalues[axis]);
+                *axes[axis] = eigenvectors[i*m+axis] * std::sqrt(lambda);
+            } else {
+                *axes[axis] = 0.0;
+            }
         }
     }
 
@@ -198,7 +202,7 @@ void embed_component(const std::vector<std::uint32_t>& members,
             }
             ++usable;
         }
-        if (usable < 3) { output[node] = {0,0,0}; continue; }
+        if (usable < 3) { output[node] = {offset,0,0}; continue; }
         // Gaussian elimination with partial pivoting.
         for (int col = 0; col < 3; ++col) {
             int pivot = col;
