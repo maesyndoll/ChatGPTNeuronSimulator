@@ -114,7 +114,7 @@ __global__ void advance_phase_kernel(
         const float magnitude = fabsf(weights[edge]);
         if (magnitude > 0.0f) {
             const std::uint32_t target = target_indices[edge];
-            interaction += magnitude * sinf(phases[target] - phases[id]);
+            interaction += weights[edge] * sinf(phases[target] - phases[id]);
             normalization += magnitude;
         }
     }
