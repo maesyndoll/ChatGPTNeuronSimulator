@@ -189,34 +189,36 @@ ApplicationWindow {
         }
     }
 
-    // The field itself is the interface: drag to rotate, wheel to dolly.
-    MouseArea {
-        anchors.fill: parent
+    // Pointer handlers operate independently of the Canvas input stack.
+    // DragHandler avoids a full-window MouseArea swallowing other gestures.
+    DragHandler {
+        id: orbitDrag
+        target: null
         acceptedButtons: Qt.LeftButton
-        hoverEnabled: false
-        property real previousX: 0
-        property real previousY: 0
-        onPressed: function(mouse) {
-            previousX = mouse.x
-            previousY = mouse.y
+        property point previousTranslation: Qt.point(0, 0)
+        onActiveChanged: previousTranslation = Qt.point(0, 0)
+        onTranslationChanged: {
+            var dx = translation.x - previousTranslation.x
+            var dy = translation.y - previousTranslation.y
+            previousTranslation = translation
+            if (active && (dx !== 0 || dy !== 0)) {
+                window.rotationY += dx * 0.008
+                window.rotationX = Math.max(-1.45, Math.min(1.45,
+                    window.rotationX + dy * 0.008))
+                window.invalidateLayout()
+            }
         }
-        onPositionChanged: function(mouse) {
-            if (!(mouse.buttons & Qt.LeftButton))
-                return
-            window.rotationY += (mouse.x - previousX) * 0.006
+    }
+
+    WheelHandler {
+        id: zoomHandler
+        target: null
+        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+        onWheel: function(event) {
+            window.cameraDistance = Math.max(1.45, Math.min(7.0,
+                window.cameraDistance - event.angleDelta.y / 120 * 0.18))
             window.invalidateLayout()
-            window.rotationX = Math.max(-1.35, Math.min(1.35,
-                window.rotationX + (mouse.y - previousY) * 0.006))
-            window.invalidateLayout()
-            previousX = mouse.x
-            previousY = mouse.y
-            fieldCanvas.requestPaint()
-        }
-        onWheel: function(wheel) {
-            window.cameraDistance = Math.max(1.65, Math.min(6.0,
-                window.cameraDistance - wheel.angleDelta.y / 120 * 0.16))
-            window.invalidateLayout()
-            wheel.accepted = true
+            event.accepted = true
         }
     }
 
