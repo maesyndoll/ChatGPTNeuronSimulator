@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QFutureWatcher>
 #include <QMutex>
 #include <QQuickItem>
 #include <QVariantList>
@@ -69,6 +70,11 @@ private:
     QVector<Edge> edges_;
     QVector<EdgeTransition> edge_transitions_;
     QVector<RenderPosition> temporal_positions_;
+    QVector<RenderPosition> previous_temporal_positions_;
+    QFutureWatcher<connectome::EmbeddingResult> embedding_watcher_;
+    quint64 embedding_request_generation_ = 0;
+    quint64 embedding_watcher_generation_ = 0;
+    qint64 embedding_transition_started_ms_ = 0;
     QVector<Spike> spikes_;
     qreal rotation_x_ = -0.18;
     qreal rotation_y_ = 0.35;
