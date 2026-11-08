@@ -61,6 +61,9 @@ class CudaSimulationRuntime {
 public:
     explicit CudaSimulationRuntime(ModelParameters defaults = ModelParameters{},
                                    int device = 0);
+    // Test/experiment constructor for a caller-supplied, validated CSR graph.
+    CudaSimulationRuntime(ModelParameters defaults, CSRTopology topology,
+                         int device = 0);
     ~CudaSimulationRuntime() = default;
 
     CudaSimulationRuntime(const CudaSimulationRuntime&) = delete;
@@ -133,7 +136,9 @@ private:
         NeuronStateGPU neuron_state() noexcept;
     };
 
-    std::unique_ptr<DeviceState> build_device_state(const ModelParameters& parameters);
+    std::unique_ptr<DeviceState> build_device_state(
+        const ModelParameters& parameters,
+        const CSRTopology* topology_override = nullptr);
 
     ParameterManager parameter_manager_;
     ModelParameters active_parameters_;
