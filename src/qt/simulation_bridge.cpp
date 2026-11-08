@@ -454,9 +454,12 @@ void SimulationBridge::updateSpikeEvents(const QJsonObject& spikeEvents) {
         spikeEvents.value(QStringLiteral("simulation_generation"))
             .toString(spike_events_generation_);
 
-    if (spike_events_generation_ != QStringLiteral("—") &&
-        incomingGeneration != spike_events_generation_) {
+    const bool generationChanged =
+        spike_events_generation_ != QStringLiteral("—") &&
+        incomingGeneration != spike_events_generation_;
+    if (generationChanged) {
         spike_events_.clear();
+        visual_spike_events_.clear();
         last_spike_event_sequence_ = 0;
     }
 
@@ -512,7 +515,7 @@ void SimulationBridge::updateSpikeEvents(const QJsonObject& spikeEvents) {
     }
 
     emit spikeEventsChanged();
-    if (!visual_spike_events_.isEmpty()) emit visualSpikeEventsChanged();
+    if (generationChanged || !visual_spike_events_.isEmpty())\n        emit visualSpikeEventsChanged();
 }
 
 void SimulationBridge::updateTopology(const QJsonObject& topology) {
