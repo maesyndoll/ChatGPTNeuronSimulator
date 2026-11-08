@@ -557,6 +557,7 @@ void CudaSimulationRuntime::run_steps(std::uint32_t steps) {
                     device_state_->target_indices.get(),
                     device_state_->weights.get(),
                     device_state_->delays.get(),
+                    state.spike_flags,
                     device_state_->plasticity_traces.get(),
                     count,
                     active_parameters_.simulation.excitatory_count,
