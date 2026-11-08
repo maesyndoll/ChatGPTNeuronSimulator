@@ -4,6 +4,8 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QStringList>
+#include <limits>
+#include <cmath>
 
 #include <unistd.h>
 
@@ -311,6 +313,30 @@ void SimulationBridge::stepSimulation(int steps) {
         QStringLiteral("step"),
         QJsonObject{{QStringLiteral("steps"), steps}}
     );
+}
+
+void SimulationBridge::stimulateNeurons(
+    const QVariantList& neuronIds, double amplitude, int durationSteps) {
+    if (!connected_ || neuronIds.isEmpty() || durationSteps <= 0 ||
+        !std::isfinite(amplitude) || amplitude == 0.0) {
+        setErrorMessage(QStringLiteral("Select neurons and provide a non-zero finite stimulus and positive duration"));
+        return;
+    }
+    QJsonArray ids;
+    for (const auto& value : neuronIds) {
+        bool ok = false;
+        const qulonglong id = value.toULongLong(&ok);
+        if (!ok || id > std::numeric_limits<quint32>::max()) {
+            setErrorMessage(QStringLiteral("Invalid neuron ID in stimulus selection"));
+            return;
+        }
+        ids.append(static_cast<qint64>(id));
+    }
+    client_.sendRequest(QStringLiteral("stimulate_neurons"), QJsonObject{
+        {QStringLiteral("neuron_ids"), ids},
+        {QStringLiteral("amplitude"), amplitude},
+        {QStringLiteral("duration_steps"), durationSteps}
+    });
 }
 
 void SimulationBridge::refreshConfiguration() {
