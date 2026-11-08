@@ -686,7 +686,9 @@ int main() {
             association_active.run_steps(20);
             association_control.run_steps(20);
         }
-        // Verify training activity before clearing the event window for recall.
+        // Capture activity and learned-weight diagnostics before freezing.
+        const auto active_training_metrics = association_active.collect_metrics();
+        const auto control_training_metrics = association_control.collect_metrics();
         const auto active_training = association_active.collect_spike_events();
         const auto control_training = association_control.collect_spike_events();
         if (active_training.events.empty() || control_training.events.empty() ||
@@ -720,6 +722,8 @@ int main() {
             }
             return count;
         };
+        const auto active_recall_a = count_group_spikes(active_recall, 0, association_group_size);
+        const auto control_recall_a = count_group_spikes(control_recall, 0, association_group_size);
         const auto learned_b = count_group_spikes(
             active_recall, association_group_size, 2 * association_group_size);
         const auto untrained_c = count_group_spikes(
@@ -735,6 +739,15 @@ int main() {
             active_recall.dropped_events != 0 || control_recall.dropped_events != 0 ||
             learned_b <= untrained_c || learned_b <= control_b) {
             std::cerr << "GPU associative recall experiment failed\n"
+                      << "Training A/B spikes: "
+                      << count_group_spikes(active_training, 0, association_group_size)
+                      << "/" << count_group_spikes(active_training, association_group_size,
+                                                     2 * association_group_size) << '\n'
+                      << "Training mean |w| active/control: "
+                      << active_training_metrics.mean_absolute_synaptic_weight << "/"
+                      << control_training_metrics.mean_absolute_synaptic_weight << '\n'
+                      << "Recall A spikes active/control: " << active_recall_a << "/"
+                      << control_recall_a << '\n'
                       << "Learned B response: " << learned_b << '\n'
                       << "Untrained C response: " << untrained_c << '\n'
                       << "Zero-STDP B response: " << control_b << '\n'
