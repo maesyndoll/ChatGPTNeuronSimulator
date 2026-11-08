@@ -8,7 +8,7 @@
 
 #include <cstdint>
 
-class ConnectomeField final : public QQuickItem {
+class ConnectomeField : public QQuickItem {
     Q_OBJECT
     Q_PROPERTY(QVariantMap topology READ topology WRITE setTopology NOTIFY topologyChanged)
     Q_PROPERTY(QString simulationGeneration READ simulationGeneration WRITE setSimulationGeneration NOTIFY spikeEventsChanged)
