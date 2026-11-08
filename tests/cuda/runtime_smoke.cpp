@@ -686,9 +686,16 @@ int main() {
             association_active.run_steps(20);
             association_control.run_steps(20);
         }
-        // Drain training events; recall counts below include only the probe.
-        (void)association_active.collect_spike_events();
-        (void)association_control.collect_spike_events();
+        // Verify training activity before clearing the event window for recall.
+        const auto active_training = association_active.collect_spike_events();
+        const auto control_training = association_control.collect_spike_events();
+        if (active_training.events.empty() || control_training.events.empty() ||
+            active_training.dropped_events != 0 || control_training.dropped_events != 0) {
+            std::cerr << "GPU associative training produced no usable spike events; active="
+                      << active_training.events.size() << ", control="
+                      << control_training.events.size() << '\n';
+            return EXIT_FAILURE;
+        }
 
         // Freeze weights during recall so the probe measures the learned state,
         // rather than additional learning caused by the test stimulus.
@@ -734,8 +741,9 @@ int main() {
                       << "Zero-STDP C response: " << control_c << '\n';
             return EXIT_FAILURE;
         }
-        std::cout << "GPU associative recall experiment passed; trained B="
-                  << learned_b << ", untrained C=" << untrained_c
+        std::cout << "GPU associative recall experiment passed; training events="
+                  << active_training.events.size() << ", trained B=" << learned_b
+                  << ", untrained C=" << untrained_c
                   << ", zero-STDP B=" << control_b
                   << ", zero-STDP C=" << control_c << '\n';
 
