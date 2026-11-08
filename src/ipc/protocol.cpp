@@ -5,6 +5,7 @@
 #include <limits>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 
@@ -12,6 +13,30 @@ namespace spiking::ipc {
 namespace {
 
 using Json = nlohmann::json;
+
+std::uint64_t topology_revision(const CSRTopology& graph) {
+    // FNV-1a over the canonical CSR arrays. Unlike completed_steps, this
+    // changes only when connectivity, delay, or weight data changes.
+    std::uint64_t hash = 14695981039346656037ull;
+    const auto mix = [&hash](const void* data, std::size_t size) {
+        const auto* bytes = static_cast<const unsigned char*>(data);
+        for (std::size_t i = 0; i < size; ++i) {
+            hash ^= bytes[i];
+            hash *= 1099511628211ull;
+        }
+    };
+    mix(&graph.excitatory_count, sizeof(graph.excitatory_count));
+    mix(&graph.inhibitory_count, sizeof(graph.inhibitory_count));
+    if (!graph.row_offsets.empty())
+        mix(graph.row_offsets.data(), graph.row_offsets.size() * sizeof(graph.row_offsets[0]));
+    if (!graph.target_indices.empty())
+        mix(graph.target_indices.data(), graph.target_indices.size() * sizeof(graph.target_indices[0]));
+    if (!graph.delays.empty())
+        mix(graph.delays.data(), graph.delays.size() * sizeof(graph.delays[0]));
+    if (!graph.weights.empty())
+        mix(graph.weights.data(), graph.weights.size() * sizeof(graph.weights[0]));
+    return hash;
+}
 
 std::string status_name(ControllerStatus status) {
     switch (status) {
@@ -243,7 +268,7 @@ Json topology_snapshot_json(const CSRTopology& graph, std::uint64_t step) {
         });
     }
     return {
-        {"revision", std::to_string(step)},
+        {"revision", std::to_string(topology_revision(graph))},
         {"completed_steps", std::to_string(step)},
         {"total_neurons", total},
         {"total_synapses", graph.synapse_count()},
