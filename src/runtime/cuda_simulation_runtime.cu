@@ -398,6 +398,7 @@ SimulationMetrics CudaSimulationRuntime::collect_metrics() {
     std::vector<float> recovery(count);
     std::vector<std::uint32_t> spikes(count);
     std::vector<std::uint8_t> spike_flags(count);
+    std::vector<float> phases(count);
     SPIKING_CUDA_CHECK(cudaMemcpy(voltage.data(), device_state_->voltage.get(),
                                   count * sizeof(float), cudaMemcpyDeviceToHost));
     SPIKING_CUDA_CHECK(cudaMemcpy(recovery.data(), device_state_->recovery.get(),
@@ -406,15 +407,25 @@ SimulationMetrics CudaSimulationRuntime::collect_metrics() {
                                   count * sizeof(std::uint32_t), cudaMemcpyDeviceToHost));
     SPIKING_CUDA_CHECK(cudaMemcpy(spike_flags.data(), device_state_->spike_flags.get(),
                                   count * sizeof(std::uint8_t), cudaMemcpyDeviceToHost));
+    SPIKING_CUDA_CHECK(cudaMemcpy(phases.data(), device_state_->phases.get(),
+                                  count * sizeof(float), cudaMemcpyDeviceToHost));
 
     SimulationMetrics metrics;
     metrics.completed_steps = completed_steps_;
     double voltage_sum = 0.0;
+    double phase_cosine_sum = 0.0;
+    double phase_sine_sum = 0.0;
     for (std::uint32_t i = 0; i < count; ++i) {
         if (!std::isfinite(voltage[i]) || !std::isfinite(recovery[i])) {
             metrics.finite_state = false;
         }
         voltage_sum += voltage[i];
+        if (!std::isfinite(phases[i])) {
+            metrics.finite_state = false;
+        } else {
+            phase_cosine_sum += std::cos(static_cast<double>(phases[i]));
+            phase_sine_sum += std::sin(static_cast<double>(phases[i]));
+        }
         if (i < active_parameters_.simulation.excitatory_count)
             metrics.excitatory_spikes += spikes[i];
         else
@@ -428,6 +439,10 @@ SimulationMetrics CudaSimulationRuntime::collect_metrics() {
         }
     }
     metrics.mean_voltage_mv = voltage_sum / static_cast<double>(count);
+    const double phase_count = static_cast<double>(count);
+    metrics.phase_coherence = std::sqrt(
+        phase_cosine_sum * phase_cosine_sum +
+        phase_sine_sum * phase_sine_sum) / phase_count;
 
     const double elapsed_seconds = elapsed_simulation_ms_ / 1000.0;
     if (elapsed_seconds > 0.0) {
