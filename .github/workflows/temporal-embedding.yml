@@ -19,8 +19,6 @@ jobs:
         run: cmake -S . -B build-temporal -DBUILD_TESTING=ON -DSPIKINGMODEL_ENABLE_CUDA=OFF -DSPIKINGMODEL_ENABLE_QT_CLIENT=OFF
       - name: Build temporal embedding tests
         run: cmake --build build-temporal --target temporal_embedding_tests --parallel 2
-      - name: Compile IPC topology snapshot
-        run: c++ -std=c++17 -Wall -Wextra -Wpedantic -Iinclude -c src/ipc/protocol.cpp -o /tmp/protocol.o
       - name: Run temporal embedding tests
         run: ctest --test-dir build-temporal --output-on-failure -R temporal_embedding_tests
       - name: Configure Qt dashboard
