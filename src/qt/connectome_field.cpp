@@ -72,6 +72,9 @@ ConnectomeField::ConnectomeField(QQuickItem* parent) : QQuickItem(parent) {
 void ConnectomeField::setTopology(const QVariantMap& value) {
     QMutexLocker locker(&mutex_);
     if (topology_ == value) return;
+    const auto previousEdges = edges_;
+    const auto previousPositions = temporal_positions_;
+    const auto previousNodes = nodes_;
     topology_ = value;
     nodes_.clear();
     edges_.clear();
@@ -102,6 +105,37 @@ void ConnectomeField::setTopology(const QVariantMap& value) {
             temporalEdges.push_back({source->second, target->second,
                                      static_cast<double>(edge.delay)});
     }
+    // Diff by directed endpoint pair. Delay/weight changes remain live
+    // edge updates; only appearance/disappearance creates a transition.
+    const auto edgeKey = [](const Edge& edge) {
+        return (static_cast<std::uint64_t>(edge.source) << 32) | edge.target;
+    };
+    std::unordered_map<std::uint64_t, Edge> previousByKey;
+    std::unordered_map<std::uint64_t, Edge> currentByKey;
+    previousByKey.reserve(static_cast<std::size_t>(previousEdges.size()));
+    currentByKey.reserve(static_cast<std::size_t>(edges_.size()));
+    for (const auto& edge : previousEdges) previousByKey.emplace(edgeKey(edge), edge);
+    for (const auto& edge : edges_) currentByKey.emplace(edgeKey(edge), edge);
+    const qint64 transitionTime = QDateTime::currentMSecsSinceEpoch();
+    QVector<EdgeTransition> nextTransitions;
+    nextTransitions.reserve(std::min(12000,
+        edge_transitions_.size() + previousEdges.size() + edges_.size()));
+    for (const auto& transition : edge_transitions_) {
+        if (transition.created_ms + 1800 > transitionTime)
+            nextTransitions.push_back(transition);
+    }
+    for (const auto& edge : edges_) {
+        if (previousByKey.find(edgeKey(edge)) == previousByKey.end())
+            nextTransitions.push_back({edge, transitionTime, true});
+    }
+    for (const auto& edge : previousEdges) {
+        if (currentByKey.find(edgeKey(edge)) == currentByKey.end())
+            nextTransitions.push_back({edge, transitionTime, false});
+    }
+    if (nextTransitions.size() > 12000)
+        nextTransitions.remove(0, nextTransitions.size() - 12000);
+    edge_transitions_ = std::move(nextTransitions);
+
     temporal_positions_.clear();
     if (!nodes_.isEmpty()) {
         const auto embedding = connectome::embed_temporal_graph(
@@ -176,11 +210,12 @@ QSGNode* ConnectomeField::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*
     QMutexLocker locker(&mutex_);
     auto* root = oldNode ? static_cast<FieldNode*>(oldNode) : new FieldNode;
     const int edgeCount = edges_.size();
+    const int transitionCount = edge_transitions_.size();
     const int nodeCount = nodes_.size();
     auto* edgeGeometry = root->edges->geometry();
     auto* nodeGeometry = root->neurons->geometry();
     auto* pulseGeometry = root->pulses->geometry();
-    edgeGeometry->allocate(edgeCount * 2);
+    edgeGeometry->allocate((edgeCount + transitionCount) * 2);
     nodeGeometry->allocate(nodeCount * 6);
 
     const float w = float(width()), h = float(height());
@@ -280,6 +315,24 @@ QSGNode* ConnectomeField::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*
                 if (++emitted >= 3) break;
             }
         }
+    }
+    for (int i = 0; i < transitionCount; ++i) {
+        const auto& transition = edge_transitions_[i];
+        const auto fromIt = positions.find(transition.edge.source);
+        const auto toIt = positions.find(transition.edge.target);
+        if (fromIt == positions.end() || toIt == positions.end()) continue;
+        const float age = float(now - transition.created_ms);
+        const float progress = std::clamp(age / 1800.0f, 0.0f, 1.0f);
+        const uchar alpha = static_cast<uchar>(
+            220.0f * (transition.created ? progress : (1.0f - progress)));
+        const uchar r = transition.created ? 72 : 255;
+        const uchar g = transition.created ? 255 : 72;
+        const uchar b = transition.created ? 210 : 92;
+        const int vertex = (edgeCount + i) * 2;
+        put(edgeVertices[vertex], fromIt->second.x, fromIt->second.y,
+            r, g, b, alpha);
+        put(edgeVertices[vertex+1], toIt->second.x, toIt->second.y,
+            r, g, b, alpha);
     }
     pulseGeometry->allocate(pulseVertices.size());
     auto* pulseData = static_cast<Point*>(pulseGeometry->vertexData());
