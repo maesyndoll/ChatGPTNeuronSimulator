@@ -19,9 +19,12 @@ Blackwell (`sm_120` by default).
 - A standalone Neural Observatory experiment that exports a spike raster as
   an HTML report and every captured event as CSV.
 
-The current runtime has fixed synaptic weights: online plasticity, learned
-checkpoint persistence, and inference-oriented memory management are not yet
-implemented. The Qt client/dashboard is optional.
+The runtime now supports opt-in GPU-resident pair-based spike-timing-dependent
+plasticity (STDP). Per-neuron spike traces remain on the GPU, updates preserve
+the excitatory/inhibitory sign of each CSR edge, and configurable magnitude
+bounds prevent unbounded weight growth. Plasticity is disabled by default.
+Learned-weight checkpoint persistence and inference-oriented memory management
+are not yet implemented. The Qt client/dashboard is optional.
 
 ## CPU-only configuration tests
 
@@ -44,7 +47,11 @@ ctest --test-dir build-cuda --output-on-failure
 ```
 
 The CUDA CTest includes `cuda_runtime_smoke`, which exercises initialization,
-step-boundary parameter updates, continued execution, and full reinitialization.
+step-boundary parameter updates, continued execution, full reinitialization,
+phase synchronization, and an STDP learning/control experiment. The STDP
+experiment checks that repeated activity changes mean absolute synaptic weight
+while a zero-learning control remains unchanged and configured bounds are
+respected.
 The CPU-only tests do not verify CUDA compilation or GPU execution. See
 [`docs/RUNTIME_FOUNDATION.md`](docs/RUNTIME_FOUNDATION.md) for implementation
 notes and lifecycle semantics.
@@ -78,7 +85,9 @@ Optional controls:
 
 The output directory contains `index.html` and `spikes.csv`. The report
 includes the raster, excitatory/inhibitory activity over time, firing-rate
-metrics, mean membrane voltage, and the detected GPU model.
+metrics, mean membrane voltage, and the detected GPU model. The showcase
+currently focuses on visualization; online STDP is available through the
+runtime API and is covered by a separate GPU smoke experiment.
 
 ## Live neural observatory dashboard
 
@@ -110,6 +119,6 @@ Run the simulation server in one terminal and the dashboard in another:
 
 The Qt Quick scene graph uses the platform's configured graphics backend. This
 dashboard is a 3D-style projected population view, not a Qt Quick 3D mesh renderer.
-The current CUDA runtime still uses fixed synaptic weights: STDP/online plasticity
-and learned-weight checkpoint persistence are planned separately and are not
-claimed as implemented by this dashboard.
+The runtime's STDP option is currently configured through the C++ runtime API;
+the dashboard does not yet expose learning controls or learned-weight
+checkpoint persistence.
