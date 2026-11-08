@@ -460,18 +460,18 @@ int main() {
             base_target_delta > 1.0e-5f ||
             gated_target_delta < 1.0e-4f ||
             meta_gated_voltage[1] <= meta_gated_voltage[2]) {
-            std::cerr << "GPU phase-gated meta-topology experiment failed\\n"
-                      << "Ungated target voltage delta: " << base_target_delta << " mV\\n"
-                      << "Aligned target voltage: " << meta_gated_voltage[1] << " mV\\n"
-                      << "Anti-phase target voltage: " << meta_gated_voltage[2] << " mV\\n"
-                      << "Gated target separation: " << gated_target_delta << " mV\\n";
+            std::cerr << "GPU phase-gated meta-topology experiment failed\n"
+                      << "Ungated target voltage delta: " << base_target_delta << " mV\n"
+                      << "Aligned target voltage: " << meta_gated_voltage[1] << " mV\n"
+                      << "Anti-phase target voltage: " << meta_gated_voltage[2] << " mV\n"
+                      << "Gated target separation: " << gated_target_delta << " mV\n";
             return EXIT_FAILURE;
         }
         std::cout << "GPU phase-gated meta-topology test passed; "
                   << "ungated target delta=" << base_target_delta
                   << " mV, aligned=" << meta_gated_voltage[1]
                   << " mV, anti-phase=" << meta_gated_voltage[2]
-                  << " mV\\n";
+                  << " mV\n";
 
         // Phase dynamics test: the same deterministic delayed connection
         // must remain excitatory, while phase gating attenuates its delivered
