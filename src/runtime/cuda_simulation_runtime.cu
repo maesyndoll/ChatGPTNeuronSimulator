@@ -14,6 +14,48 @@ namespace spiking {
 namespace {
 // 4,194,304 records × 12 bytes = 48 MiB of bounded GPU event storage.
 constexpr std::uint32_t kSpikeEventCapacity = 4U * 1024U * 1024U;
+
+constexpr std::uint64_t kSpikeEventCapacity64 = 4ULL * 1024ULL * 1024ULL;
+
+// Estimate every persistent device allocation before DeviceState's constructor
+// starts issuing cudaMalloc calls. Keep headroom for the display driver and
+// temporary CUDA/runtime allocations instead of trusting cudaMalloc to fail.
+std::uint64_t estimate_device_bytes(
+    std::uint64_t neurons, std::uint64_t edges, std::uint64_t ring_slots) {
+    std::uint64_t bytes = 0;
+    const auto add = [&bytes](std::uint64_t count, std::uint64_t element_size) {
+        if (element_size != 0 &&
+            count > (std::numeric_limits<std::uint64_t>::max() - bytes) /
+                        element_size) {
+            throw std::length_error("Estimated CUDA allocation size overflows");
+        }
+        bytes += count * element_size;
+    };
+
+    // Neuron parameters (a,b,c,d,current), state (voltage,recovery),
+    // spike counts/flags, and active-spike source list.
+    add(neurons, 5ULL * sizeof(float));
+    add(neurons, 2ULL * sizeof(float));
+    add(neurons, sizeof(std::uint32_t));
+    add(neurons, sizeof(std::uint8_t));
+    add(neurons, sizeof(std::uint32_t));
+
+    add(1, sizeof(std::uint32_t));             // active spike count
+    add(kSpikeEventCapacity64, sizeof(std::uint64_t));
+    add(kSpikeEventCapacity64, sizeof(std::uint32_t));
+    add(1, sizeof(unsigned long long));        // event count
+
+    add(neurons + 1, sizeof(std::uint32_t));   // CSR row offsets
+    add(edges, sizeof(std::uint32_t));         // CSR targets
+    add(edges, sizeof(float));                 // CSR weights
+    add(edges, sizeof(std::uint32_t));         // CSR delays
+    add(neurons * ring_slots, sizeof(float));  // dense delayed-current ring
+    return bytes;
+}
+
+std::uint64_t mib(std::uint64_t bytes) {
+    return (bytes + 1024ULL * 1024ULL - 1ULL) / (1024ULL * 1024ULL);
+}
 }
 
 CudaSimulationRuntime::DeviceState::DeviceState(
@@ -93,6 +135,30 @@ CudaSimulationRuntime::build_device_state(const ModelParameters& parameters) {
     if (topology.weights.size() >
         static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())) {
         throw std::length_error("Topology has too many synapses for the CUDA runtime");
+    }
+
+    const std::uint64_t ring_slots =
+        static_cast<std::uint64_t>(topology.maximum_delay) + 1ULL;
+    const std::uint64_t required_bytes = estimate_device_bytes(
+        total, topology.weights.size(), ring_slots);
+
+    std::size_t free_bytes = 0;
+    std::size_t total_device_bytes = 0;
+    SPIKING_CUDA_CHECK(cudaMemGetInfo(&free_bytes, &total_device_bytes));
+
+    // Preserve at least 256 MiB or 10% of total VRAM, whichever is larger.
+    const std::uint64_t reserve_bytes = std::max<std::uint64_t>(
+        256ULL * 1024ULL * 1024ULL,
+        static_cast<std::uint64_t>(total_device_bytes) / 10ULL);
+    const std::uint64_t usable_bytes =
+        free_bytes > reserve_bytes ? free_bytes - reserve_bytes : 0ULL;
+    if (required_bytes > usable_bytes) {
+        throw std::length_error(
+            "Network requires approximately " + std::to_string(mib(required_bytes)) +
+            " MiB of GPU memory, but only " +
+            std::to_string(mib(usable_bytes)) +
+            " MiB is available after the safety reserve. Reduce neuron counts, "
+            "connection probabilities, or maximum synaptic delay.");
     }
 
     auto next = std::make_unique<DeviceState>(total, topology);
