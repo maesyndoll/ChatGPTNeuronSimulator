@@ -92,6 +92,15 @@ void ConnectomeField::setTopology(const QVariantMap& value) {
     update();
 }
 
+void ConnectomeField::setSimulationGeneration(const QString& value) {
+    QMutexLocker locker(&mutex_);
+    if (generation_ == value) return;
+    generation_ = value;
+    spikes_.clear();
+    last_sequence_ = 0;
+    update();
+}
+
 void ConnectomeField::setSpikeEvents(const QVariantList& value) {
     QMutexLocker locker(&mutex_);
     if (spike_events_ == value) return;
