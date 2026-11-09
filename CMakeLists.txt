@@ -1116,3 +1116,441 @@ if(BUILD_TESTING)
     target_link_libraries(trajectory_tests PRIVATE neuron_analysis)
     add_test(NAME trajectory_tests COMMAND trajectory_tests)
 endif()
+
+# V42 deterministic host-side learning primitive smoke test. The integrated
+# CUDA experiment will be registered after the runtime phase interface lands.
+add_executable(neuromancer_learning_primitives_v42
+    experiments/neuromancer_learning_primitives_v42.cpp
+)
+target_include_directories(neuromancer_learning_primitives_v42 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_options(neuromancer_learning_primitives_v42 PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_learning_primitives_v42
+             COMMAND neuromancer_learning_primitives_v42)
+endif()
+
+# V42 CUDA integration test: host-updated endogenous phase state controls
+# relative-phase synaptic transmission in the existing CUDA propagation kernel.
+add_executable(neuromancer_dynamic_phase_runtime_v42
+    experiments/neuromancer_dynamic_phase_runtime_v42.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_dynamic_phase_runtime_v42 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_dynamic_phase_runtime_v42 PRIVATE CUDA::cudart)
+set_target_properties(neuromancer_dynamic_phase_runtime_v42 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+
+# V42 controlled CUDA phase-transfer controls: ungated, aligned, and
+# misaligned conditions share identical topology and source stimulation.
+add_executable(neuromancer_phase_transfer_controls_v42
+    experiments/neuromancer_phase_transfer_controls_v42.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_phase_transfer_controls_v42 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_phase_transfer_controls_v42 PRIVATE CUDA::cudart)
+set_target_properties(neuromancer_phase_transfer_controls_v42 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_phase_transfer_controls_v42
+             COMMAND neuromancer_phase_transfer_controls_v42)
+    set_tests_properties(neuromancer_phase_transfer_controls_v42 PROPERTIES TIMEOUT 180)
+endif()
+
+# V42 end-to-end test: learn a temporal lag, freeze it, then apply that
+# measured lag to the CUDA synaptic phase gate.
+add_executable(neuromancer_learned_phase_cuda_transfer_v42
+    experiments/neuromancer_learned_phase_cuda_transfer_v42.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_learned_phase_cuda_transfer_v42 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_learned_phase_cuda_transfer_v42 PRIVATE CUDA::cudart)
+set_target_properties(neuromancer_learned_phase_cuda_transfer_v42 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_learned_phase_cuda_transfer_v42
+             COMMAND neuromancer_learned_phase_cuda_transfer_v42)
+    set_tests_properties(neuromancer_learned_phase_cuda_transfer_v42 PROPERTIES TIMEOUT 180)
+endif()
+
+# V42 endogenous phase learning, negative-control, and frozen-retention diagnostic.
+add_executable(neuromancer_autonomous_phase_learning_v42
+    experiments/neuromancer_autonomous_phase_learning_v42.cpp
+)
+target_include_directories(neuromancer_autonomous_phase_learning_v42 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_autonomous_phase_learning_v42
+             COMMAND neuromancer_autonomous_phase_learning_v42)
+    set_tests_properties(neuromancer_autonomous_phase_learning_v42 PROPERTIES TIMEOUT 60)
+endif()
+
+
+# V42 integrated factorial implementation gate. This deterministic host-side
+# reference combines temporal phase learning, activity-driven CSR rewiring,
+# pair-based STDP, and frozen partial-cue graph recall before CUDA recall is added.
+add_executable(neuromancer_integrated_learning_gate_v42
+    experiments/neuromancer_integrated_learning_gate_v42.cpp
+)
+target_include_directories(neuromancer_integrated_learning_gate_v42 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_options(neuromancer_integrated_learning_gate_v42 PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_integrated_learning_gate_v42
+             COMMAND neuromancer_integrated_learning_gate_v42)
+    set_tests_properties(neuromancer_integrated_learning_gate_v42 PROPERTIES TIMEOUT 120)
+endif()
+
+
+# V42 isolated feasibility assay for autonomous population phase learning and
+# activity-dependent CSR structural synaptic plasticity (host-side primitives).
+add_executable(neuromancer_phase_structural_feasibility_v42
+    experiments/neuromancer_phase_structural_feasibility_v42.cpp
+)
+target_include_directories(neuromancer_phase_structural_feasibility_v42 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_options(neuromancer_phase_structural_feasibility_v42 PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_phase_structural_feasibility_v42
+             COMMAND neuromancer_phase_structural_feasibility_v42)
+    set_tests_properties(neuromancer_phase_structural_feasibility_v42 PROPERTIES TIMEOUT 60)
+endif()
+
+
+# V42 random, initially unprewired association discovery with phase and
+# activity-dependent structural synaptic plasticity (host-side reference).
+add_executable(neuromancer_unprewired_discovery_v42
+    experiments/neuromancer_unprewired_discovery_v42.cpp
+)
+target_include_directories(neuromancer_unprewired_discovery_v42 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_options(neuromancer_unprewired_discovery_v42 PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_unprewired_discovery_v42
+             COMMAND neuromancer_unprewired_discovery_v42)
+    set_tests_properties(neuromancer_unprewired_discovery_v42 PROPERTIES TIMEOUT 120)
+endif()
+
+# V43: integrated autonomous learning reference plus live CUDA spike-to-phase
+# feedback and dynamic synaptic phase gating.
+add_executable(neuromancer_integrated_autonomous_learning_v43
+    experiments/neuromancer_integrated_autonomous_learning_v43.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_integrated_autonomous_learning_v43 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_integrated_autonomous_learning_v43 PRIVATE CUDA::cudart)
+target_compile_options(neuromancer_integrated_autonomous_learning_v43 PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+)
+set_target_properties(neuromancer_integrated_autonomous_learning_v43 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_integrated_autonomous_learning_v43
+             COMMAND neuromancer_integrated_autonomous_learning_v43)
+    set_tests_properties(neuromancer_integrated_autonomous_learning_v43 PROPERTIES TIMEOUT 240)
+endif()
+
+
+# V44: learn temporal phase from live CUDA spike events, freeze learning,
+# then causally test whether the learned lag controls CUDA transmission.
+add_executable(neuromancer_learned_cuda_phase_causality_v44
+    experiments/neuromancer_learned_cuda_phase_causality_v44.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_learned_cuda_phase_causality_v44 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_learned_cuda_phase_causality_v44 PRIVATE CUDA::cudart)
+target_compile_options(neuromancer_learned_cuda_phase_causality_v44 PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+)
+set_target_properties(neuromancer_learned_cuda_phase_causality_v44 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_learned_cuda_phase_causality_v44
+             COMMAND neuromancer_learned_cuda_phase_causality_v44)
+    set_tests_properties(neuromancer_learned_cuda_phase_causality_v44 PROPERTIES TIMEOUT 240)
+endif()
+
+
+# V45: CUDA STDP training on a globally random CSR graph, event-driven phase
+# learning, activity-dependent host CSR remodeling, and frozen fresh-runtime
+# partial-cue recall. Structural/phase controllers remain host-side explicitly.
+add_executable(neuromancer_cuda_associative_recall_v45
+    experiments/neuromancer_cuda_associative_recall_v45.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_cuda_associative_recall_v45 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_cuda_associative_recall_v45 PRIVATE CUDA::cudart)
+target_compile_options(neuromancer_cuda_associative_recall_v45 PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+)
+set_target_properties(neuromancer_cuda_associative_recall_v45 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_cuda_associative_recall_v45
+             COMMAND neuromancer_cuda_associative_recall_v45)
+    set_tests_properties(neuromancer_cuda_associative_recall_v45 PROPERTIES TIMEOUT 300)
+endif()
+
+
+# V46: staged positive/negative controls for single-synapse CUDA transmission,
+# assembly recruitment, and an engineered A->B->C propagation chain.
+add_executable(neuromancer_cuda_transmission_diagnostics_v46
+    experiments/neuromancer_cuda_transmission_diagnostics_v46.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_cuda_transmission_diagnostics_v46 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_cuda_transmission_diagnostics_v46 PRIVATE CUDA::cudart)
+target_compile_options(neuromancer_cuda_transmission_diagnostics_v46 PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+)
+set_target_properties(neuromancer_cuda_transmission_diagnostics_v46 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_cuda_transmission_diagnostics_v46
+             COMMAND neuromancer_cuda_transmission_diagnostics_v46)
+    set_tests_properties(neuromancer_cuda_transmission_diagnostics_v46 PROPERTIES TIMEOUT 300)
+endif()
+
+
+# V47: calibrate direct B->C recruitment and engineered A->B->C chains
+# after V46 identified a subthreshold second-hop response.
+add_executable(neuromancer_two_hop_threshold_calibration_v47
+    experiments/neuromancer_two_hop_threshold_calibration_v47.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_two_hop_threshold_calibration_v47 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_two_hop_threshold_calibration_v47 PRIVATE CUDA::cudart)
+target_compile_options(neuromancer_two_hop_threshold_calibration_v47 PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+)
+set_target_properties(neuromancer_two_hop_threshold_calibration_v47 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_two_hop_threshold_calibration_v47
+             COMMAND neuromancer_two_hop_threshold_calibration_v47)
+    set_tests_properties(neuromancer_two_hop_threshold_calibration_v47 PROPERTIES TIMEOUT 300)
+endif()
+
+
+# V48: dynamically loaded runtime module and mixed frozen/open per-edge STDP.
+add_library(neuromancer_edge_policy_module_v48 SHARED
+    plugins/edge_policy_module.cpp
+)
+target_include_directories(neuromancer_edge_policy_module_v48 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+set_target_properties(neuromancer_edge_policy_module_v48 PROPERTIES
+    PREFIX ""
+    OUTPUT_NAME "neuromancer_edge_policy_v48"
+)
+
+add_executable(neuromancer_hot_module_mixed_plasticity_v48
+    experiments/neuromancer_hot_module_mixed_plasticity_v48.cpp
+    src/runtime/module_manager.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_hot_module_mixed_plasticity_v48 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_hot_module_mixed_plasticity_v48 PRIVATE
+    CUDA::cudart ${CMAKE_DL_LIBS}
+)
+target_compile_options(neuromancer_hot_module_mixed_plasticity_v48 PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+)
+set_target_properties(neuromancer_hot_module_mixed_plasticity_v48 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+add_dependencies(neuromancer_hot_module_mixed_plasticity_v48
+    neuromancer_edge_policy_module_v48
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_hot_module_mixed_plasticity_v48
+        COMMAND neuromancer_hot_module_mixed_plasticity_v48
+            $<TARGET_FILE:neuromancer_edge_policy_module_v48>
+            ${CMAKE_CURRENT_BINARY_DIR}/v48_hot_module_test
+    )
+    set_tests_properties(neuromancer_hot_module_mixed_plasticity_v48 PROPERTIES TIMEOUT 300)
+endif()
+
+
+# V49: matched CUDA open/frozen/no-edge transmission controls. The frozen
+# condition attaches and unloads the V48 policy module before source-only recall.
+add_executable(neuromancer_frozen_edge_transmission_v49
+    experiments/neuromancer_frozen_edge_transmission_v49.cpp
+    src/runtime/module_manager.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_frozen_edge_transmission_v49 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_frozen_edge_transmission_v49 PRIVATE
+    CUDA::cudart ${CMAKE_DL_LIBS}
+)
+target_compile_options(neuromancer_frozen_edge_transmission_v49 PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+)
+set_target_properties(neuromancer_frozen_edge_transmission_v49 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+add_dependencies(neuromancer_frozen_edge_transmission_v49
+    neuromancer_edge_policy_module_v48
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_frozen_edge_transmission_v49
+        COMMAND neuromancer_frozen_edge_transmission_v49
+            $<TARGET_FILE:neuromancer_edge_policy_module_v48>
+            ${CMAKE_CURRENT_BINARY_DIR}/v49_frozen_edge_test
+    )
+    set_tests_properties(neuromancer_frozen_edge_transmission_v49 PROPERTIES TIMEOUT 300)
+endif()
+
+
+# V50: phase-gated transmission controls the postsynaptic spike events available
+# to CUDA STDP; aligned/misaligned and open/frozen conditions are compared.
+add_executable(neuromancer_phase_controlled_plasticity_v50
+    experiments/neuromancer_phase_controlled_plasticity_v50.cpp
+    src/runtime/module_manager.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_phase_controlled_plasticity_v50 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_phase_controlled_plasticity_v50 PRIVATE
+    CUDA::cudart ${CMAKE_DL_LIBS}
+)
+target_compile_options(neuromancer_phase_controlled_plasticity_v50 PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+)
+set_target_properties(neuromancer_phase_controlled_plasticity_v50 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+add_dependencies(neuromancer_phase_controlled_plasticity_v50
+    neuromancer_edge_policy_module_v48
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_phase_controlled_plasticity_v50
+        COMMAND neuromancer_phase_controlled_plasticity_v50
+            $<TARGET_FILE:neuromancer_edge_policy_module_v48>
+            ${CMAKE_CURRENT_BINARY_DIR}/v50_phase_plasticity_test
+    )
+    set_tests_properties(neuromancer_phase_controlled_plasticity_v50 PROPERTIES TIMEOUT 360)
+endif()
+
+# V51: consolidated phase/STDP reference, autonomous phase, structural
+# plasticity, and CUDA inhibitory competition validation batch.
+add_executable(neuromancer_validation_batch_v51
+    experiments/neuromancer_validation_batch_v51.cpp
+    src/cuda/neuron_izhikevich.cu
+    src/runtime/cuda_simulation_runtime.cu
+    src/topology/topology_generator.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_validation_batch_v51 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_validation_batch_v51 PRIVATE CUDA::cudart)
+target_compile_options(neuromancer_validation_batch_v51 PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+)
+set_target_properties(neuromancer_validation_batch_v51 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+if(BUILD_TESTING)
+    add_test(NAME neuromancer_validation_batch_v51
+        COMMAND neuromancer_validation_batch_v51
+            ${CMAKE_CURRENT_BINARY_DIR}/v51_validation_batch_test
+    )
+    set_tests_properties(neuromancer_validation_batch_v51 PROPERTIES TIMEOUT 360)
+endif()

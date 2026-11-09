@@ -116,6 +116,13 @@ public:
                                          float gate_half_width_rad,
                                          float phase_offset_rad = 0.0f);
     void disable_phase_gate() noexcept;
+    // Configure an endogenous relative-phase gate. Per-neuron phases and
+    // per-edge learned lags are uploaded independently of simulation time.
+    void configure_dynamic_phase_gate(const std::vector<float>& neuron_phases_rad,
+                                      const std::vector<float>& edge_phase_lags_rad,
+                                      float gate_half_width_rad);
+    void update_dynamic_phase_state(const std::vector<float>& neuron_phases_rad,
+                                    const std::vector<float>& edge_phase_lags_rad);
     SimulationMetrics collect_metrics();
     std::vector<std::uint32_t> collect_spike_count_snapshot();
     // Read post-integration voltage and recovery state for selected neurons.
@@ -128,6 +135,9 @@ public:
         std::uint32_t maximum_edges_per_neuron = 8);
     // Copy the exact CSR graph currently resident on the GPU to host memory.
     CSRTopology collect_connectivity();
+    // Per-edge STDP policy. Zero freezes the weight while preserving transmission.
+    std::vector<std::uint8_t> collect_synapse_plasticity_mask();
+    void set_synapse_plasticity_mask(const std::vector<std::uint8_t>& mask);
     // Exact host-side fingerprint of current neuron parameters and state.
     std::uint64_t state_fingerprint();
     SpikeEventBatch collect_spike_events();
@@ -177,8 +187,11 @@ private:
         DeviceBuffer<std::uint32_t> row_offsets;
         DeviceBuffer<std::uint32_t> target_indices;
         DeviceBuffer<float> weights;
+        DeviceBuffer<std::uint8_t> edge_plasticity_mask;
         DeviceBuffer<std::uint32_t> delays;
         DeviceBuffer<float> preferred_phases;
+        DeviceBuffer<float> dynamic_phases;
+        DeviceBuffer<float> edge_phase_lags;
 
         // Optional reverse CSR index and zero-initialized learning traces.
         // Edge indices refer back to the single authoritative weights array.
@@ -224,6 +237,7 @@ private:
     bool phase_gate_enabled_ = false;
     bool phase_gate_inhibitory_only_ = false;
     bool phase_gate_excitatory_only_ = false;
+    bool dynamic_phase_gate_enabled_ = false;
     float phase_frequency_hz_ = 10.0f;
     float phase_gate_half_width_rad_ = 0.3490658504f;
     float phase_offset_rad_ = 0.0f;

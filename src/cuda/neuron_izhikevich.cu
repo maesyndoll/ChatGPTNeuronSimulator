@@ -111,7 +111,14 @@ __global__ void propagate_spikes_kernel(
                 (synapses.phase_gate_inhibitory_only && source_is_inhibitory) ||
                 (synapses.phase_gate_excitatory_only && !source_is_inhibitory);
             const bool apply_phase_gate = synapses.phase_gate_enabled && selected_source;
-            if (apply_phase_gate) {
+            if (synapses.dynamic_phase_gate_enabled) {
+                constexpr float tau = 6.28318530717958647692f;
+                const float relative_phase = remainderf(
+                    synapses.dynamic_neuron_phases[source] -
+                    synapses.dynamic_neuron_phases[target] -
+                    synapses.edge_phase_lags[edge], tau);
+                if (fabsf(relative_phase) > synapses.gate_half_width_rad) continue;
+            } else if (apply_phase_gate) {
                 constexpr float tau = 6.28318530717958647692f;
                 const float phase = fmodf(
                     synapses.phase_offset_rad +
@@ -154,6 +161,7 @@ __global__ void stdp_depression_kernel(
     const std::uint32_t* row_offsets,
     const std::uint32_t* targets,
     float* weights,
+    const std::uint8_t* edge_plasticity_mask,
     const float* post_traces,
     std::uint32_t neuron_count,
     std::uint32_t excitatory_count,
@@ -168,6 +176,7 @@ __global__ void stdp_depression_kernel(
     if (source >= excitatory_count || source >= neuron_count) return;
     for (std::uint32_t edge = row_offsets[source];
          edge < row_offsets[source + 1]; ++edge) {
+        if (edge_plasticity_mask != nullptr && edge_plasticity_mask[edge] == 0) continue;
         const std::uint32_t target = targets[edge];
         weights[edge] -= depression_rate * post_traces[target];
     }
@@ -180,6 +189,7 @@ __global__ void stdp_potentiation_kernel(
     const std::uint32_t* incoming_sources,
     const std::uint32_t* incoming_edge_indices,
     float* weights,
+    const std::uint8_t* edge_plasticity_mask,
     const float* pre_traces,
     std::uint32_t neuron_count,
     std::uint32_t excitatory_count,
@@ -197,6 +207,7 @@ __global__ void stdp_potentiation_kernel(
         const std::uint32_t source = incoming_sources[incoming];
         if (source >= excitatory_count) continue;
         const std::uint32_t edge = incoming_edge_indices[incoming];
+        if (edge_plasticity_mask != nullptr && edge_plasticity_mask[edge] == 0) continue;
         weights[edge] += potentiation_rate * pre_traces[source];
     }
 }
@@ -204,6 +215,7 @@ __global__ void stdp_potentiation_kernel(
 __global__ void stdp_clamp_weights_kernel(
     const std::uint32_t* row_offsets,
     float* weights,
+    const std::uint8_t* edge_plasticity_mask,
     std::uint32_t neuron_count,
     std::uint32_t excitatory_count,
     float minimum_weight,
@@ -214,6 +226,7 @@ __global__ void stdp_clamp_weights_kernel(
 
     for (std::uint32_t edge = row_offsets[source];
          edge < row_offsets[source + 1]; ++edge) {
+        if (edge_plasticity_mask != nullptr && edge_plasticity_mask[edge] == 0) continue;
         weights[edge] = fminf(
             maximum_weight, fmaxf(minimum_weight, weights[edge]));
     }
@@ -427,6 +440,7 @@ void apply_stdp(
     const std::uint32_t* outgoing_row_offsets,
     const std::uint32_t* outgoing_targets,
     float* weights,
+    const std::uint8_t* edge_plasticity_mask,
     const std::uint32_t* incoming_row_offsets,
     const std::uint32_t* incoming_sources,
     const std::uint32_t* incoming_edge_indices,
@@ -454,7 +468,8 @@ void apply_stdp(
     if (weights != nullptr && outgoing_targets != nullptr) {
         stdp_depression_kernel<<<neuron_blocks, threads, 0, stream>>>(
             active_spike_sources, active_spike_count, outgoing_row_offsets,
-            outgoing_targets, weights, postsynaptic_traces, neuron_count,
+            outgoing_targets, weights, edge_plasticity_mask,
+            postsynaptic_traces, neuron_count,
             excitatory_count, parameters.depression_rate, parameters.minimum_weight,
             parameters.maximum_weight);
         SPIKING_CUDA_CHECK(cudaGetLastError());
@@ -463,7 +478,7 @@ void apply_stdp(
         incoming_edge_indices != nullptr) {
         stdp_potentiation_kernel<<<neuron_blocks, threads, 0, stream>>>(
             active_spike_sources, active_spike_count, incoming_row_offsets,
-            incoming_sources, incoming_edge_indices, weights,
+            incoming_sources, incoming_edge_indices, weights, edge_plasticity_mask,
             presynaptic_traces, neuron_count, excitatory_count,
             parameters.potentiation_rate, parameters.minimum_weight,
             parameters.maximum_weight);
@@ -471,7 +486,8 @@ void apply_stdp(
     }
     if (weights != nullptr) {
         stdp_clamp_weights_kernel<<<neuron_blocks, threads, 0, stream>>>(
-            outgoing_row_offsets, weights, neuron_count, excitatory_count,
+            outgoing_row_offsets, weights, edge_plasticity_mask,
+            neuron_count, excitatory_count,
             parameters.minimum_weight, parameters.maximum_weight);
         SPIKING_CUDA_CHECK(cudaGetLastError());
     }
