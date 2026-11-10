@@ -1,6 +1,8 @@
 #pragma once
 
 #include "runtime/cuda_simulation_runtime.cuh"
+#include "runtime/neural_self_observer.h"
+#include "runtime/graft_package.h"
 #include "topology/topology_io.h"
 
 #include <atomic>
@@ -103,6 +105,10 @@ public:
     ParameterUpdateResult apply_parameters(const ModelParameters& candidate);
     ParameterUpdateResult reset_parameters_to_defaults();
     void reinitialize_simulation();
+    GraftPackageInfo attach_graft_package(const std::string& package_path,
+                                          bool plasticity_enabled = false);
+    void detach_graft_package();
+    bool graft_attached() const;
 
     SimulationMetrics telemetry() const;
     TelemetrySnapshot telemetry_snapshot() const;
@@ -116,6 +122,10 @@ public:
         std::uint32_t maximum_edges_per_neuron = 8) const;
     // Analyze the exact CSR graph currently resident in the simulation runtime.
     TopologyStatistics connectivity_statistics() const;
+    // Analyze the exact live CSR graph together with cumulative GPU spike counts.
+    SelfObservationReport self_observation_snapshot(
+        float weak_weight_threshold = 0.01f,
+        std::size_t maximum_ranked_neurons = 16) const;
 
     ControllerStatus status() const;
     bool is_running() const;

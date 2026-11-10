@@ -170,6 +170,8 @@ if(SPIKINGMODEL_ENABLE_QT_CLIENT)
         include/qt/simulation_bridge.h
         src/qt/simulation_client.cpp
         src/qt/simulation_bridge.cpp
+        src/runtime/graft_package.cpp
+        src/topology/topology_io.cpp
         src/qt/qt_dashboard_main.cpp
     )
     target_include_directories(spiking_model_dashboard PRIVATE
@@ -180,6 +182,7 @@ if(SPIKINGMODEL_ENABLE_QT_CLIENT)
         Qt6::Network
         Qt6::Qml
         Qt6::Quick
+        nlohmann_json::nlohmann_json
     )
     target_compile_options(spiking_model_dashboard PRIVATE
         $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
@@ -250,7 +253,9 @@ if(SPIKINGMODEL_ENABLE_CUDA)
         src/main.cpp
         src/cuda/neuron_izhikevich.cu
         src/runtime/cuda_simulation_runtime.cu
+        src/runtime/graft_topology.cpp
         src/runtime/simulation_controller.cpp
+        src/runtime/neural_self_observer.cpp
         src/topology/topology_generator.cpp
         src/topology/topology_io.cpp
         src/ipc/parameter_json.cpp
@@ -1553,4 +1558,98 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_BINARY_DIR}/v51_validation_batch_test
     )
     set_tests_properties(neuromancer_validation_batch_v51 PROPERTIES TIMEOUT 360)
+endif()
+
+
+# Neuromancer graft package inspector: validates manifest, package-local paths,
+# and SPKCSR topology without loading executable module code.
+add_library(neuromancer_graft_package STATIC
+    src/runtime/graft_package.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_graft_package PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_graft_package PUBLIC
+    nlohmann_json::nlohmann_json
+)
+target_compile_options(neuromancer_graft_package PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+)
+
+# The live backend uses the package inspector when attaching grafts.
+if(TARGET spiking_model)
+    target_link_libraries(spiking_model PRIVATE neuromancer_graft_package)
+endif()
+
+add_executable(neuromancer_graft_inspect
+    tools/neuromancer_graft_inspect.cpp
+)
+target_link_libraries(neuromancer_graft_inspect PRIVATE neuromancer_graft_package)
+
+if(BUILD_TESTING)
+    add_executable(graft_package_tests tests/unit/graft_package_tests.cpp)
+    target_link_libraries(graft_package_tests PRIVATE neuromancer_graft_package)
+    add_test(NAME graft_package_tests COMMAND graft_package_tests)
+endif()
+
+
+# Persistent modular neural memory: versioned CSR topology plus resumable state.
+add_library(neuromancer_neural_memory STATIC
+    src/runtime/neural_memory_store.cpp
+    src/topology/topology_io.cpp
+)
+target_include_directories(neuromancer_neural_memory PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(neuromancer_neural_memory PUBLIC
+    nlohmann_json::nlohmann_json
+)
+target_compile_options(neuromancer_neural_memory PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+)
+
+if(BUILD_TESTING)
+    add_executable(neural_memory_store_tests
+        tests/unit/neural_memory_store_tests.cpp
+    )
+    target_link_libraries(neural_memory_store_tests PRIVATE neuromancer_neural_memory)
+    add_test(NAME neural_memory_store_tests COMMAND neural_memory_store_tests)
+endif()
+
+# Graft topology merge: deterministic CSR composition and per-edge plasticity policy.
+add_library(neuromancer_graft_topology STATIC
+    src/runtime/graft_topology.cpp
+)
+target_include_directories(neuromancer_graft_topology PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_options(neuromancer_graft_topology PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+)
+if(BUILD_TESTING)
+    add_executable(graft_topology_tests tests/unit/graft_topology_tests.cpp)
+    target_link_libraries(graft_topology_tests PRIVATE neuromancer_graft_topology)
+    add_test(NAME graft_topology_tests COMMAND graft_topology_tests)
+endif()
+
+
+# Read-only self-observation of the live connectome snapshot.
+add_library(neuromancer_neural_self_observer STATIC
+    src/runtime/neural_self_observer.cpp
+)
+target_include_directories(neuromancer_neural_self_observer PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_options(neuromancer_neural_self_observer PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
+)
+if(BUILD_TESTING)
+    add_executable(neural_self_observer_tests
+        tests/unit/neural_self_observer_tests.cpp
+    )
+    target_link_libraries(neural_self_observer_tests PRIVATE
+        neuromancer_neural_self_observer
+    )
+    add_test(NAME neural_self_observer_tests COMMAND neural_self_observer_tests)
 endif()

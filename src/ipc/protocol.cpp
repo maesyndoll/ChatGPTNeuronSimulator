@@ -4,6 +4,7 @@
 #include "topology/topology_io.h"
 
 #include <limits>
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <string>
@@ -116,6 +117,31 @@ Json connectivity_json(const TopologyStatistics& stats) {
         {"incoming_degree", distribution(stats.incoming_degree)},
         {"weights", distribution(stats.weights)},
         {"delays", distribution(stats.delays)}
+    };
+}
+
+Json self_observation_json(const SelfObservationReport& report) {
+    Json ranked = Json::array();
+    for (const auto& neuron : report.highest_degree_neurons) {
+        ranked.push_back({
+            {"neuron_id", neuron.neuron_id},
+            {"outgoing_degree", neuron.outgoing_degree},
+            {"incoming_degree", neuron.incoming_degree},
+            {"activity_count", std::to_string(neuron.activity_count)}
+        });
+    }
+    return {
+        {"graph_fingerprint", std::to_string(report.graph_fingerprint)},
+        {"neuron_count", report.neuron_count},
+        {"synapse_count", std::to_string(report.synapse_count)},
+        {"mean_outgoing_degree", report.mean_outgoing_degree},
+        {"mean_incoming_degree", report.mean_incoming_degree},
+        {"isolated_neurons", report.isolated_neurons},
+        {"high_degree_neurons", report.high_degree_neurons},
+        {"inactive_neurons", report.inactive_neurons},
+        {"reciprocal_pairs", std::to_string(report.reciprocal_pairs)},
+        {"weak_edges", std::to_string(report.weak_edges)},
+        {"ranked_neurons", std::move(ranked)}
     };
 }
 
@@ -281,6 +307,59 @@ Json handle_request(SimulationController& controller, const Json& request) {
                 controller.topology_visual_snapshot(256U, 8U)));
         }
 
+        if (command == "get_self_observation") {
+            return success_response(request_id, self_observation_json(
+                controller.self_observation_snapshot()));
+        }
+
+
+        if (command == "get_topology_proposal") {
+            const auto topology = controller.connectivity_snapshot();
+            const auto spikes = controller.spike_events_snapshot(0, 4096);
+            std::vector<ObservedSpike> recent;
+            recent.reserve(spikes.events.size());
+            std::vector<std::uint64_t> activity(topology.neuron_count(), 0);
+            for (const auto& event : spikes.events) {
+                recent.push_back({event.step, event.neuron_id});
+                if (event.neuron_id < activity.size()) ++activity[event.neuron_id];
+            }
+            TopologyAdvisorOptions options;
+            const auto proposal = propose_topology_update(
+                topology, recent, activity, options);
+            Json added_edges = Json::array();
+            for (std::uint32_t source = 0;
+                 source < topology.neuron_count(); ++source) {
+                const auto base_begin = topology.row_offsets[source];
+                const auto base_end = topology.row_offsets[source + 1];
+                for (std::uint32_t edge = proposal.candidate.row_offsets[source];
+                     edge < proposal.candidate.row_offsets[source + 1]; ++edge) {
+                    const auto target = proposal.candidate.target_indices[edge];
+                    const auto existing = std::find(
+                        topology.target_indices.begin() + base_begin,
+                        topology.target_indices.begin() + base_end, target);
+                    if (existing != topology.target_indices.begin() + base_end)
+                        continue;
+                    added_edges.push_back({
+                        {"source", source},
+                        {"target", target},
+                        {"weight", proposal.candidate.weights[edge]},
+                        {"delay", proposal.candidate.delays[edge]}
+                    });
+                }
+            }
+            return success_response(request_id, {
+                {"base_graph_fingerprint", std::to_string(proposal.base_graph_fingerprint)},
+                {"candidate_graph_fingerprint", std::to_string(proposal.candidate_graph_fingerprint)},
+                {"proposed_added_edges", proposal.proposed_added_edges},
+                {"proposed_pruned_edges", proposal.proposed_pruned_edges},
+                {"candidate_synapse_count", std::to_string(proposal.candidate.synapse_count())},
+                {"added_edges", std::move(added_edges)},
+                {"source_unchanged", true},
+                {"applied", false},
+                {"evidence_spikes", recent.size()}
+            });
+        }
+
         if (command == "get_spike_events") {
             std::uint64_t after_sequence = 0;
             if (payload.contains("after_sequence")) {
@@ -342,6 +421,47 @@ Json handle_request(SimulationController& controller, const Json& request) {
             return success_response(
                 request_id,
                 update_result_json(controller.reset_parameters_to_defaults()));
+        }
+
+
+        if (command == "attach_graft") {
+            if (!payload.contains("package_path") ||
+                !payload.at("package_path").is_string() ||
+                payload.at("package_path").get<std::string>().empty())
+                throw std::invalid_argument("attach_graft requires a non-empty package_path");
+            bool plasticity_enabled = false;
+            if (payload.contains("plasticity_enabled")) {
+                if (!payload.at("plasticity_enabled").is_boolean())
+                    throw std::invalid_argument("plasticity_enabled must be boolean");
+                plasticity_enabled = payload.at("plasticity_enabled").get<bool>();
+            }
+            const auto info = controller.attach_graft_package(
+                payload.at("package_path").get<std::string>(), plasticity_enabled);
+            return success_response(request_id, {
+                {"attached", true}, {"id", info.id}, {"name", info.name},
+                {"excitatory_count", info.excitatory_count},
+                {"inhibitory_count", info.inhibitory_count},
+                {"synapse_count", info.synapse_count},
+                {"status", status_name(controller.status())},
+                {"configuration", configuration_json(controller.configuration_snapshot())},
+                {"telemetry", telemetry_json(controller.telemetry_snapshot())}
+            });
+        }
+
+        if (command == "detach_graft") {
+            controller.detach_graft_package();
+            return success_response(request_id, {
+                {"attached", false},
+                {"status", status_name(controller.status())},
+                {"configuration", configuration_json(controller.configuration_snapshot())},
+                {"telemetry", telemetry_json(controller.telemetry_snapshot())}
+            });
+        }
+
+        if (command == "get_graft_status") {
+            return success_response(request_id, {
+                {"attached", controller.graft_attached()}
+            });
         }
 
         if (command == "reinitialize") {

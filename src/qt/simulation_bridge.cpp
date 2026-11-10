@@ -1,11 +1,15 @@
 #include "qt/simulation_bridge.h"
 
 #include <QJsonValue>
+#include <QFileInfo>
+#include <exception>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QStringList>
 #include <QVariant>
 #include <cmath>
+#include <limits>
+#include <filesystem>
 
 #include <unistd.h>
 
@@ -19,6 +23,9 @@ SimulationBridge::SimulationBridge(QObject* parent)
     connect(&spike_events_update_timer_, &QTimer::timeout,
             this, &SimulationBridge::spikeEventsChanged);
     topology_visual_timer_.setInterval(5000);
+    self_observation_timer_.setInterval(5000);
+    connect(&self_observation_timer_, &QTimer::timeout,
+            this, &SimulationBridge::refreshSelfObservation);
     connect(&topology_visual_timer_, &QTimer::timeout,
             this, &SimulationBridge::refreshTopologyVisual);
     connect(&client_, &SimulationClient::connected, this, [this]() {
@@ -33,7 +40,10 @@ SimulationBridge::SimulationBridge(QObject* parent)
         client_.sendRequest(QStringLiteral("subscribe_spike_events"));
         refreshConfiguration();
         refreshTopologyVisual();
+        refreshSelfObservation();
+        refreshGraftStatus();
         topology_visual_timer_.start();
+        // Self-observation is on-demand: a full graph snapshot can be expensive.
         // The server's spike subscription starts with a recent bounded
         // snapshot; do not separately request the oldest retained events.
     });
@@ -44,9 +54,16 @@ SimulationBridge::SimulationBridge(QObject* parent)
         emit connectionChanged();
         spike_events_update_timer_.stop();
         topology_visual_timer_.stop();
+        self_observation_timer_.stop();
         topology_visual_request_pending_ = false;
+        self_observation_request_pending_ = false;
         topology_visual_.clear();
         emit topologyVisualChanged();
+        self_observation_.clear();
+        emit selfObservationChanged();
+        topology_proposal_.clear();
+        topology_proposal_request_pending_ = false;
+        emit topologyProposalChanged();
         spike_events_.clear();
         spike_event_count_ = QStringLiteral("0");
         spike_events_dropped_ = QStringLiteral("0");
@@ -90,12 +107,53 @@ SimulationBridge::SimulationBridge(QObject* parent)
             topology_visual_request_pending_ = false;
             topology_visual_ = result.toVariantMap();
             emit topologyVisualChanged();
+        } else if (command == QStringLiteral("get_self_observation")) {
+            self_observation_request_pending_ = false;
+            self_observation_ = result.toVariantMap();
+            emit selfObservationChanged();
+        } else if (command == QStringLiteral("get_topology_proposal")) {
+            topology_proposal_request_pending_ = false;
+            topology_proposal_ = result.toVariantMap();
+            emit topologyProposalChanged();
+        } else if (command == QStringLiteral("get_graft_status")) {
+            const bool attached = result.value(QStringLiteral("attached")).toBool();
+            graft_inspection_.insert(QStringLiteral("attached"), attached);
+            if (attached) {
+                graft_inspection_.insert(QStringLiteral("lifecycle_state"), QStringLiteral("attached"));
+                graft_inspection_.insert(QStringLiteral("status"), QStringLiteral("Attached · live topology"));
+            } else if (graft_inspection_valid_) {
+                const QString previous = graft_inspection_.value(QStringLiteral("lifecycle_state")).toString();
+                if (previous != QStringLiteral("ejected")) {
+                    graft_inspection_.insert(QStringLiteral("lifecycle_state"), QStringLiteral("validated"));
+                    graft_inspection_.insert(QStringLiteral("status"), QStringLiteral("Validated · not attached"));
+                }
+            }
+            emit graftInspectionChanged();
         } else {
             const QJsonValue configurationValue =
                 result.value(QStringLiteral("configuration"));
             if (configurationValue.isObject()) {
                 updateConfiguration(configurationValue.toObject());
             }
+        }
+
+        if (command == QStringLiteral("attach_graft") ||
+            command == QStringLiteral("detach_graft")) {
+            refreshConfiguration();
+            refreshTopologyVisual();
+            refreshConnectivity();
+            refreshSelfObservation();
+            refreshGraftStatus();
+            if (command == QStringLiteral("attach_graft")) {
+                graft_inspection_.insert(QStringLiteral("attached"), true);
+                graft_inspection_.insert(QStringLiteral("lifecycle_state"), QStringLiteral("attached"));
+                graft_inspection_.insert(QStringLiteral("status"), QStringLiteral("Attached · live topology"));
+            } else {
+                graft_inspection_.insert(QStringLiteral("attached"), false);
+                graft_inspection_.insert(QStringLiteral("lifecycle_state"), QStringLiteral("ejected"));
+                graft_inspection_.insert(QStringLiteral("status"), QStringLiteral("Ejected · original topology restored"));
+            }
+            emit graftInspectionChanged();
         }
 
         if (result.contains(QStringLiteral("status"))) {
@@ -176,8 +234,28 @@ SimulationBridge::SimulationBridge(QObject* parent)
                    const QString& errorCode, const QString& message) {
         if (command == QStringLiteral("get_topology_visual"))
             topology_visual_request_pending_ = false;
+        if (command == QStringLiteral("get_self_observation"))
+            self_observation_request_pending_ = false;
+        if (command == QStringLiteral("get_topology_proposal"))
+            topology_proposal_request_pending_ = false;
         const QString combined =
             QStringLiteral("%1 (%2): %3").arg(command, errorCode, message);
+        if (command == QStringLiteral("attach_graft") ||
+            command == QStringLiteral("detach_graft")) {
+            const bool stillAttached =
+                graft_inspection_.value(QStringLiteral("attached")).toBool();
+            graft_inspection_.insert(
+                QStringLiteral("lifecycle_state"),
+                stillAttached ? QStringLiteral("attached") : QStringLiteral("validated"));
+            graft_inspection_.insert(
+                QStringLiteral("status"),
+                QStringLiteral("%1 failed · %2")
+                    .arg(command == QStringLiteral("attach_graft")
+                             ? QStringLiteral("Attach") : QStringLiteral("Ejection"),
+                         message));
+            emit graftInspectionChanged();
+            refreshGraftStatus();
+        }
         setErrorMessage(combined);
         setStatusMessage(QStringLiteral("Command failed: %1").arg(command));
         emit errorOccurred(combined);
@@ -271,6 +349,22 @@ QVariantMap SimulationBridge::connectivityStatistics() const {
 
 QVariantMap SimulationBridge::topologyVisual() const {
     return topology_visual_;
+}
+
+QVariantMap SimulationBridge::selfObservation() const {
+    return self_observation_;
+}
+
+QVariantMap SimulationBridge::graftInspection() const {
+    return graft_inspection_;
+}
+
+QVariantMap SimulationBridge::topologyProposal() const {
+    return topology_proposal_;
+}
+
+bool SimulationBridge::graftInspectionValid() const {
+    return graft_inspection_valid_;
 }
 
 QVariantList SimulationBridge::spikeEvents() const {
@@ -376,6 +470,107 @@ void SimulationBridge::refreshTopologyVisual() {
     client_.sendRequest(QStringLiteral("get_topology_visual"), {}, 10000);
 }
 
+void SimulationBridge::refreshSelfObservation() {
+    if (!connected_ || self_observation_request_pending_)
+        return;
+    self_observation_request_pending_ = true;
+    client_.sendRequest(QStringLiteral("get_self_observation"), {}, 30000);
+}
+
+void SimulationBridge::refreshTopologyProposal() {
+    if (!connected_ || topology_proposal_request_pending_)
+        return;
+    topology_proposal_request_pending_ = true;
+    client_.sendRequest(QStringLiteral("get_topology_proposal"), {}, 15000);
+}
+
+void SimulationBridge::inspectGraftPackage(const QString& packagePath) {
+    graft_inspection_.clear();
+    graft_inspection_valid_ = false;
+    const QString path = packagePath.trimmed();
+    if (path.isEmpty()) {
+        graft_inspection_.insert(QStringLiteral("error"),
+                                 QStringLiteral("Select a graft package directory or manifest."));
+        emit graftInspectionChanged();
+        return;
+    }
+    try {
+        const auto info = spiking::GraftPackageInspector::inspect(
+            std::filesystem::path(path.toStdString()));
+        graft_inspection_.insert(QStringLiteral("id"), QString::fromStdString(info.id));
+        graft_inspection_.insert(QStringLiteral("name"), QString::fromStdString(info.name));
+        graft_inspection_.insert(QStringLiteral("description"),
+                                 QString::fromStdString(info.description));
+        graft_inspection_.insert(QStringLiteral("package_directory"),
+                                 QString::fromStdString(info.package_directory.string()));
+        graft_inspection_.insert(QStringLiteral("input_path"),
+                                 QFileInfo(path).absoluteFilePath());
+        graft_inspection_.insert(QStringLiteral("excitatory_count"),
+                                 static_cast<qulonglong>(info.excitatory_count));
+        graft_inspection_.insert(QStringLiteral("inhibitory_count"),
+                                 static_cast<qulonglong>(info.inhibitory_count));
+        graft_inspection_.insert(QStringLiteral("synapse_count"),
+                                 static_cast<qulonglong>(info.synapse_count));
+        graft_inspection_.insert(QStringLiteral("module_binary"),
+                                 info.has_module_binary
+                                     ? QString::fromStdString(info.module_binary_path.string())
+                                     : QStringLiteral("No executable module"));
+        graft_inspection_.insert(QStringLiteral("input_adapters"),
+                                 static_cast<int>(info.input_adapters.size()));
+        graft_inspection_.insert(QStringLiteral("output_adapters"),
+                                 static_cast<int>(info.output_adapters.size()));
+        graft_inspection_.insert(QStringLiteral("attached"), false);
+        graft_inspection_.insert(QStringLiteral("lifecycle_state"), QStringLiteral("validated"));
+        graft_inspection_.insert(QStringLiteral("status"),
+                                 QStringLiteral("Validated · not attached"));
+        graft_inspection_valid_ = true;
+    } catch (const std::exception& error) {
+        graft_inspection_.insert(QStringLiteral("error"), QString::fromUtf8(error.what()));
+    }
+    emit graftInspectionChanged();
+    refreshGraftStatus();
+}
+
+
+void SimulationBridge::attachGraftPackage(
+    const QString& packagePath, bool plasticityEnabled) {
+    if (!connected_) {
+        setErrorMessage(QStringLiteral("Cannot attach graft: backend disconnected"));
+        return;
+    }
+    if (!graft_inspection_valid_ ||
+        QFileInfo(packagePath).absoluteFilePath() !=
+            QFileInfo(graft_inspection_.value(QStringLiteral("input_path")).toString())
+                .absoluteFilePath()) {
+        setErrorMessage(QStringLiteral("Inspect this package before attaching it"));
+        return;
+    }
+    graft_inspection_.insert(QStringLiteral("lifecycle_state"), QStringLiteral("attaching"));
+    graft_inspection_.insert(QStringLiteral("status"), QStringLiteral("Attaching · waiting for simulation safe point"));
+    emit graftInspectionChanged();
+    setStatusMessage(QStringLiteral("Attaching graft at the next simulation safe point..."));
+    client_.sendRequest(QStringLiteral("attach_graft"), QJsonObject{
+        {QStringLiteral("package_path"), packagePath},
+        {QStringLiteral("plasticity_enabled"), plasticityEnabled}
+    }, 30000);
+}
+
+void SimulationBridge::detachGraftPackage() {
+    if (!connected_) {
+        setErrorMessage(QStringLiteral("Cannot detach graft: backend disconnected"));
+        return;
+    }
+    graft_inspection_.insert(QStringLiteral("lifecycle_state"), QStringLiteral("ejecting"));
+    graft_inspection_.insert(QStringLiteral("status"), QStringLiteral("Ejecting · restoring original topology"));
+    emit graftInspectionChanged();
+    setStatusMessage(QStringLiteral("Detaching graft at the next simulation safe point..."));
+    client_.sendRequest(QStringLiteral("detach_graft"), {}, 30000);
+}
+
+void SimulationBridge::refreshGraftStatus() {
+    if (connected_) client_.sendRequest(QStringLiteral("get_graft_status"));
+}
+
 void SimulationBridge::refreshSpikeEvents() {
     if (connected_) {
         client_.sendRequest(
@@ -428,6 +623,51 @@ void SimulationBridge::sendVisualGrid(const QVariantList& intensities) {
                         QJsonObject{{QStringLiteral("stimuli"), stimuli}});
     setStatusMessage(QStringLiteral("Submitted %1 active visual cells to neurons 0–63")
                          .arg(activeCells));
+}
+
+void SimulationBridge::sendStimulusPulse(
+    int neuronId, double amplitude, int durationSteps) {
+    if (!connected_) {
+        setErrorMessage(QStringLiteral("Cannot send stimulus: backend disconnected"));
+        return;
+    }
+    if (simulation_status_.compare(QStringLiteral("running"), Qt::CaseInsensitive) == 0) {
+        setErrorMessage(QStringLiteral("Pause the simulation before scheduling a controlled pulse"));
+        return;
+    }
+    if (neuronId < 0 || durationSteps <= 0 ||
+        !std::isfinite(amplitude) || amplitude < 0.0 || amplitude > 100.0) {
+        setErrorMessage(QStringLiteral("Pulse requires neuron >= 0, duration > 0, and amplitude in [0, 100]"));
+        return;
+    }
+
+    bool stepOk = false;
+    const quint64 completed = telemetry_.value(QStringLiteral("completed_steps"))
+        .toString().toULongLong(&stepOk);
+    if (!stepOk || completed >= static_cast<quint64>(std::numeric_limits<qint64>::max())) {
+        setErrorMessage(QStringLiteral("Waiting for a valid simulation step counter"));
+        return;
+    }
+
+    const auto neuronCount = connectivity_statistics_
+        .value(QStringLiteral("neuron_count")).toULongLong();
+    if (neuronCount > 0 && static_cast<quint64>(neuronId) >= neuronCount) {
+        setErrorMessage(QStringLiteral("Selected neuron is outside the current network"));
+        return;
+    }
+
+    const QJsonObject stimulus{
+        {QStringLiteral("neuron_id"), neuronId},
+        {QStringLiteral("start_step"), static_cast<qint64>(completed + 1)},
+        {QStringLiteral("duration_steps"), durationSteps},
+        {QStringLiteral("amplitude"), amplitude}
+    };
+    client_.sendRequest(
+        QStringLiteral("schedule_stimuli"),
+        QJsonObject{{QStringLiteral("stimuli"), QJsonArray{stimulus}}});
+    setStatusMessage(
+        QStringLiteral("Controlled pulse queued for neuron %1 at step %2")
+            .arg(neuronId).arg(completed + 1));
 }
 
 void SimulationBridge::reinitializeSimulation() {
