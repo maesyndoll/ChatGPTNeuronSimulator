@@ -1,0 +1,3 @@
+source_neuron,target_neuron,source_population,target_population,weight,delay_steps
+0,1,excitatory,inhibitory,0.0880031437,3
+1,0,inhibitory,excitatory,-0.097029224,1

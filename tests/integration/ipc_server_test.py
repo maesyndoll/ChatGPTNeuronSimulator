@@ -197,6 +197,27 @@ def main():
                 )
                 assert reinitialized["telemetry"]["completed_steps"] == "0"
 
+                # The dashboard's connectome panel reads statistics from the
+                # active CSR graph, including population-pair edge counts.
+                connectivity = send_request(
+                    client, reader, "get_connectivity", {}, "connectivity"
+                )
+                assert connectivity["neuron_count"] == 2, connectivity
+                assert connectivity["excitatory_count"] == 1, connectivity
+                assert connectivity["inhibitory_count"] == 1, connectivity
+                assert connectivity["synapse_count"] == "0", connectivity
+                assert connectivity["density"] == 0.0, connectivity
+                assert connectivity["population_edges"] == {
+                    "excitatory_to_excitatory": "0",
+                    "excitatory_to_inhibitory": "0",
+                    "inhibitory_to_excitatory": "0",
+                    "inhibitory_to_inhibitory": "0",
+                }, connectivity
+                assert connectivity["outgoing_degree"]["count"] == "2"
+                assert connectivity["incoming_degree"]["count"] == "2"
+                assert connectivity["outgoing_degree"]["mean"] == 0.0
+                assert connectivity["incoming_degree"]["mean"] == 0.0
+
                 telemetry = send_request(
                     client, reader, "get_telemetry", {}, "telemetry"
                 )

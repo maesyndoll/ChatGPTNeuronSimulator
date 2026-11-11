@@ -1,0 +1,51 @@
+{
+  "simulation": {
+    "excitatory_count": 81920,
+    "inhibitory_count": 10240,
+    "steps": 10000,
+    "dt": 0.5,
+    "threshold": 30.0,
+    "random_seed": 12345,
+    "excitatory_current_min": 8.0,
+    "excitatory_current_max": 12.0,
+    "inhibitory_current_min": 8.0,
+    "inhibitory_current_max": 12.0,
+    "initial_voltage_min": -67.0,
+    "initial_voltage_max": -63.0
+  },
+  "topology": {
+    "p_ee": 0.001,
+    "p_ei": 0.005,
+    "p_ie": 0.005,
+    "p_ii": 0.005,
+    "master_seed": "12345",
+    "topology_seed": "1003",
+    "delay_seed": "4919422011527349573",
+    "delay_distribution": "FibonacciWeighted",
+    "minimum_delay": 1,
+    "maximum_delay": 55,
+    "fibonacci_delays": [
+      1,
+      2,
+      3,
+      5,
+      8,
+      13,
+      21,
+      34,
+      55
+    ],
+    "fibonacci_weights": [
+      0.2,
+      0.18,
+      0.15,
+      0.13,
+      0.11,
+      0.09,
+      0.06,
+      0.05,
+      0.03
+    ],
+    "memory_budget_bytes": "536870912"
+  }
+}

@@ -1,7 +1,11 @@
 #include "topology/topology_generator.h"
+#include "topology/topology_io.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <fstream>
+#include <cstdio>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -134,6 +138,36 @@ int main() {
     check(no_self_connections, "generator excludes self-connections");
     check(rows_sorted, "targets are strictly sorted within each CSR row");
 
+    // Reverse CSR must cover every forward edge exactly once and retain the
+    // original edge index so learning updates can modify the canonical weight.
+    const auto incoming = build_incoming_csr_index(first);
+    check(incoming.row_offsets.size() == first.neuron_count() + 1,
+          "incoming CSR has one row per target plus sentinel");
+    check(incoming.source_indices.size() == first.synapse_count() &&
+          incoming.edge_indices.size() == first.synapse_count(),
+          "incoming CSR contains one source and edge index per synapse");
+    bool incoming_matches_forward = true;
+    std::vector<bool> seen_edges(first.synapse_count(), false);
+    for (std::uint32_t target = 0; target < first.neuron_count(); ++target) {
+        for (std::uint32_t entry = incoming.row_offsets[target];
+             entry < incoming.row_offsets[target + 1]; ++entry) {
+            const auto source = incoming.source_indices[entry];
+            const auto edge = incoming.edge_indices[entry];
+            if (edge >= first.synapse_count() || seen_edges[edge] ||
+                first.target_indices[edge] != target ||
+                edge < first.row_offsets[source] ||
+                edge >= first.row_offsets[source + 1]) {
+                incoming_matches_forward = false;
+                continue;
+            }
+            seen_edges[edge] = true;
+        }
+    }
+    check(incoming_matches_forward &&
+          std::all_of(seen_edges.begin(), seen_edges.end(),
+                      [](bool seen) { return seen; }),
+          "incoming CSR maps every edge back to its exact forward CSR entry");
+
     // Zero probabilities must produce a valid graph with no edges.
     auto zero = sparse_topology();
     zero.p_ee = zero.p_ei = zero.p_ie = zero.p_ii = 0.0;
@@ -141,6 +175,11 @@ int main() {
     check(empty.synapse_count() == 0, "zero probabilities produce no edges");
     check(empty.delays.empty(), "empty graph has no delay entries");
     check(empty.row_offsets.back() == 0, "empty graph has valid CSR offsets");
+    const auto empty_incoming = build_incoming_csr_index(empty);
+    check(empty_incoming.row_offsets.size() == simulation.neuron_count() + 1 &&
+          empty_incoming.source_indices.empty() &&
+          empty_incoming.edge_indices.empty(),
+          "empty graph produces a valid empty incoming CSR index");
 
     // Uniform delays must be integers within inclusive configured bounds.
     auto uniform = sparse_topology();
@@ -232,6 +271,67 @@ int main() {
     }
     check(rejected_bad_fibonacci_weights,
           "generator rejects Fibonacci weights with zero total");
+
+
+    // Persistence must preserve the exact canonical CSR arrays.
+    const std::string topology_file = "topology_roundtrip_test.csrbin";
+    const std::string corrupt_file = "topology_corrupt_test.csrbin";
+
+    try {
+        save_csr_topology(first, topology_file);
+        const auto restored = load_csr_topology(topology_file);
+
+        check(restored.excitatory_count == first.excitatory_count &&
+              restored.inhibitory_count == first.inhibitory_count &&
+              restored.minimum_delay == first.minimum_delay &&
+              restored.maximum_delay == first.maximum_delay &&
+              restored.row_offsets == first.row_offsets &&
+              restored.target_indices == first.target_indices &&
+              restored.weights == first.weights &&
+              restored.delays == first.delays,
+              "CSR binary save/load preserves the exact graph");
+
+        const auto stats = analyze_csr_topology(first);
+        check(stats.synapse_count == first.synapse_count() &&
+              stats.excitatory_to_excitatory +
+              stats.excitatory_to_inhibitory +
+              stats.inhibitory_to_excitatory +
+              stats.inhibitory_to_inhibitory == first.synapse_count(),
+              "topology statistics classify every edge exactly once");
+
+        check(stats.outgoing_degree.count == first.neuron_count() &&
+              stats.incoming_degree.count == first.neuron_count() &&
+              stats.weights.count == first.synapse_count() &&
+              stats.delays.count == first.synapse_count(),
+              "topology statistics report complete distributions");
+
+        check(stats.density >= 0.0 && stats.density <= 1.0,
+              "topology density is within [0,1]");
+
+        {
+            std::ifstream input(topology_file, std::ios::binary);
+            std::ofstream output(corrupt_file, std::ios::binary | std::ios::trunc);
+            char byte = 0;
+            std::size_t copied = 0;
+            while (copied < 12 && input.get(byte)) {
+                output.put(byte);
+                ++copied;
+            }
+        }
+
+        bool rejected_truncated = false;
+        try {
+            (void)load_csr_topology(corrupt_file);
+        } catch (const std::exception&) {
+            rejected_truncated = true;
+        }
+        check(rejected_truncated, "loader rejects truncated CSR files");
+    } catch (const std::exception& error) {
+        check(false, std::string("CSR persistence/statistics: ") + error.what());
+    }
+
+    std::remove(topology_file.c_str());
+    std::remove(corrupt_file.c_str());
 
     if (failures == 0) {
         std::cout << "All topology tests passed.\n";

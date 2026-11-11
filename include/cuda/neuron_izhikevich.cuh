@@ -32,10 +32,28 @@ struct NeuronStateGPU {
     std::uint32_t spike_event_capacity = 0;
 };
 
+inline constexpr std::uint32_t kMaxExternalStimuli = 4096U;
+
+struct ExternalStimulusGPU {
+    std::uint32_t neuron_id = 0;
+    std::uint64_t start_step = 0;
+    std::uint64_t end_step = 0;
+    float amplitude = 0.0f;
+};
+
+struct StdpParametersGPU {
+    float potentiation_rate = 0.005f;
+    float depression_rate = 0.00525f;
+    float presynaptic_decay = 1.0f;
+    float postsynaptic_decay = 1.0f;
+    float minimum_weight = 0.001f;
+    float maximum_weight = 1.0f;
+};
+
 struct SynapseParametersGPU {
     const std::uint32_t* row_offsets = nullptr;
     const std::uint32_t* target_indices = nullptr;
-    const float* weights = nullptr;
+    float* weights = nullptr;
     const std::uint32_t* delays = nullptr;
     std::uint32_t edge_count = 0;
     float* pending_current = nullptr;
@@ -64,6 +82,24 @@ void propagate_spikes(
     cudaStream_t stream = nullptr
 );
 
+void apply_stdp(
+    const std::uint32_t* active_spike_sources,
+    const std::uint32_t* active_spike_count,
+    const std::uint32_t* outgoing_row_offsets,
+    const std::uint32_t* outgoing_targets,
+    float* weights,
+    const std::uint32_t* incoming_row_offsets,
+    const std::uint32_t* incoming_sources,
+    const std::uint32_t* incoming_edge_indices,
+    float* presynaptic_traces,
+    float* postsynaptic_traces,
+    std::uint32_t neuron_count,
+    std::uint32_t excitatory_count,
+    float dt_ms,
+    StdpParametersGPU parameters,
+    cudaStream_t stream = nullptr
+);
+
 void simulate_neurons(
     NeuronParametersGPU parameters,
     NeuronStateGPU state,
@@ -72,6 +108,15 @@ void simulate_neurons(
     float threshold,
     float* synaptic_current,
     std::uint32_t ring_slots,
+    cudaStream_t stream = nullptr,
+    float* external_current = nullptr
+);
+
+void apply_external_stimuli(
+    const ExternalStimulusGPU* stimuli,
+    const std::uint32_t* stimulus_count,
+    const unsigned long long* completed_steps,
+    float* external_current,
     cudaStream_t stream = nullptr
 );
 
