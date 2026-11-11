@@ -22,6 +22,8 @@ struct NeuronStateGPU {
     // Compact list of neurons that spiked during the preceding integration.
     std::uint32_t* active_spike_sources = nullptr;
     std::uint32_t* active_spike_count = nullptr;
+    unsigned long long* completed_steps = nullptr;
+    std::uint32_t* completed_step_blocks = nullptr;
 
     // Bounded event recorder. Each event stores a one-based step and neuron ID.
     std::uint64_t* spike_event_steps = nullptr;
@@ -59,7 +61,6 @@ void propagate_spikes(
     NeuronStateGPU state,
     SynapseParametersGPU synapses,
     std::uint32_t neuron_count,
-    std::uint64_t step_index,
     cudaStream_t stream = nullptr
 );
 
@@ -70,8 +71,7 @@ void simulate_neurons(
     float dt,
     float threshold,
     float* synaptic_current,
-    std::uint32_t ring_slot,
-    std::uint64_t step_index,
+    std::uint32_t ring_slots,
     cudaStream_t stream = nullptr
 );
 

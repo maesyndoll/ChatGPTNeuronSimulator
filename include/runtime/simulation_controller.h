@@ -63,7 +63,8 @@ public:
         ModelParameters defaults = ModelParameters{},
         int device = 0,
         std::uint32_t batch_size = 100,
-        std::uint64_t telemetry_interval_steps = 1000);
+        std::uint64_t telemetry_interval_steps = 1000,
+        bool collect_spike_events = true);
 
     ~SimulationController();
 
@@ -144,7 +145,8 @@ private:
     void worker_main(
         ModelParameters defaults,
         int device,
-        std::promise<void> initialized);
+        std::promise<void> initialized,
+        bool collect_spike_events);
 
     void publish_metrics(const SimulationMetrics& metrics);
     void publish_spike_events(
@@ -152,6 +154,7 @@ private:
 
     const std::uint32_t batch_size_;
     const std::uint64_t telemetry_interval_steps_;
+    const bool collect_spike_events_;
 
     mutable std::mutex mutex_;
     mutable std::condition_variable condition_;

@@ -21,12 +21,13 @@ ApplicationWindow {
 
     property bool parameterDraftInitialized: false
 
-    // Bounded CPU-side history; samples arrive with existing telemetry.
-    property var populationRateHistory: []
-    property int populationRateHistoryLimit: 180
 
     Connections {
         target: simulation
+
+        function onTelemetryChanged() {
+            telemetryTrendChart.requestPaint()
+        }
 
         function onConfigurationChanged() {
             if (window.parameterDraftInitialized)
@@ -596,556 +597,148 @@ ApplicationWindow {
             font.bold: true
         }
 
-        GridLayout {
-            Layout.fillWidth: true
-            columns: 3
-            columnSpacing: 12
-            rowSpacing: 12
-
-            MetricCard {
-                Layout.fillWidth: true
-                title: "Completed steps"
-                value: simulation.completedSteps
-                unit: "simulation steps"
-            }
-
-            MetricCard {
-                Layout.fillWidth: true
-                title: "Excitatory firing rate"
-                value: simulation.excitatoryRateHz.toFixed(3)
-                unit: "Hz"
-            }
-
-            MetricCard {
-                Layout.fillWidth: true
-                title: "Inhibitory firing rate"
-                value: simulation.inhibitoryRateHz.toFixed(3)
-                unit: "Hz"
-            }
-
-            MetricCard {
-                Layout.fillWidth: true
-                title: "Excitatory spikes"
-                value: simulation.excitatorySpikes
-                unit: "cumulative"
-            }
-
-            MetricCard {
-                Layout.fillWidth: true
-                title: "Inhibitory spikes"
-                value: simulation.inhibitorySpikes
-                unit: "cumulative"
-            }
-
-            MetricCard {
-                Layout.fillWidth: true
-                title: "Mean membrane voltage"
-                value: simulation.meanVoltageMv.toFixed(3)
-                unit: "mV"
-            }
-        }
-
         Rectangle {
             Layout.fillWidth: true
-            radius: 10
+            radius: 12
             color: "#192433"
             border.color: "#2b3a4d"
-            implicitHeight: 450
+            implicitHeight: telemetryChartColumn.implicitHeight + 28
 
             ColumnLayout {
+                id: telemetryChartColumn
                 anchors.fill: parent
-                anchors.margins: 16
+                anchors.margins: 14
                 spacing: 8
 
-                RowLayout {
-                    Layout.fillWidth: true
-
-                    Label {
-                        text: "Live spike raster"
-                        color: "#f0f4fa"
-                        font.pixelSize: 15
-                        font.bold: true
-                    }
-
-                    Item { Layout.fillWidth: true }
-
-                    Button {
-                        text: "Refresh events"
-                        enabled: simulation.connected
-                        onClicked: simulation.refreshSpikeEvents()
-                    }
+                Label {
+                    text: "Telemetry trends · last 120 samples"
+                    color: "#dce6f2"
+                    font.pixelSize: 14
+                    font.bold: true
                 }
 
                 Canvas {
-                    id: spikeRaster
+                    id: telemetryTrendChart
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 320
-                    Layout.minimumHeight: 240
-                    antialiasing: false
-
-                    Connections {
-                        target: simulation
-                        function onSpikeEventsChanged() {
-                            spikeRaster.requestPaint()
-                        }
-                        function onConfigurationChanged() {
-                            spikeRaster.requestPaint()
-                        }
-                    }
+                    Layout.preferredHeight: 218
+                    contextType: "2d"
 
                     onPaint: {
                         var ctx = getContext("2d")
-                        var w = width
-                        var h = height
+                        ctx.clearRect(0, 0, width, height)
 
-                        ctx.clearRect(0, 0, w, h)
-                        ctx.fillStyle = "#101722"
-                        ctx.fillRect(0, 0, w, h)
+                        var history = simulation.telemetryHistory
+                        var series = [
+                            { key: "mean_voltage_mv", label: "Mean voltage (mV)", color: "#63b3ed" },
+                            { key: "excitatory_rate_hz", label: "Excitatory rate (Hz)", color: "#70d6a5" },
+                            { key: "inhibitory_rate_hz", label: "Inhibitory rate (Hz)", color: "#e6b66b" }
+                        ]
 
-                        var left = 58
-                        var right = 14
-                        var top = 14
-                        var bottom = 30
-                        var plotWidth = Math.max(1, w - left - right)
-                        var plotHeight = Math.max(1, h - top - bottom)
+                        var left = 126
+                        var right = width - 12
+                        var plotWidth = Math.max(1, right - left)
+                        var laneHeight = 68
 
-                        var events = simulation.spikeEvents
-                        var params = simulation.requestedParameters || {}
-                        var simParams = params["simulation"] || {}
+                        for (var s = 0; s < series.length; ++s) {
+                            var top = s * 72 + 3
+                            var bottom = top + laneHeight - 12
+                            var values = []
+                            var minValue = Number.POSITIVE_INFINITY
+                            var maxValue = Number.NEGATIVE_INFINITY
 
-                        var excitatoryCount =
-                                Number(simParams["excitatory_count"] || 0)
-                        var inhibitoryCount =
-                                Number(simParams["inhibitory_count"] || 0)
-                        var totalNeurons = excitatoryCount + inhibitoryCount
-
-                        // Use simulation progress for a stable time axis.
-                        var maxStep = Number(simulation.completedSteps)
-                        var lastEventStep = events.length > 0
-                                ? Number(events[events.length - 1].step) : 0
-
-                        if (!isFinite(maxStep) || maxStep <= 0)
-                            maxStep = lastEventStep
-                        else if (isFinite(lastEventStep))
-                            maxStep = Math.max(maxStep, lastEventStep)
-
-                        if (totalNeurons <= 0) {
-                            totalNeurons = 1
-                            for (var n = 0; n < events.length; ++n) {
-                                var candidate = Number(events[n].neuron_id)
-                                if (isFinite(candidate))
-                                    totalNeurons = Math.max(
-                                                totalNeurons, candidate + 1)
-                            }
-                        }
-
-                        totalNeurons = Math.max(1, totalNeurons)
-
-                        var windowSteps = 2000
-                        var minStep = Math.max(0, maxStep - windowSteps)
-                        var maxVisibleStep = Math.max(minStep + 1, maxStep)
-                        var stepRange = maxVisibleStep - minStep
-
-                        // Draw the axes and guides.
-                        ctx.strokeStyle = "#42536a"
-                        ctx.lineWidth = 1
-                        ctx.beginPath()
-                        ctx.moveTo(left, top)
-                        ctx.lineTo(left, top + plotHeight)
-                        ctx.lineTo(left + plotWidth, top + plotHeight)
-                        ctx.stroke()
-
-                        ctx.strokeStyle = "#263548"
-                        ctx.beginPath()
-                        for (var grid = 1; grid <= 4; ++grid) {
-                            var gy = top + plotHeight * grid / 5
-                            ctx.moveTo(left, gy)
-                            ctx.lineTo(left + plotWidth, gy)
-                        }
-                        ctx.stroke()
-
-                        // One visual mark per occupied pixel per population.
-                        // The underlying spike-event records are not modified.
-                        var pixelWidth = Math.max(1, Math.ceil(plotWidth))
-                        var excitatoryPixels = Object.create(null)
-                        var inhibitoryPixels = Object.create(null)
-
-                        for (var i = 0; i < events.length; ++i) {
-                            var eventStep = Number(events[i].step)
-                            var eventNeuron = Number(events[i].neuron_id)
-
-                            if (!isFinite(eventStep) ||
-                                !isFinite(eventNeuron) ||
-                                eventStep < minStep ||
-                                eventStep > maxVisibleStep ||
-                                eventNeuron < 0 ||
-                                eventNeuron >= totalNeurons) {
-                                continue
+                            for (var j = 0; j < history.length; ++j) {
+                                var value = Number(history[j][series[s].key])
+                                values.push(value)
+                                minValue = Math.min(minValue, value)
+                                maxValue = Math.max(maxValue, value)
                             }
 
-                            var px = Math.floor(
-                                        ((eventStep - minStep) / stepRange) *
-                                        plotWidth)
-                            var py = Math.floor(
-                                        (eventNeuron / totalNeurons) *
-                                        plotHeight)
-
-                            px = Math.max(0, Math.min(pixelWidth - 1, px))
-                            py = Math.max(0, Math.min(
-                                             Math.ceil(plotHeight) - 1, py))
-
-                            var pixelKey = py * pixelWidth + px
-
-                            if (eventNeuron < excitatoryCount)
-                                excitatoryPixels[pixelKey] = true
-                            else
-                                inhibitoryPixels[pixelKey] = true
-                        }
-
-                        // Batch all excitatory marks into one fill operation.
-                        ctx.fillStyle = "#54b8a5"
-                        ctx.beginPath()
-                        for (var e in excitatoryPixels) {
-                            if (Object.prototype.hasOwnProperty.call(
-                                        excitatoryPixels, e)) {
-                                var eKey = Number(e)
-                                ctx.rect(
-                                            left + (eKey % pixelWidth),
-                                            top + Math.floor(eKey / pixelWidth),
-                                            1, 1)
-                            }
-                        }
-                        ctx.fill()
-
-                        // Batch all inhibitory marks into one fill operation.
-                        ctx.fillStyle = "#e5a45f"
-                        ctx.beginPath()
-                        for (var inh in inhibitoryPixels) {
-                            if (Object.prototype.hasOwnProperty.call(
-                                        inhibitoryPixels, inh)) {
-                                var iKey = Number(inh)
-                                ctx.rect(
-                                            left + (iKey % pixelWidth),
-                                            top + Math.floor(iKey / pixelWidth),
-                                            1, 1)
-                            }
-                        }
-                        ctx.fill()
-
-                        // Axis labels.
-                        ctx.fillStyle = "#9fb0c5"
-                        ctx.font = "11px sans-serif"
-                        ctx.textAlign = "center"
-                        ctx.fillText("Simulation step",
-                                     left + plotWidth / 2, h - 5)
-                        ctx.fillText(String(Math.round(minStep)),
-                                     left, top + plotHeight + 17)
-                        ctx.fillText(String(Math.round(maxVisibleStep)),
-                                     left + plotWidth, top + plotHeight + 17)
-
-                        ctx.textAlign = "right"
-                        ctx.fillText("Neuron ID", left - 8, top + 8)
-                        ctx.fillText("0", left - 8, top + plotHeight)
-                        ctx.fillText(String(totalNeurons - 1),
-                                     left - 8, top + 19)
-
-                        if (events.length === 0) {
-                            ctx.textAlign = "center"
-                            ctx.fillStyle = "#71839a"
-                            ctx.font = "13px sans-serif"
-                            ctx.fillText(
-                                        "Waiting for recorded GPU spike events...",
-                                        left + plotWidth / 2,
-                                        top + plotHeight / 2)
-                        }
-                    }
-                }
-
-                RowLayout {
-                    spacing: 16
-
-                    Label {
-                        text: "● Excitatory"
-                        color: "#54b8a5"
-                        font.pixelSize: 12
-                    }
-
-                    Label {
-                        text: "● Inhibitory"
-                        color: "#e5a45f"
-                        font.pixelSize: 12
-                    }
-
-                    Item { Layout.fillWidth: true }
-
-                    Label {
-                        text: "Last 2,000 steps"
-                        color: "#91a2b8"
-                        font.pixelSize: 11
-                    }
-                }
-
-                Label {
-                    Layout.fillWidth: true
-                    color: "#cbd7e5"
-                    text: "Retained in dashboard: " +
-                          simulation.spikeEvents.length +
-                          "    Total recorded: " + simulation.spikeEventCount
-                    wrapMode: Text.Wrap
-                }
-
-                Label {
-                    Layout.fillWidth: true
-                    color: Number(simulation.spikeEventsDropped) > 0
-                           ? "#e5bd78" : "#8de0ca"
-                    text: "Events dropped before retrieval: " +
-                          simulation.spikeEventsDropped +
-                          "    Generation: " +
-                          simulation.spikeEventsGeneration
-                    wrapMode: Text.Wrap
-                }
-            }
-        }
-
-        Rectangle {
-            Layout.fillWidth: true
-            radius: 10
-            color: "#192433"
-            border.color: "#2b3a4d"
-            implicitHeight: 260
-
-            Connections {
-                target: simulation
-
-                function onTelemetryChanged() {
-                    var next = window.populationRateHistory.slice()
-                    next.push({
-                        excitatory: Number(simulation.excitatoryRateHz),
-                        inhibitory: Number(simulation.inhibitoryRateHz),
-                        steps: String(simulation.completedSteps)
-                    })
-
-                    if (next.length > window.populationRateHistoryLimit)
-                        next.splice(
-                            0,
-                            next.length - window.populationRateHistoryLimit
-                        )
-
-                    window.populationRateHistory = next
-                    populationRateChart.requestPaint()
-                }
-            }
-
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: 16
-                spacing: 8
-
-                RowLayout {
-                    Layout.fillWidth: true
-
-                    Label {
-                        text: "Population firing rate"
-                        color: "#f0f4fa"
-                        font.pixelSize: 15
-                        font.bold: true
-                    }
-
-                    Item { Layout.fillWidth: true }
-
-                    Label {
-                        text: "Hz · telemetry samples"
-                        color: "#91a2b8"
-                        font.pixelSize: 11
-                    }
-                }
-
-                Canvas {
-                    id: populationRateChart
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    Layout.minimumHeight: 140
-                    antialiasing: false
-
-                    onPaint: {
-                        var ctx = getContext("2d")
-                        var w = width
-                        var h = height
-                        ctx.clearRect(0, 0, w, h)
-                        ctx.fillStyle = "#101722"
-                        ctx.fillRect(0, 0, w, h)
-
-                        var left = 48
-                        var right = 12
-                        var top = 12
-                        var bottom = 22
-                        var plotWidth = Math.max(1, w - left - right)
-                        var plotHeight = Math.max(1, h - top - bottom)
-                        var history = window.populationRateHistory
-
-                        var maximum = 1
-                        for (var i = 0; i < history.length; ++i) {
-                            var e = Number(history[i].excitatory)
-                            var inh = Number(history[i].inhibitory)
-                            if (isFinite(e))
-                                maximum = Math.max(maximum, e)
-                            if (isFinite(inh))
-                                maximum = Math.max(maximum, inh)
-                        }
-                        maximum *= 1.1
-
-                        ctx.strokeStyle = "#42536a"
-                        ctx.lineWidth = 1
-                        ctx.beginPath()
-                        ctx.moveTo(left, top)
-                        ctx.lineTo(left, top + plotHeight)
-                        ctx.lineTo(left + plotWidth, top + plotHeight)
-                        ctx.stroke()
-
-                        ctx.font = "10px sans-serif"
-                        ctx.fillStyle = "#91a2b8"
-                        ctx.textAlign = "right"
-
-                        for (var grid = 0; grid <= 4; ++grid) {
-                            var fraction = grid / 4
-                            var y = top + plotHeight * (1 - fraction)
-                            ctx.strokeStyle = "#263548"
+                            ctx.strokeStyle = "#34465c"
+                            ctx.lineWidth = 1
                             ctx.beginPath()
-                            ctx.moveTo(left, y)
-                            ctx.lineTo(left + plotWidth, y)
+                            ctx.moveTo(left, bottom)
+                            ctx.lineTo(right, bottom)
                             ctx.stroke()
-                            ctx.fillText(
-                                (maximum * fraction).toFixed(1),
-                                left - 7,
-                                y + 3
-                            )
-                        }
 
-                        function drawSeries(key, color) {
-                            if (history.length === 0)
-                                return
+                            ctx.fillStyle = series[s].color
+                            ctx.font = "11px sans-serif"
+                            ctx.fillText(series[s].label, 4, top + 24)
 
-                            ctx.strokeStyle = color
-                            ctx.fillStyle = color
-                            ctx.lineWidth = 1.5
+                            if (values.length === 0)
+                                continue
+
+                            var span = maxValue - minValue
+                            if (!isFinite(span) || span < 0.000001) {
+                                var pad = Math.max(1, Math.abs(maxValue) * 0.05)
+                                minValue -= pad
+                                maxValue += pad
+                                span = maxValue - minValue
+                            }
+
+                            ctx.strokeStyle = series[s].color
+                            ctx.lineWidth = 2
                             ctx.beginPath()
 
-                            for (var n = 0; n < history.length; ++n) {
-                                var value = Number(history[n][key])
-                                if (!isFinite(value))
-                                    continue
-
-                                var x = left + (
-                                    history.length <= 1 ? 0 :
-                                    n / (history.length - 1) * plotWidth
-                                )
-                                var y = top + plotHeight * (
-                                    1 - Math.max(0, value) / maximum
-                                )
-
-                                if (n === 0)
+                            for (var k = 0; k < values.length; ++k) {
+                                var x = left + (values.length === 1 ? plotWidth / 2 :
+                                    (k / (values.length - 1)) * plotWidth)
+                                var y = bottom - ((values[k] - minValue) / span) *
+                                    (laneHeight - 25)
+                                if (k === 0)
                                     ctx.moveTo(x, y)
                                 else
                                     ctx.lineTo(x, y)
                             }
-
                             ctx.stroke()
 
-                            if (history.length === 1) {
-                                var only = Number(history[0][key])
-                                if (isFinite(only)) {
-                                    ctx.beginPath()
-                                    ctx.arc(
-                                        left,
-                                        top + plotHeight *
-                                            (1 - Math.max(0, only) / maximum),
-                                        2.5, 0, Math.PI * 2
-                                    )
-                                    ctx.fill()
-                                }
+                            if (values.length === 1) {
+                                var onlyX = left + plotWidth / 2
+                                var onlyY = bottom - ((values[0] - minValue) / span) *
+                                    (laneHeight - 25)
+                                ctx.fillStyle = series[s].color
+                                ctx.beginPath()
+                                ctx.arc(onlyX, onlyY, 3, 0, Math.PI * 2)
+                                ctx.fill()
                             }
                         }
 
-                        drawSeries("excitatory", "#54b8a5")
-                        drawSeries("inhibitory", "#e5a45f")
-
                         if (history.length === 0) {
-                            ctx.fillStyle = "#71839a"
-                            ctx.textAlign = "center"
+                            ctx.fillStyle = "#91a2b8"
                             ctx.font = "12px sans-serif"
-                            ctx.fillText(
-                                "Waiting for telemetry samples...",
-                                left + plotWidth / 2,
-                                top + plotHeight / 2
-                            )
+                            ctx.fillText("Waiting for telemetry samples…", left + 8, 112)
+                        } else {
+                            ctx.fillStyle = "#71839a"
+                            ctx.font = "10px sans-serif"
+                            ctx.fillText("Step " + history[0].completed_steps, left, height - 2)
+                            ctx.textAlign = "right"
+                            ctx.fillText("Step " +
+                                history[history.length - 1].completed_steps, right, height - 2)
+                            ctx.textAlign = "left"
                         }
-
-                        ctx.fillStyle = "#91a2b8"
-                        ctx.textAlign = "center"
-                        ctx.font = "10px sans-serif"
-                        ctx.fillText(
-                            "Recent telemetry samples (oldest → newest)",
-                            left + plotWidth / 2,
-                            h - 4
-                        )
-                    }
-                }
-
-                RowLayout {
-                    spacing: 18
-
-                    Label {
-                        text: "● Excitatory"
-                        color: "#54b8a5"
-                        font.pixelSize: 12
-                    }
-
-                    Label {
-                        text: "● Inhibitory"
-                        color: "#e5a45f"
-                        font.pixelSize: 12
-                    }
-
-                    Item { Layout.fillWidth: true }
-
-                    Label {
-                        text: window.populationRateHistory.length +
-                              " / " + window.populationRateHistoryLimit +
-                              " samples"
-                        color: "#91a2b8"
-                        font.pixelSize: 11
                     }
                 }
             }
         }
 
-        Rectangle {
+        GridLayout {
             Layout.fillWidth: true
-            radius: 10
-            color: "#192433"
-            border.color: "#2b3a4d"
-            implicitHeight: 58
+            columns: 2
+            columnSpacing: 24
+            rowSpacing: 8
 
-            RowLayout {
-                anchors.fill: parent
-                anchors.margins: 16
+            Label { text: "Steps: " + simulation.completedSteps; color: "#f0f4fa" }
+            Label { text: "Mean voltage: " + simulation.meanVoltageMv.toFixed(3) + " mV"; color: "#f0f4fa" }
+            Label { text: "Excitatory rate: " + simulation.excitatoryRateHz.toFixed(3) + " Hz"; color: "#f0f4fa" }
+            Label { text: "Inhibitory rate: " + simulation.inhibitoryRateHz.toFixed(3) + " Hz"; color: "#f0f4fa" }
+            Label { text: "Excitatory spikes: " + simulation.excitatorySpikes; color: "#f0f4fa" }
+            Label { text: "Inhibitory spikes: " + simulation.inhibitorySpikes; color: "#f0f4fa" }
+        }
 
-                Label {
-                    text: "Numerical state"
-                    color: "#cbd7e5"
-                    font.pixelSize: 14
-                    font.bold: true
-                }
-
-                Item { Layout.fillWidth: true }
-
-                Label {
-                    text: simulation.finiteState ? "Finite" : "Not yet verified"
-                    color: simulation.finiteState ? "#8de0ca" : "#d5b77b"
-                    font.pixelSize: 14
-                    font.bold: true
-                }
-            }
+        Label {
+            text: "Numerical state: " +
+                  (simulation.finiteState ? "Finite" : "Not yet verified")
+            color: simulation.finiteState ? "#8de0ca" : "#d5b77b"
+            font.pixelSize: 13
         }
 
         Label {
@@ -1174,46 +767,6 @@ ApplicationWindow {
         }
 
         onAccepted: simulation.reinitializeSimulation()
-    }
-
-    component MetricCard: Rectangle {
-        id: card
-
-        property string title: ""
-        property string value: "—"
-        property string unit: ""
-
-        radius: 12
-        color: "#192433"
-        border.color: "#2b3a4d"
-        implicitHeight: 122
-
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 16
-            spacing: 7
-
-            Label {
-                text: card.title
-                color: "#9fb0c5"
-                font.pixelSize: 13
-            }
-
-            Label {
-                Layout.fillWidth: true
-                text: card.value
-                color: "#f0f4fa"
-                font.pixelSize: 24
-                font.bold: true
-                elide: Text.ElideRight
-            }
-
-            Label {
-                text: card.unit
-                color: "#71839a"
-                font.pixelSize: 11
-            }
-        }
     }
 
     function parameterValue(parameters, group, field) {

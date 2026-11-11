@@ -81,7 +81,7 @@ int main(int argc, char** argv) {
             }
 
             SimulationController controller(
-                parameters, options.device, 100, 1000);
+                parameters, options.device, 100, 10000, true);
 
             return ipc::run_unix_socket_server(
                 controller, options.socket_path);

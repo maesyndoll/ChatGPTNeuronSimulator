@@ -24,6 +24,7 @@ class SimulationBridge : public QObject {
     Q_PROPERTY(double inhibitoryRateHz READ inhibitoryRateHz NOTIFY telemetryChanged)
     Q_PROPERTY(double meanVoltageMv READ meanVoltageMv NOTIFY telemetryChanged)
     Q_PROPERTY(bool finiteState READ finiteState NOTIFY telemetryChanged)
+    Q_PROPERTY(QVariantList telemetryHistory READ telemetryHistory NOTIFY telemetryChanged)
 
     Q_PROPERTY(QVariantMap requestedParameters READ requestedParameters
                NOTIFY configurationChanged)
@@ -63,6 +64,7 @@ public:
     double inhibitoryRateHz() const;
     double meanVoltageMv() const;
     bool finiteState() const;
+    QVariantList telemetryHistory() const;
 
     QVariantMap requestedParameters() const;
     QVariantMap activeParameters() const;
@@ -110,6 +112,9 @@ private:
     QString status_message_ = QStringLiteral("Waiting for connection");
     QString error_message_;
     QJsonObject telemetry_;
+    QVariantList telemetry_history_;
+    quint64 last_history_step_ = 0;
+    bool has_history_step_ = false;
     QJsonObject configuration_;
     QVariantList spike_events_;
     QString spike_event_count_ = QStringLiteral("0");
