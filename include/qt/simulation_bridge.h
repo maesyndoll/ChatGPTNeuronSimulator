@@ -6,6 +6,7 @@
 #include <QJsonObject>
 #include <QString>
 #include <QVariantMap>
+#include <QTimer>
 
 class SimulationBridge : public QObject {
     Q_OBJECT
@@ -116,4 +117,5 @@ private:
     QString spike_events_first_sequence_ = QStringLiteral("0");
     QString spike_events_generation_ = QStringLiteral("—");
     quint64 last_spike_event_sequence_ = 0;
+    QTimer spike_events_update_timer_;
 };

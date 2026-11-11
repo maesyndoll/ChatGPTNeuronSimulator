@@ -250,8 +250,12 @@ Json handle_request(SimulationController& controller, const Json& request) {
         }
 
         if (command == "subscribe_telemetry") {
+            // Give new subscribers the latest snapshot immediately. Without
+            // this, dashboards remain empty until the next periodic telemetry
+            // interval even though the controller already has valid metrics.
             return success_response(request_id, {
-                {"subscribed", true}
+                {"subscribed", true},
+                {"telemetry", telemetry_json(controller.telemetry_snapshot())}
             });
         }
 
